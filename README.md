@@ -52,35 +52,45 @@ Las herramientas que existen (Quickmap, Moon Trek, JPL Horizons) son potentes, p
 
 ## 🏗️ Arquitectura
 
+**100% serverless.** Como todo se precalcula, no hay servidores siempre encendidos.
+
 ```
-          ┌─────────────────────────────────────┐
-          │  Pipeline de datos (Python, offline)│
-          │  LOLA DEM  → máscara de horizonte   │
-          │  LOLA DEM  → heightmap para VR/3D   │
-          │  SPICE / Horizons → efemérides      │
-          └──────────────────┬──────────────────┘
-                             │  JSON / RAW precalculados
-          ┌──────────────────▼──────────────────┐
-          │  Backend FastAPI                    │
-          │  REST: sitios, efemérides, ventanas │
-          │  WebSocket: sala de misión compartida│
-          └─────────┬─────────────────┬─────────┘
-                    │                 │
-       ┌────────────▼──────┐   ┌──────▼─────────────────┐
-       │ Web · React + TS  │◄─►│ VR · Unity + Meta XR   │
-       │ Mission Control   │   │ Inspector de sitio     │
-       └───────────────────┘   └────────────────────────┘
+        ┌─────────────────────────────────────────┐
+        │  Pipeline de datos (Python, offline)    │
+        │  LOLA DEM → máscara de horizonte        │
+        │  LOLA DEM → heightmap para VR/3D        │
+        │  SPICE / Horizons → efemérides          │
+        └───────────────────┬─────────────────────┘
+                            │ JSON / RAW precalculados
+        ┌───────────────────▼─────────────────────┐
+        │  ▲ Next.js  (Vercel o AWS Amplify)      │
+        │  UI de Mission Control                  │
+        │  /api/* → funciones serverless          │
+        └───────┬─────────────────────────┬───────┘
+                │ REST                    │ REST
+   ┌────────────▼──────────┐   ┌──────────▼────────────┐
+   │ 🖥️ Mission Control    │   │ 🥽 Unity + Meta XR    │
+   │ (navegador)           │   │ Inspector de sitio    │
+   └────────────┬──────────┘   └──────────┬────────────┘
+                │        WebSocket        │
+        ┌───────▼─────────────────────────▼───────┐
+        │  ☁️ AWS API Gateway (WebSocket)         │
+        │  → Lambda → DynamoDB                    │
+        │  conexiones + estado de cada sala       │
+        └─────────────────────────────────────────┘
 ```
 
-**Principio clave:** todo lo pesado se **precalcula**. Nada de llamadas en vivo a Horizons durante el demo.
+- **Principio clave:** todo lo pesado se **precalcula**. Nada de llamadas en vivo a Horizons durante el demo.
+- **Plan de respaldo:** un servidor WebSocket local con el mismo protocolo, por si falla el internet del evento. La web también funciona sin sincronización.
 
 ### Stack
 
 | Capa | Tecnologías |
 |---|---|
 | Datos | Python 3.11+, NumPy, `rasterio`, `spiceypy`, JPL Horizons API |
-| Backend | FastAPI, Uvicorn, WebSocket |
-| Web | React, TypeScript, Vite, D3 / Three.js |
+| Web + API | **Next.js** (App Router), TypeScript, route handlers serverless, D3 / Three.js |
+| Tiempo real | **AWS API Gateway WebSocket**, Lambda (Node.js), DynamoDB, AWS SAM / CDK |
+| Hosting | Vercel o AWS Amplify *(por decidir)*; datos pesados en S3 + CloudFront |
 | VR | Unity LTS, Meta XR SDK, build para Android/Quest (plan B: WebXR) |
 
 ## 🔭 La ciencia
@@ -108,14 +118,15 @@ Un cuerpo es visible si su elevación supera `horizon_deg[az]`. Sin atmósfera *
 ```
 clps-nasa/
 ├── pipeline/   # Python: LOLA → horizonte y heightmap; efemérides
-├── backend/    # FastAPI: REST + WebSocket
-├── web/        # React + TS: Mission Control
+├── web/        # Next.js: Mission Control + API REST (/api/*)
+├── realtime/   # AWS SAM/CDK: API Gateway WebSocket + Lambda + DynamoDB
+│               #   y servidor WebSocket local de respaldo
 ├── vr/         # Unity: Inspector de sitio (Quest 3S)
 ├── CLAUDE.md   # Contexto completo del proyecto y contrato de datos
 └── README.md
 ```
 
-> 📜 **El contrato de datos** (formatos JSON, endpoints y mensajes de WebSocket) está en [`CLAUDE.md`](CLAUDE.md#7-contrato-de-datos-borrador-v0). **No se cambia sin avisar al equipo.**
+> 📜 **El contrato de datos** (formatos JSON, endpoints y mensajes de WebSocket) está en [`CLAUDE.md`](CLAUDE.md#7-contrato-de-datos-borrador-v01). **No se cambia sin avisar al equipo.**
 
 ## 👥 Equipo
 
@@ -123,7 +134,7 @@ clps-nasa/
 |---|---|
 | **Datos** | Pipeline LOLA → horizonte y heightmap; efemérides precalculadas |
 | **Web** | Mission Control: catálogo, diagrama polar, línea de tiempo, comparador |
-| **Backend + integración** | FastAPI, WebSocket, contrato de datos, despliegue |
+| **API + tiempo real + integración** | Route handlers de Next.js, WebSocket en AWS, servidor de respaldo, contrato de datos, despliegue |
 | **VR: mundo** | Terreno, Sol, Tierra e iluminación en Unity |
 | **VR: interacción** | Panel flotante, marcadores, cliente WebSocket |
 | **Pitch y diseño** | Narrativa, identidad visual, video y página del proyecto |

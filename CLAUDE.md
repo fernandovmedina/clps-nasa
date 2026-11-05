@@ -146,32 +146,57 @@ Ya hay repos públicos de otros equipos con este reto (buscar "CLPS Lunar Missio
 
 ## 5. Arquitectura
 
+**Arquitectura serverless** (decisión del 4 de nov de 2026; sustituye al backend FastAPI del borrador original). Como todo se precalcula, no hace falta un servidor siempre encendido. La web y la API REST viven en **Next.js** (las route handlers corren como funciones serverless) y la sincronización en tiempo real va en **API Gateway WebSocket + Lambda + DynamoDB**.
+
 ```
-                    ┌──────────────────────────┐
-                    │  Pipeline de datos (offline, Python)
-                    │  LOLA DEM → máscara de horizonte por sitio
-                    │  LOLA DEM → heightmap recortado (para VR/3D)
-                    │  SPICE/Horizons → efemérides Sol y Tierra
-                    └────────────┬─────────────┘
-                                 │ archivos JSON / PNG / RAW precalculados
-                    ┌────────────▼─────────────┐
-                    │  Backend FastAPI          │
-                    │  REST: sitios, efemérides, ventanas
-                    │  WebSocket: estado compartido de sesión
-                    └──────┬─────────────┬──────┘
-                           │             │
-              ┌────────────▼───┐   ┌─────▼──────────────┐
-              │ Web (React)    │   │ VR (Unity + Meta XR)│
-              │ Mission Control│   │ Inspector de sitio  │
-              └────────────────┘   └─────────────────────┘
+        ┌─────────────────────────────────────────┐
+        │  Pipeline de datos (offline, Python)    │
+        │  LOLA DEM → máscara de horizonte        │
+        │  LOLA DEM → heightmap recortado (VR/3D) │
+        │  SPICE/Horizons → efemérides Sol/Tierra │
+        └───────────────────┬─────────────────────┘
+                            │ JSON / PNG / RAW precalculados
+                            │ (en el repo o en S3)
+        ┌───────────────────▼─────────────────────┐
+        │  Next.js (Vercel o AWS Amplify)         │
+        │  · UI de Mission Control                │
+        │  · Route handlers /api/* (serverless):  │
+        │    sitios, horizonte, efemérides,       │
+        │    escenario, terreno                   │
+        └───────┬─────────────────────────┬───────┘
+                │ REST                    │ REST
+   ┌────────────▼──────────┐   ┌──────────▼────────────┐
+   │ Navegador             │   │ VR (Unity + Meta XR)  │
+   │ Mission Control       │   │ Inspector de sitio    │
+   └────────────┬──────────┘   └──────────┬────────────┘
+                │        WebSocket        │
+        ┌───────▼─────────────────────────▼───────┐
+        │  AWS API Gateway (WebSocket)            │
+        │  → Lambda (connect / disconnect / msg)  │
+        │  → DynamoDB (conexiones + último estado │
+        │    de cada sala)                        │
+        └─────────────────────────────────────────┘
 ```
 
 ### Stack
-- **Pipeline/Backend:** Python 3.11+, FastAPI, NumPy, `rasterio` (DEMs), `spiceypy` (SPICE) y/o la API de JPL Horizons, Uvicorn.
-- **Web:** React + TypeScript + Vite. 3D con Three.js / React Three Fiber (o CesiumJS si se quiere un globo). Gráficas con Recharts o D3 (el diagrama polar probablemente en D3 o canvas).
-- **VR:** Unity (LTS) + Meta XR SDK (o OpenXR + XR Interaction Toolkit), build para Android/Quest. Opcional: Unity MCP con Claude Code (oficial de Unity o IvanMurzak/Unity-MCP).
-- **Plan B de VR:** WebXR con `@react-three/xr` si Unity se complica (corre en el navegador del Quest).
-- **Sincronización:** WebSocket en FastAPI. Una sola sesión ("mission room") con estado compartido.
+- **Pipeline de datos:** Python 3.11+, NumPy, `rasterio` (DEMs), `spiceypy` (SPICE) y/o la API de JPL Horizons. Corre offline y su salida son archivos.
+- **Web + API REST:** **Next.js** (App Router) + TypeScript. Las route handlers de `/api/*` leen los JSON precalculados y calculan el resumen del escenario. 3D con Three.js / React Three Fiber (o CesiumJS si se quiere un globo). Gráficas con D3 o Recharts (el diagrama polar en D3 o canvas).
+- **Hosting de la web:** Vercel o AWS Amplify Hosting (**por decidir**). El código no depende de cuál se elija.
+- **Tiempo real:** AWS API Gateway WebSocket + una Lambda (Node.js/TypeScript) + DynamoDB, desplegados con AWS SAM o CDK. La cuenta de AWS ya está configurada en el equipo de Oscar.
+- **Datos pesados:** los heightmaps RAW y las texturas pueden ir en `public/` de Next.js o en S3 + CloudFront si pesan demasiado.
+- **VR:** Unity (LTS) + Meta XR SDK (o OpenXR + XR Interaction Toolkit), build para Android/Quest. Opcional: Unity MCP con Claude Code (oficial de Unity o IvanMurzak/Unity-MCP). Consume la misma API REST y el mismo WebSocket que la web.
+- **Plan B de VR:** WebXR con `@react-three/xr` si Unity se complica (corre en el navegador del Quest y puede vivir dentro de la misma app de Next.js).
+
+### Por qué API Gateway WebSocket (y no otra opción)
+- Next.js en Vercel o Amplify **no puede mantener WebSockets abiertos**, así que el tiempo real necesita un servicio aparte.
+- API Gateway habla **WebSocket estándar con JSON plano**, y Unity lo consume con cualquier cliente WebSocket. AppSync Events, Supabase Realtime y servicios similares usan protocolos propios que complican el cliente de Unity.
+- La lógica cabe en una sola Lambda de unas 50 líneas.
+
+### Riesgos de la arquitectura serverless
+- **Depende de internet en el evento.** Mitigación obligatoria: un **servidor WebSocket local de respaldo** (un script pequeño en Node.js con el mismo protocolo) que corra en una laptop y al que se conecten la web y el Quest por la red local. La URL del WebSocket se configura por variable de entorno.
+- **La web tiene que funcionar sin sincronización** (con estado local) por si el WebSocket falla durante el video.
+- **Depurar es más lento** (logs en CloudWatch). Desarrollar contra el servidor local y desplegar a AWS solo para integrar.
+- **Costo:** dentro de la capa gratuita para el volumen de un hackathon. Igual conviene poner una alerta de presupuesto en AWS.
 
 ### Principio clave: precalcular
 Las efemérides y las máscaras de horizonte se calculan **offline** y se sirven como JSON. Nada de cálculos pesados en vivo durante el demo. Las coordenadas personalizadas pueden usar el horizonte esférico (sin terreno) como fallback, con una etiqueta clara.
@@ -233,9 +258,11 @@ Las efemérides y las máscaras de horizonte se calculan **offline** y se sirven
 
 ---
 
-## 7. Contrato de datos (borrador v0)
+## 7. Contrato de datos (borrador v0.1)
 
-Formato compartido entre pipeline, backend, web y VR. **No cambiarlo sin avisar al equipo.** Tiempos en UTC ISO 8601 y ángulos en grados. Azimut desde el norte (0°) en sentido horario hacia el este (90°). En el polo sur "norte" es la dirección hacia el meridiano del sitio; documentar la convención exacta usada por el pipeline.
+*Cambios v0 → v0.1 (4 nov): el WebSocket pasa a API Gateway (la sala va como query string), se agrega el mensaje `hello` y `state` incluye `markers`. Los endpoints REST no cambian.*
+
+Formato compartido entre pipeline, API (Next.js), web y VR. **No cambiarlo sin avisar al equipo.** Los endpoints REST los sirven las route handlers de Next.js con las mismas rutas `/api/...` de abajo. Tiempos en UTC ISO 8601 y ángulos en grados. Azimut desde el norte (0°) en sentido horario hacia el este (90°). En el polo sur "norte" es la dirección hacia el meridiano del sitio; documentar la convención exacta usada por el pipeline.
 
 ### `GET /api/sites`
 ```json
@@ -314,18 +341,27 @@ Formato compartido entre pipeline, backend, web y VR. **No cambiarlo sin avisar 
 ```
 *(1025 = 2ⁿ+1, que es lo que espera el terreno de Unity.)*
 
-### WebSocket `/ws/session/{room}` — estado compartido
+### WebSocket (API Gateway) — estado compartido
+**Conexión:** `wss://<api-id>.execute-api.<region>.amazonaws.com/<stage>?room=<room>`
+- La sala va como query string porque API Gateway WebSocket no tiene rutas por path.
+- La URL se configura por variable de entorno (`NEXT_PUBLIC_WS_URL` en la web y un campo de configuración en Unity), para poder cambiar al servidor local de respaldo (`ws://<ip-laptop>:8787?room=<room>`).
+
 Mensajes en JSON con `type`:
 ```json
-{ "type": "state", "site_id": "malapert-a", "t": "2027-01-10T00:00:00Z", "playing": false, "speed": 1 }
+{ "type": "hello" }
+{ "type": "state", "site_id": "malapert-a", "t": "2027-01-10T00:00:00Z", "playing": false, "speed": 1, "markers": [] }
 { "type": "set_site", "site_id": "mons-mouton" }
 { "type": "set_time", "t": "2027-01-31T00:00:00Z" }
 { "type": "marker_add", "id": "m1", "site_id": "malapert-a", "x_m": 120.5, "y_m": -40.2, "kind": "rock", "note": "roca ~2 m" }
 { "type": "marker_remove", "id": "m1" }
 ```
+- **Nuevo en v0.1: `hello`.** API Gateway no deja mandar mensajes dentro de `$connect`. Por eso cada cliente, al abrir la conexión, manda `{ "type": "hello" }`, y el servidor le responde **solo a él** con el `state` actual de la sala (marcadores incluidos). Así se cubre a quien se conecta tarde.
+- **Nuevo en v0.1: `markers` dentro de `state`.** Lista con los marcadores vigentes de la sala, para que quien se conecta tarde los vea.
 - Coordenadas de marcadores: metros locales relativos al sitio (este = +x, norte = +y).
 - **Sincronizar solo esto:** sitio, tiempo, reproducción y marcadores. Nada más.
-- El servidor reenvía (broadcast) a todos los clientes de la sala y guarda el último estado para quien se conecte tarde.
+- El servidor reenvía (broadcast) cada mensaje a los demás clientes de la sala y guarda el estado en DynamoDB.
+- Límite de API Gateway: 128 KB por mensaje y conexiones de hasta 2 h (10 min sin tráfico las cierra). **Los clientes deben reconectar solos y volver a mandar `hello`.**
+- El servidor local de respaldo implementa exactamente este mismo protocolo.
 
 ---
 
@@ -333,8 +369,9 @@ Mensajes en JSON con `type`:
 
 | Rol | Personas | Responsabilidades |
 |---|---|---|
-| Datos / backend | 1 | Pipeline LOLA → horizonte y heightmap; efemérides; FastAPI y WebSocket |
-| Web | 1–2 | Mission Control: catálogo, comparador, diagrama polar, línea de tiempo, cuentas regresivas, reporte |
+| Datos | 1 | Pipeline LOLA → horizonte y heightmap; efemérides precalculadas |
+| Web | 1 | Mission Control en Next.js: catálogo, comparador, diagrama polar, línea de tiempo, cuentas regresivas |
+| API + tiempo real + integración | 1 | Route handlers `/api/*` de Next.js; API Gateway WebSocket + Lambda + DynamoDB (SAM/CDK); servidor local de respaldo; despliegue; reporte en la web; dueño del contrato de datos |
 | VR (Unity) | 2 | Una persona: terreno, Sol y Tierra, iluminación. Otra: interacción, panel flotante, marcadores y cliente WebSocket |
 | Pitch / video / diseño | 1 | Narrativa, identidad visual, video, página del proyecto; grabar desde el día 1 |
 | Integrador / flotante | (compartido) | Contrato de datos, pruebas en el Quest, apagar incendios |
@@ -351,7 +388,11 @@ Mensajes en JSON con `type`:
 - [ ] Datos: lista de coordenadas oficiales de los sitios
 - [ ] Unity: modo desarrollador del Quest, build "hola mundo", MCP con Claude Code
 - [ ] Unity: importar un heightmap de LOLA de prueba y medir el rendimiento en el visor
-- [ ] Web: decidir el stack y prototipar el diagrama polar
+- [x] Web: decidir el stack → Next.js + serverless (4 nov)
+- [ ] Web: prototipar el diagrama polar
+- [ ] Infra: decidir el hosting de Next.js (Vercel o Amplify)
+- [ ] Infra: prototipo de API Gateway WebSocket + Lambda + DynamoDB y del servidor local de respaldo
+- [ ] Infra: alerta de presupuesto en AWS
 - [ ] Web: wireframes de comparador, línea de tiempo, cuentas regresivas y reporte
 - [ ] Pitch: nombre final, logo, paleta, guion del demo, revisar ganadores de años anteriores
 - [ ] Todos: repo **privado**, entornos instalados, este contrato de datos acordado
@@ -360,7 +401,7 @@ Mensajes en JSON con `type`:
 ### Durante el hackathon (14–15 nov)
 - **Hora 0–1:** confirmar el contrato de datos y los roles; build vacío corriendo en el Quest.
 - **Hora 1–12:** pipeline con datos reales de 3 sitios; web con datos de prueba del contrato; VR con terreno real.
-- **Hora 12–24:** integración (web + backend + VR + WebSocket).
+- **Hora 12–24:** integración (web + API + VR + WebSocket). Desarrollar contra el servidor WebSocket local y desplegar a AWS para integrar.
 - **Hora 24–36:** comparador, escenario de retraso, reporte y pulido.
 - **Hora 36–44:** video, página del proyecto, ensayo del demo.
 - **Hora 44–48:** buffer y entrega.
@@ -376,6 +417,8 @@ Mensajes en JSON con `type`:
 - Responde y comenta en **español**; el código (nombres de variables y funciones) en **inglés**.
 - Respeta el **contrato de datos** de la sección 7. Si un cambio lo requiere, propónlo primero y explica el impacto en web y VR.
 - **Precalcula** todo lo pesado. Nada de llamadas a Horizons en vivo durante el demo; cachea en JSON.
+- **Serverless:** nada de servidores con estado en memoria dentro de Next.js. El estado compartido vive en DynamoDB (o en el servidor local de respaldo). Las URLs de la API y del WebSocket siempre van por variables de entorno.
+- No crear ni borrar recursos de AWS sin confirmarlo con el equipo.
 - Marca con claridad cualquier dato aproximado o simulado (por ejemplo, el campo `"source": "approx"`). Nunca presentes datos inventados como reales de NASA.
 - Valida los cálculos contra una fuente independiente (Moon Trek, Quickmap o Horizons) antes de confiar en ellos.
 - Prioridad: **web funcional > datos correctos > VR > extras.** La web tiene que funcionar sola en el video.
