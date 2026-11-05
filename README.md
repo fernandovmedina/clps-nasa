@@ -63,9 +63,9 @@ Las herramientas que existen (Quickmap, Moon Trek, JPL Horizons) son potentes, p
         └───────────────────┬─────────────────────┘
                             │ JSON / RAW precalculados
         ┌───────────────────▼─────────────────────┐
-        │  ▲ Next.js  (Vercel o AWS Amplify)      │
-        │  UI de Mission Control                  │
-        │  /api/* → funciones serverless          │
+        │  ☁️ CloudFront (un solo dominio)        │
+        │  ├── /*     → S3: Next.js estático      │
+        │  └── /api/* → Lambda: API REST          │
         └───────┬─────────────────────────┬───────┘
                 │ REST                    │ REST
    ┌────────────▼──────────┐   ┌──────────▼────────────┐
@@ -88,9 +88,11 @@ Las herramientas que existen (Quickmap, Moon Trek, JPL Horizons) son potentes, p
 | Capa | Tecnologías |
 |---|---|
 | Datos | Python 3.11+, NumPy, `rasterio`, `spiceypy`, JPL Horizons API |
-| Web + API | **Next.js** (App Router), TypeScript, route handlers serverless, D3 / Three.js |
-| Tiempo real | **AWS API Gateway WebSocket**, Lambda (Node.js), DynamoDB, AWS SAM / CDK |
-| Hosting | Vercel o AWS Amplify *(por decidir)*; datos pesados en S3 + CloudFront |
+| Web | **Next.js** (App Router, export estático), TypeScript, D3 / Three.js |
+| API REST | **AWS Lambda** (Node.js) detrás de CloudFront en `/api/*` |
+| Tiempo real | **AWS API Gateway WebSocket**, Lambda (Node.js), DynamoDB |
+| Hosting | **S3 + CloudFront** (front, heightmaps y texturas) |
+| Infra | AWS SAM / CDK |
 | VR | Unity LTS, Meta XR SDK, build para Android/Quest (plan B: WebXR) |
 
 ## 🔭 La ciencia
@@ -118,9 +120,10 @@ Un cuerpo es visible si su elevación supera `horizon_deg[az]`. Sin atmósfera *
 ```
 clps-nasa/
 ├── pipeline/   # Python: LOLA → horizonte y heightmap; efemérides
-├── web/        # Next.js: Mission Control + API REST (/api/*)
-├── realtime/   # AWS SAM/CDK: API Gateway WebSocket + Lambda + DynamoDB
-│               #   y servidor WebSocket local de respaldo
+├── web/        # Next.js (export estático): Mission Control
+├── api/        # Lambda de la API REST (/api/*)
+├── realtime/   # Lambda del WebSocket + servidor local de respaldo
+├── infra/      # AWS SAM/CDK: S3, CloudFront, Lambdas, API Gateway, DynamoDB
 ├── vr/         # Unity: Inspector de sitio (Quest 3S)
 ├── CLAUDE.md   # Contexto completo del proyecto y contrato de datos
 └── README.md
@@ -134,7 +137,7 @@ clps-nasa/
 |---|---|
 | **Datos** | Pipeline LOLA → horizonte y heightmap; efemérides precalculadas |
 | **Web** | Mission Control: catálogo, diagrama polar, línea de tiempo, comparador |
-| **API + tiempo real + integración** | Route handlers de Next.js, WebSocket en AWS, servidor de respaldo, contrato de datos, despliegue |
+| **API + tiempo real + integración** | Lambda de la API, S3 + CloudFront, WebSocket en AWS, servidor de respaldo, contrato de datos, despliegue |
 | **VR: mundo** | Terreno, Sol, Tierra e iluminación en Unity |
 | **VR: interacción** | Panel flotante, marcadores, cliente WebSocket |
 | **Pitch y diseño** | Narrativa, identidad visual, video y página del proyecto |

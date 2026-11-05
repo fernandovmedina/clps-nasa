@@ -146,7 +146,10 @@ Ya hay repos públicos de otros equipos con este reto (buscar "CLPS Lunar Missio
 
 ## 5. Arquitectura
 
-**Arquitectura serverless** (decisión del 4 de nov de 2026; sustituye al backend FastAPI del borrador original). Como todo se precalcula, no hace falta un servidor siempre encendido. La web y la API REST viven en **Next.js** (las route handlers corren como funciones serverless) y la sincronización en tiempo real va en **API Gateway WebSocket + Lambda + DynamoDB**.
+**Arquitectura serverless en AWS** (decisión del 4 de nov de 2026; sustituye al backend FastAPI del borrador original). Como todo se precalcula, no hace falta un servidor siempre encendido.
+- **Front:** **Next.js como sitio estático** (`output: 'export'`) en **S3 + CloudFront**.
+- **API REST:** **una Lambda** detrás del mismo CloudFront, en la ruta `/api/*`.
+- **Tiempo real:** **API Gateway WebSocket + Lambda + DynamoDB**.
 
 ```
         ┌─────────────────────────────────────────┐
@@ -155,14 +158,14 @@ Ya hay repos públicos de otros equipos con este reto (buscar "CLPS Lunar Missio
         │  LOLA DEM → heightmap recortado (VR/3D) │
         │  SPICE/Horizons → efemérides Sol/Tierra │
         └───────────────────┬─────────────────────┘
-                            │ JSON / PNG / RAW precalculados
-                            │ (en el repo o en S3)
+                            │ JSON / PNG / RAW precalculados (S3)
         ┌───────────────────▼─────────────────────┐
-        │  Next.js (Vercel o AWS Amplify)         │
-        │  · UI de Mission Control                │
-        │  · Route handlers /api/* (serverless):  │
-        │    sitios, horizonte, efemérides,       │
-        │    escenario, terreno                   │
+        │  CloudFront (un solo dominio)           │
+        │  ├── /*        → S3: Next.js estático   │
+        │  ├── /static/* → S3: heightmaps/texturas│
+        │  └── /api/*    → Lambda (Function URL)  │
+        │                  lee los JSON y calcula │
+        │                  el resumen del escenario│
         └───────┬─────────────────────────┬───────┘
                 │ REST                    │ REST
    ┌────────────▼──────────┐   ┌──────────▼────────────┐
@@ -180,17 +183,26 @@ Ya hay repos públicos de otros equipos con este reto (buscar "CLPS Lunar Missio
 
 ### Stack
 - **Pipeline de datos:** Python 3.11+, NumPy, `rasterio` (DEMs), `spiceypy` (SPICE) y/o la API de JPL Horizons. Corre offline y su salida son archivos.
-- **Web + API REST:** **Next.js** (App Router) + TypeScript. Las route handlers de `/api/*` leen los JSON precalculados y calculan el resumen del escenario. 3D con Three.js / React Three Fiber (o CesiumJS si se quiere un globo). Gráficas con D3 o Recharts (el diagrama polar en D3 o canvas).
-- **Hosting de la web:** Vercel o AWS Amplify Hosting (**por decidir**). El código no depende de cuál se elija.
-- **Tiempo real:** AWS API Gateway WebSocket + una Lambda (Node.js/TypeScript) + DynamoDB, desplegados con AWS SAM o CDK. La cuenta de AWS ya está configurada en el equipo de Oscar.
-- **Datos pesados:** los heightmaps RAW y las texturas pueden ir en `public/` de Next.js o en S3 + CloudFront si pesan demasiado.
+- **Web:** **Next.js** (App Router) + TypeScript, compilado como **export estático** (`output: 'export'`). 3D con Three.js / React Three Fiber (o CesiumJS si se quiere un globo). Gráficas con D3 o Recharts (el diagrama polar en D3 o canvas).
+- **API REST:** **una Lambda** (Node.js/TypeScript) con Function URL, detrás de CloudFront en `/api/*`. Lee los JSON precalculados (empaquetados con la Lambda o desde S3) y calcula `/api/scenario`. Mismo dominio que la web, así que no hay CORS en el navegador.
+- **Hosting:** **S3 (privado) + CloudFront** con Origin Access Control. El deploy del front es `next build` y luego `aws s3 sync out/ s3://<bucket>` más una invalidación de CloudFront.
+- **Tiempo real:** AWS API Gateway WebSocket + una Lambda (Node.js/TypeScript) + DynamoDB.
+- **Infraestructura como código:** AWS SAM o CDK para todo (bucket, CloudFront, Lambda de la API y stack del WebSocket). La cuenta de AWS ya está configurada en el equipo de Oscar.
+- **Datos pesados:** los heightmaps RAW y las texturas van en S3 y se sirven por CloudFront en `/static/*`.
 - **VR:** Unity (LTS) + Meta XR SDK (o OpenXR + XR Interaction Toolkit), build para Android/Quest. Opcional: Unity MCP con Claude Code (oficial de Unity o IvanMurzak/Unity-MCP). Consume la misma API REST y el mismo WebSocket que la web.
-- **Plan B de VR:** WebXR con `@react-three/xr` si Unity se complica (corre en el navegador del Quest y puede vivir dentro de la misma app de Next.js).
+- **Plan B de VR:** WebXR con `@react-three/xr` si Unity se complica (corre en el navegador del Quest y puede vivir dentro del mismo sitio de Next.js).
 
 ### Por qué API Gateway WebSocket (y no otra opción)
-- Next.js en Vercel o Amplify **no puede mantener WebSockets abiertos**, así que el tiempo real necesita un servicio aparte.
+- Un sitio estático en S3 y una Lambda de la API **no pueden mantener WebSockets abiertos**, así que el tiempo real necesita un servicio aparte.
 - API Gateway habla **WebSocket estándar con JSON plano**, y Unity lo consume con cualquier cliente WebSocket. AppSync Events, Supabase Realtime y servicios similares usan protocolos propios que complican el cliente de Unity.
 - La lógica cabe en una sola Lambda de unas 50 líneas.
+
+### Limitaciones del export estático de Next.js
+- **Sin route handlers dinámicos, server actions, middleware ni SSR.** Todo lo dinámico va a la Lambda de `/api/*` o se hace en el cliente.
+- **Rutas dinámicas** (por ejemplo `/sites/[id]`) necesitan `generateStaticParams`. Si no, se resuelven en el cliente con query strings.
+- **`next/image`** necesita `images: { unoptimized: true }`.
+- **URLs limpias:** usar `trailingSlash: true` o una CloudFront Function que reescriba `/ruta` → `/ruta/index.html`.
+- **Desarrollo local:** `next dev` para la UI más la Lambda de la API corriendo en local (`sam local start-api` o un script de Node). La URL base de la API va por `NEXT_PUBLIC_API_URL` (vacía en producción porque es el mismo dominio).
 
 ### Riesgos de la arquitectura serverless
 - **Depende de internet en el evento.** Mitigación obligatoria: un **servidor WebSocket local de respaldo** (un script pequeño en Node.js con el mismo protocolo) que corra en una laptop y al que se conecten la web y el Quest por la red local. La URL del WebSocket se configura por variable de entorno.
@@ -262,7 +274,7 @@ Las efemérides y las máscaras de horizonte se calculan **offline** y se sirven
 
 *Cambios v0 → v0.1 (4 nov): el WebSocket pasa a API Gateway (la sala va como query string), se agrega el mensaje `hello` y `state` incluye `markers`. Los endpoints REST no cambian.*
 
-Formato compartido entre pipeline, API (Next.js), web y VR. **No cambiarlo sin avisar al equipo.** Los endpoints REST los sirven las route handlers de Next.js con las mismas rutas `/api/...` de abajo. Tiempos en UTC ISO 8601 y ángulos en grados. Azimut desde el norte (0°) en sentido horario hacia el este (90°). En el polo sur "norte" es la dirección hacia el meridiano del sitio; documentar la convención exacta usada por el pipeline.
+Formato compartido entre pipeline, API (Lambda), web y VR. **No cambiarlo sin avisar al equipo.** Los endpoints REST los sirve la Lambda de la API detrás de CloudFront, con las mismas rutas `/api/...` de abajo. Tiempos en UTC ISO 8601 y ángulos en grados. Azimut desde el norte (0°) en sentido horario hacia el este (90°). En el polo sur "norte" es la dirección hacia el meridiano del sitio; documentar la convención exacta usada por el pipeline.
 
 ### `GET /api/sites`
 ```json
@@ -371,7 +383,7 @@ Mensajes en JSON con `type`:
 |---|---|---|
 | Datos | 1 | Pipeline LOLA → horizonte y heightmap; efemérides precalculadas |
 | Web | 1 | Mission Control en Next.js: catálogo, comparador, diagrama polar, línea de tiempo, cuentas regresivas |
-| API + tiempo real + integración | 1 | Route handlers `/api/*` de Next.js; API Gateway WebSocket + Lambda + DynamoDB (SAM/CDK); servidor local de respaldo; despliegue; reporte en la web; dueño del contrato de datos |
+| API + tiempo real + integración | 1 | Lambda de la API `/api/*`; S3 + CloudFront del front; API Gateway WebSocket + Lambda + DynamoDB (SAM/CDK); servidor local de respaldo; despliegue; reporte en la web; dueño del contrato de datos |
 | VR (Unity) | 2 | Una persona: terreno, Sol y Tierra, iluminación. Otra: interacción, panel flotante, marcadores y cliente WebSocket |
 | Pitch / video / diseño | 1 | Narrativa, identidad visual, video, página del proyecto; grabar desde el día 1 |
 | Integrador / flotante | (compartido) | Contrato de datos, pruebas en el Quest, apagar incendios |
@@ -390,7 +402,8 @@ Mensajes en JSON con `type`:
 - [ ] Unity: importar un heightmap de LOLA de prueba y medir el rendimiento en el visor
 - [x] Web: decidir el stack → Next.js + serverless (4 nov)
 - [ ] Web: prototipar el diagrama polar
-- [ ] Infra: decidir el hosting de Next.js (Vercel o Amplify)
+- [x] Infra: hosting del front → Next.js estático en S3 + CloudFront; `/api/*` en una Lambda detrás del mismo CloudFront (4 nov)
+- [ ] Infra: plantilla SAM/CDK de S3 + CloudFront + Lambda de la API y script de deploy del front
 - [ ] Infra: prototipo de API Gateway WebSocket + Lambda + DynamoDB y del servidor local de respaldo
 - [ ] Infra: alerta de presupuesto en AWS
 - [ ] Web: wireframes de comparador, línea de tiempo, cuentas regresivas y reporte
@@ -417,7 +430,7 @@ Mensajes en JSON con `type`:
 - Responde y comenta en **español**; el código (nombres de variables y funciones) en **inglés**.
 - Respeta el **contrato de datos** de la sección 7. Si un cambio lo requiere, propónlo primero y explica el impacto en web y VR.
 - **Precalcula** todo lo pesado. Nada de llamadas a Horizons en vivo durante el demo; cachea en JSON.
-- **Serverless:** nada de servidores con estado en memoria dentro de Next.js. El estado compartido vive en DynamoDB (o en el servidor local de respaldo). Las URLs de la API y del WebSocket siempre van por variables de entorno.
+- **Serverless:** el front es un export estático de Next.js; no uses SSR, server actions, middleware ni route handlers dinámicos. Lo dinámico va en la Lambda de `/api/*`. Nada de estado en memoria en las Lambdas. El estado compartido vive en DynamoDB (o en el servidor local de respaldo). Las URLs de la API y del WebSocket siempre van por variables de entorno.
 - No crear ni borrar recursos de AWS sin confirmarlo con el equipo.
 - Marca con claridad cualquier dato aproximado o simulado (por ejemplo, el campo `"source": "approx"`). Nunca presentes datos inventados como reales de NASA.
 - Valida los cálculos contra una fuente independiente (Moon Trek, Quickmap o Horizons) antes de confiar en ellos.
