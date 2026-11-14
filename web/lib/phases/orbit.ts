@@ -6,6 +6,7 @@ import { createMoon } from '../engine/moon';
 import { earthTexture, glowTexture } from '../engine/textures';
 import { DEG, damp, latLonToVec3, smooth } from '../engine/util';
 import { globalDirAt } from '../mission/global-track';
+import type { RoomEvent } from '../sync/room-client';
 import { evaluateSites, fmtHours, scoreColor, type SiteMetrics } from '../mission/scoring';
 import { devFallbackMission, type MissionData } from '../mission/sites';
 import { clearSurface } from './surface-world';
@@ -46,6 +47,7 @@ export class OrbitPhase implements Phase {
   private sunSprite!: THREE.Sprite;
   private earthshineLight!: THREE.DirectionalLight;
   private earthMesh!: THREE.Mesh;
+  private lastRoomStatus: string;
 
   constructor(private app: LunarApp) {
     clearSurface();
@@ -59,6 +61,7 @@ export class OrbitPhase implements Phase {
     this.ranking = evaluateSites(data.sites, data.landingDate);
     this.baseRanking = this.ranking;
     app.ranking = this.ranking;
+    this.lastRoomStatus = app.room.status;
 
     const sc = this.scene;
     sc.background = new THREE.Color(0x000003);
@@ -131,10 +134,42 @@ export class OrbitPhase implements Phase {
     return mk;
   }
 
-  private select(m: SiteMetrics) {
+  private select(m: SiteMetrics, opts: { broadcast?: boolean } = {}) {
     if (m.rank <= this.ranking.length - this.revealed) return; // not evaluated yet
     this.app.selected = m;
     this.list.invalidate(); this.detail.invalidate();
+    if (opts.broadcast !== false) this.app.room.send({ type: 'set_site', site_id: m.site.id });
+  }
+
+  /** set_site/state from another tab/headset in the same room - never re-broadcasts. */
+  private applyRemoteSite(siteId: string) {
+    const m = this.ranking.find((r) => r.site.id === siteId);
+    if (m) this.select(m, { broadcast: false });
+  }
+
+  /** set_time/state from another tab/headset in the same room - never re-broadcasts. */
+  private applyRemoteTime(iso: string) {
+    const ms = Date.parse(iso);
+    if (!Number.isFinite(ms)) return;
+    const days = Math.round((ms - this.baseDate.getTime()) / 86_400_000);
+    this.applyDelay(days, { broadcast: false });
+  }
+
+  private handleRoomEvent(msg: RoomEvent) {
+    switch (msg.type) {
+      case 'state':
+        this.applyRemoteTime(msg.t);
+        this.applyRemoteSite(msg.site_id);
+        return;
+      case 'set_site':
+        this.applyRemoteSite(msg.site_id);
+        return;
+      case 'set_time':
+        this.applyRemoteTime(msg.t);
+        return;
+      default:
+        return; // hello/ping never relayed; marker_* has no UI yet
+    }
   }
 
   /**
@@ -143,10 +178,10 @@ export class OrbitPhase implements Phase {
    * first, and surfaces a visible warning (not a silent revert) if the
    * requested date falls outside the precomputed ephemeris range.
    */
-  private applyDelay(days: number) {
+  private applyDelay(days: number, opts: { broadcast?: boolean } = {}) {
     if (days === this.delayDays) return;
-    if (days > this.maxDelayDays) {
-      this.rangeWarning = `+${days} d fuera de rango · máximo +${this.maxDelayDays} d con los datos precalculados`;
+    if (days > this.maxDelayDays || days < 0) {
+      this.rangeWarning = `${days >= 0 ? '+' : ''}${days} d fuera de rango · 0 a +${this.maxDelayDays} d con los datos precalculados`;
       this.list.invalidate();
       return;
     }
@@ -181,6 +216,7 @@ export class OrbitPhase implements Phase {
     this.earthMesh.position.copy(earthDir).multiplyScalar(EARTH_DIST);
 
     this.list.invalidate(); this.detail.invalidate();
+    if (opts.broadcast !== false) this.app.room.send({ type: 'set_time', t: date.toISOString() });
   }
 
   enter() {
@@ -190,9 +226,13 @@ export class OrbitPhase implements Phase {
     this.detail.place(0.86, 1.36, -1.5);
     if (!this.app.flags.has('orbit-done')) this.app.selected = null;
     this.placeViewer(this.t, true);
+    this.app.room.setListener((msg) => this.handleRoomEvent(msg));
   }
 
-  exit() { this.list.dispose(); this.detail.dispose(); }
+  exit() {
+    this.app.room.setListener(null);
+    this.list.dispose(); this.detail.dispose();
+  }
 
   private orbitAngle(t: number) {
     const k = smooth(0, LAP, t);
@@ -215,6 +255,10 @@ export class OrbitPhase implements Phase {
     this.t += dt;
     const t = this.t;
     this.placeViewer(t);
+    if (this.app.room.status !== this.lastRoomStatus) {
+      this.lastRoomStatus = this.app.room.status;
+      this.list.invalidate();
+    }
     const camPos = new THREE.Vector3().setFromMatrixPosition(this.app.camera.matrixWorld);
     this.stars.position.copy(camPos);
 
@@ -249,6 +293,7 @@ export class OrbitPhase implements Phase {
   private drawList(p: Panel, g: CanvasRenderingContext2D) {
     p.frame(g);
     g.font = `700 40px ${UI.font}`; g.fillStyle = UI.text; g.fillText('Sitios candidatos · Polo Sur', 48, 86);
+    this.drawRoomBadge(g);
     g.font = `500 26px ${UI.mono}`; g.fillStyle = this.delayDays ? '#ffb46b' : UI.dim;
     const delayTag = this.delayDays ? `  ·  retraso +${this.delayDays} d` : '';
     g.fillText(`Alunizaje ${this.date.toISOString().slice(0, 16).replace('T', ' ')} UTC${delayTag}`, 48, 128);
@@ -288,6 +333,17 @@ export class OrbitPhase implements Phase {
       roundRect(g, 48, 1240, 928, 10, 5); g.fillStyle = 'rgba(255,255,255,.15)'; g.fill();
       if (w > 1) { roundRect(g, 48, 1240, w, 10, 5); g.fillStyle = UI.accent; g.fill(); }
     }
+  }
+
+  /** Small "connected to the shared room" badge, top-right of the list panel. */
+  private drawRoomBadge(g: CanvasRenderingContext2D) {
+    const status = this.app.room.status;
+    const color = status === 'open' ? '#7be38a' : status === 'connecting' ? '#ffb46b' : 'rgba(232,238,247,.35)';
+    const label = status === 'open' ? `sincronizado · sala "${this.app.room.room}"` : status === 'connecting' ? 'conectando…' : 'sin conexión (local)';
+    g.font = `600 20px ${UI.mono}`; g.textAlign = 'right';
+    g.fillStyle = color; g.fillText('●', 968, 82);
+    g.fillStyle = UI.dim; g.fillText(label, 950, 82);
+    g.textAlign = 'left';
   }
 
   /** Row of delay buttons: "the mission got delayed N days, what breaks?" */

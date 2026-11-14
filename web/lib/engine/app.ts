@@ -4,6 +4,7 @@ import { damp, lookQuat } from './util';
 import { loadMoonTextures, type MoonTextures } from './moon';
 import type { MissionData } from '../mission/sites';
 import type { SiteMetrics } from '../mission/scoring';
+import { RoomClient, type RoomStatus } from '../sync/room-client';
 
 export interface Phase {
   readonly name: PhaseName;
@@ -24,6 +25,9 @@ export interface AppOptions {
   startPhase?: PhaseName;
   /** Dev only: speeds up the simulation clock (?speed=4). */
   timeScale?: number;
+  /** Shared room for WebSocket sync (CLAUDE.md sec. 7); same room = synced. */
+  room?: string;
+  onRoomStatus?: (s: RoomStatus) => void;
 }
 
 type PhaseFactory = (app: LunarApp) => Phase;
@@ -37,6 +41,7 @@ export class LunarApp {
   readonly camera: THREE.PerspectiveCamera;
   readonly rig = new THREE.Group();
   readonly input: Input;
+  readonly room: RoomClient;
   readonly eyeHeight = 1.6;
   phase: Phase | null = null;
   moonTex!: MoonTextures;
@@ -85,6 +90,7 @@ export class LunarApp {
     this.camera.add(this.fadeMesh);
 
     this.input = new Input(this);
+    this.room = new RoomClient(opts.room ?? 'touchdown', opts.onRoomStatus);
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
     this.resize();
@@ -222,6 +228,7 @@ export class LunarApp {
     this.renderer.setAnimationLoop(null);
     this.phase?.exit();
     this.input.dispose();
+    this.room.close();
     this.ro.disconnect();
     this.renderer.xr.getSession()?.end().catch(() => {});
     this.renderer.dispose();

@@ -37,6 +37,8 @@ export default function LunarExperience() {
       onPhase: setPhase,
       startPhase: q && PHASES.some((p) => p.id === q) ? q : undefined,
       timeScale: Number(params.get('speed')) || 1,
+      // Same ?room= on two tabs/headsets = synced site + landing date (see orbit.ts).
+      room: params.get('room') ?? undefined,
     });
     app.register('launch', (a) => new LaunchPhase(a));
     app.register('orbit', (a) => new OrbitPhase(a));
