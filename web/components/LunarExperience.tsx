@@ -48,7 +48,7 @@ export default function LunarExperience() {
     app.register('landing', (a) => new LandingPhase(a));
     app.register('transmit', (a) => new TransmitPhase(a));
     // panels are drawn once on canvas: wait for Inter (max 1.5 s) so they never use the fallback font
-    Promise.race([document.fonts.load('600 16px "Inter Variable"'), new Promise((r) => setTimeout(r, 1500))])
+    Promise.race([document.fonts?.load('600 16px "Inter Variable"'), new Promise((r) => setTimeout(r, 1500))])
       .catch(() => {})
       .then(() => (cancelled ? undefined : app.start()))
       .catch((e) => setError(String(e)));

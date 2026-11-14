@@ -94,7 +94,7 @@ export class OrbitPhase implements Phase {
     // orbit track
     const pts: THREE.Vector3[] = [];
     for (let i = 0; i <= 256; i++) { const a = (i / 256) * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a), Math.sin(a), 0).multiplyScalar(R + ORBIT_ALT)); }
-    sc.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xff9a3c, transparent: true, opacity: 0.25 })));
+    sc.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xd97757, transparent: true, opacity: 0.25 })));
 
     // site markers
     for (const m of this.ranking) this.markers.push(this.makeMarker(m));
