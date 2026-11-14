@@ -28,6 +28,7 @@ export interface AppOptions {
   /** Shared room for WebSocket sync (CLAUDE.md sec. 7); same room = synced. */
   room?: string;
   onRoomStatus?: (s: RoomStatus) => void;
+  onRoomChange?: (room: string) => void;
 }
 
 type PhaseFactory = (app: LunarApp) => Phase;
@@ -91,7 +92,7 @@ export class LunarApp {
     this.camera.add(this.fadeMesh);
 
     this.input = new Input(this);
-    this.room = new RoomClient(opts.room ?? 'touchdown', opts.onRoomStatus);
+    this.room = new RoomClient(opts.room ?? 'touchdown', opts.onRoomStatus, opts.onRoomChange);
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
     this.resize();

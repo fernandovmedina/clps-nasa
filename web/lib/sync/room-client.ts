@@ -31,18 +31,20 @@ function defaultWsUrl(room: string): string {
 }
 
 export class RoomClient {
-  readonly room: string;
+  room: string;
   private ws: WebSocket | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
   private listener: Listener | null = null;
   private onStatus: ((s: RoomStatus) => void) | null = null;
+  private onRoomChange: ((room: string) => void) | null = null;
   status: RoomStatus = 'connecting';
 
-  constructor(room: string, onStatus?: (s: RoomStatus) => void) {
+  constructor(room: string, onStatus?: (s: RoomStatus) => void, onRoomChange?: (room: string) => void) {
     this.room = ROOM_NAME_RE.test(room) ? room : 'touchdown';
     this.onStatus = onStatus ?? null;
+    this.onRoomChange = onRoomChange ?? null;
     this.connect();
   }
 
@@ -53,6 +55,23 @@ export class RoomClient {
 
   send(msg: ClientMessage) {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+  }
+
+  /** Leaves the current room and joins another one, reconnecting right away (no 2s backoff). */
+  setRoom(newRoom: string) {
+    if (!ROOM_NAME_RE.test(newRoom) || newRoom === this.room) return;
+    this.room = newRoom;
+    this.onRoomChange?.(newRoom);
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
+    if (this.ws) {
+      // Detach handlers first so the old socket's onclose can't schedule a
+      // stray reconnect-to-old-room once we've already moved on below.
+      this.ws.onopen = null; this.ws.onmessage = null; this.ws.onclose = null; this.ws.onerror = null;
+      this.ws.close();
+      this.ws = null;
+    }
+    this.connect();
   }
 
   close() {
