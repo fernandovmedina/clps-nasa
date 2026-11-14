@@ -1,0 +1,70 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Deploy to Cloudflare Workers
+    needs: verify
+    if: github.ref == 'refs/heads/main' && vars.CLOUDFLARE_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        if: hashFiles('web/package.json') != ''
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Set up Node.js
+        if: hashFiles('web/package.json') != ''
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        if: hashFiles('web/package.json') != ''
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web
+        if: hashFiles('web/package.json') != ''
+        run: pnpm --filter @touchdown/web build
+
+      - name: Deploy worker
+        if: hashFiles('web/package.json') != ''
+        run: pnpm --filter @touchdown/worker run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: "false"
+
+      - name: Smoke test
+        if: hashFiles('web/package.json') != ''
+        env:
+          DEPLOY_URL: ${{ vars.DEPLOY_URL }}
+        run: |
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "::notice::DEPLOY_URL is not set, skipping smoke test"
+            exit 0
+          fi
+          for path in /api/health /api/sites; do
+            curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
+              --output /dev/null --write-out "%{http_code} ${path}\n" "${DEPLOY_URL%/}${path}"
+          done
