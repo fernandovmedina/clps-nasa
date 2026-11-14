@@ -139,32 +139,34 @@ test('Chang\'e 4 never sees the Earth and is not viable', async ({ page }) => {
 
 test('theme and language toggles change the interface and persist after a reload', async ({ page }) => {
   await openApp(page)
-  const background = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor)
-  const dark = await background()
-  await page.getByRole('button', { name: 'Cambiar a tema claro' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
-  expect(await background()).not.toBe(dark)
+  const background = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+  const light = await background()
+  expect(light).toBe('rgb(250, 249, 245)')
+  await page.getByRole('button', { name: 'Cambiar a tema oscuro' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  expect(await background()).not.toBe(light)
   await page.getByRole('button', { name: 'EN', exact: true }).click()
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
   await expect(page.getByText('Mission delay')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Switch to dark theme' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Switch to light theme' })).toBeVisible()
 
   await page.reload()
   await expect(page.locator('main')).toHaveAttribute('aria-busy', 'false')
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
   await expect(page.getByText('Mission delay')).toBeVisible()
-  expect(await page.evaluate(() => localStorage.getItem('touchdown.theme'))).toBe('light')
+  expect(await page.evaluate(() => localStorage.getItem('touchdown.theme'))).toBe('dark')
   expect(await page.evaluate(() => localStorage.getItem('touchdown.lang'))).toBe('en')
 })
 
-test('axe finds no serious or critical violations in the main view in dark and light themes', async ({ page }) => {
+test('axe finds no serious or critical violations in the main view in light and dark themes', async ({ page }) => {
   await openApp(page)
   await waitForLoaded(page)
-  for (const theme of ['dark', 'light'] as const) {
-    if (theme === 'light') {
-      await page.getByRole('button', { name: 'Cambiar a tema claro' }).click()
-      await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  for (const theme of ['light', 'dark'] as const) {
+    if (theme === 'dark') {
+      await page.getByRole('button', { name: 'Cambiar a tema oscuro' }).click()
+      await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
     }
     const result = await new AxeBuilder({ page }).analyze()
     const blocking = result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')
@@ -360,7 +362,8 @@ async function capture(browser: Browser, file: string, options: { width: number;
 
 test.afterAll(async ({ browser }) => {
   mkdirSync(SHOTS_DIR, { recursive: true })
-  await capture(browser, 'desktop-dark.png', { width: 1440, height: 900, theme: 'dark' })
   await capture(browser, 'desktop-light.png', { width: 1440, height: 900, theme: 'light' })
+  await capture(browser, 'desktop-dark.png', { width: 1440, height: 900, theme: 'dark' })
+  await capture(browser, 'mobile-light.png', { width: 390, height: 844, theme: 'light', mobile: true })
   await capture(browser, 'mobile-dark.png', { width: 390, height: 844, theme: 'dark', mobile: true })
 })
