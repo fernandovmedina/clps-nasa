@@ -36,6 +36,8 @@ export interface MissionData {
   sites: SiteInput[];
   /** Moon-fixed sub-solar/sub-earth series, for the orbit phase (see global-track.ts). */
   global: GlobalFile;
+  /** Valid range for landingDate - every site's track covers exactly this window. */
+  ephemerisRange: { start: Date; end: Date };
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -90,8 +92,12 @@ export async function loadMissionData(onProgress: (p: number, msg: string) => vo
   }
 
   onProgress(1, 'Datos listos');
-  // Landing date must fall inside the precomputed ephemeris range (see sites.json.ephemeris_range).
-  return { landingDate: new Date(Date.UTC(2027, 0, 10, 0, 0)), sites, global };
+  const ephemerisRange = {
+    start: new Date(catalog.ephemeris_range.start),
+    end: new Date(catalog.ephemeris_range.end),
+  };
+  // Landing date must fall inside ephemerisRange (checked by callers, e.g. orbit.ts's delay button).
+  return { landingDate: new Date(Date.UTC(2027, 0, 10, 0, 0)), sites, global, ephemerisRange };
 }
 
 export type { Site };
@@ -126,5 +132,6 @@ export function devFallbackMission(): MissionData {
     track, horizon: sphericalHorizon('dev-fallback'), hasTerrain: false,
     horizonSource: 'spherical', ephemerisSource: 'DEV_FALLBACK_NOT_REAL',
   };
-  return { landingDate: new Date(startMs + 30 * 86_400_000), sites: [site], global };
+  const ephemerisRange = { start: new Date(startMs), end: new Date(startMs + (count - 1) * stepMs) };
+  return { landingDate: new Date(startMs + 30 * 86_400_000), sites: [site], global, ephemerisRange };
 }

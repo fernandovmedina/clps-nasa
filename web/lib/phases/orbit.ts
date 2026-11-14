@@ -39,6 +39,8 @@ export class OrbitPhase implements Phase {
   private date: Date;
   private baseDate: Date;
   private delayDays = 0;
+  private maxDelayDays: number;
+  private rangeWarning: string | null = null;
   private data: MissionData;
   private sunLight!: THREE.DirectionalLight;
   private sunSprite!: THREE.Sprite;
@@ -53,6 +55,7 @@ export class OrbitPhase implements Phase {
     this.data = data;
     this.baseDate = data.landingDate;
     this.date = data.landingDate;
+    this.maxDelayDays = Math.floor((data.ephemerisRange.end.getTime() - this.baseDate.getTime()) / 86_400_000);
     this.ranking = evaluateSites(data.sites, data.landingDate);
     this.baseRanking = this.ranking;
     app.ranking = this.ranking;
@@ -134,22 +137,34 @@ export class OrbitPhase implements Phase {
     this.list.invalidate(); this.detail.invalidate();
   }
 
-  /** The delay button: recompute the whole ranking at landing date + N days, in place. */
+  /**
+   * The delay button: recompute the whole ranking at landing date + N days, in
+   * place. Never mutates state on failure - computes everything speculatively
+   * first, and surfaces a visible warning (not a silent revert) if the
+   * requested date falls outside the precomputed ephemeris range.
+   */
   private applyDelay(days: number) {
     if (days === this.delayDays) return;
-    this.delayDays = days;
-    this.date = new Date(this.baseDate.getTime() + days * 86_400_000);
-    this.data.landingDate = this.date; // downstream phases (pov.ts) read app.data.landingDate
-
-    let next: SiteMetrics[];
-    try {
-      next = evaluateSites(this.data.sites, this.date);
-    } catch (e) {
-      // Outside the precomputed ephemeris range - revert and bail out quietly.
-      this.delayDays = 0; this.date = this.baseDate; this.data.landingDate = this.baseDate;
-      console.warn('delay fuera de rango:', e);
+    if (days > this.maxDelayDays) {
+      this.rangeWarning = `+${days} d fuera de rango · máximo +${this.maxDelayDays} d con los datos precalculados`;
+      this.list.invalidate();
       return;
     }
+
+    const date = new Date(this.baseDate.getTime() + days * 86_400_000);
+    let next: SiteMetrics[];
+    try {
+      next = evaluateSites(this.data.sites, date);
+    } catch (e) {
+      this.rangeWarning = `No se pudo calcular +${days} d: ${e instanceof Error ? e.message : String(e)}`;
+      this.list.invalidate();
+      return;
+    }
+
+    this.rangeWarning = null;
+    this.delayDays = days;
+    this.date = date;
+    this.data.landingDate = date; // downstream phases (pov.ts) read app.data.landingDate
     this.ranking = next;
     this.app.ranking = next;
 
@@ -158,8 +173,8 @@ export class OrbitPhase implements Phase {
     this.app.selected = prevSelectedId ? byId.get(prevSelectedId) ?? null : null;
     for (const mk of this.markers) mk.m = byId.get(mk.m.site.id)!;
 
-    const sunDir = globalDirAt(this.data.global, this.date, 'sun');
-    const earthDir = globalDirAt(this.data.global, this.date, 'earth');
+    const sunDir = globalDirAt(this.data.global, date, 'sun');
+    const earthDir = globalDirAt(this.data.global, date, 'earth');
     this.sunLight.position.copy(sunDir).multiplyScalar(SUN_DIST);
     this.sunSprite.position.copy(sunDir).multiplyScalar(SUN_SPRITE_DIST);
     this.earthshineLight.position.copy(earthDir).multiplyScalar(EARTHSHINE_DIST);
@@ -281,10 +296,25 @@ export class OrbitPhase implements Phase {
     const y = 206, h = 56, gap = 12, w = (928 - gap * (DELAY_OPTIONS.length + 1)) / (DELAY_OPTIONS.length + 1);
     let x = 48;
     for (const days of DELAY_OPTIONS) {
-      p.button(g, `delay-${days}`, x, y, w, h, `+${days} d`, () => this.applyDelay(days), this.delayDays === days ? 'primary' : 'ghost');
+      const outOfRange = days > this.maxDelayDays;
+      if (outOfRange) {
+        // Disabled, not clickable - no p.region/p.button, drawn dimmed directly.
+        roundRect(g, x, y, w, h, h / 2); g.fillStyle = 'rgba(255,255,255,.03)'; g.fill();
+        g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 2; g.stroke();
+        g.font = `600 ${Math.round(h * 0.34)}px ${UI.font}`; g.fillStyle = 'rgba(232,238,247,.3)';
+        g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(`+${days} d`, x + w / 2, y + h / 2 + 1);
+        g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+      } else {
+        p.button(g, `delay-${days}`, x, y, w, h, `+${days} d`, () => this.applyDelay(days), this.delayDays === days ? 'primary' : 'ghost');
+      }
       x += w + gap;
     }
     p.button(g, 'delay-reset', x, y, w, h, '↺ original', () => this.applyDelay(0), this.delayDays === 0 ? 'primary' : 'ghost');
+
+    if (this.rangeWarning) {
+      g.font = `600 20px ${UI.mono}`; g.fillStyle = '#ff9a6b';
+      g.fillText(this.rangeWarning, 48, 280);
+    }
   }
 
   private drawDetail(p: Panel, g: CanvasRenderingContext2D) {
