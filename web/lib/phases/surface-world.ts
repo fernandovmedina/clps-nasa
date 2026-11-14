@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { LunarApp } from '../engine/app';
-import { textLabel } from '../engine/panel';
+import { UI, textLabel } from '../engine/panel';
 import { starField } from '../engine/particles';
 import { earthTexture, glowTexture, regolithTexture, solarCellTexture } from '../engine/textures';
 import { disposeTree, seeded, smooth } from '../engine/util';
@@ -148,8 +148,8 @@ export class SurfaceWorld {
       s.position.copy(dir).multiplyScalar(2200).add(new THREE.Vector3(0, -120, 0));
       return s;
     };
-    sc.add(lbl('SOL', `elev ${m.sun.elevation.toFixed(1)}° · az ${m.sun.azimuth.toFixed(0)}°`, sunDir, '#ffd27a'));
-    sc.add(lbl('TIERRA', `elev ${m.earth.elevation.toFixed(1)}° · az ${m.earth.azimuth.toFixed(0)}°`, earthDir, '#8ec5ff'));
+    sc.add(lbl('SOL', `elev ${m.sun.elevation.toFixed(1)}° · az ${m.sun.azimuth.toFixed(0)}°`, sunDir, UI.sun));
+    sc.add(lbl('TIERRA', `elev ${m.earth.elevation.toFixed(1)}° · az ${m.earth.azimuth.toFixed(0)}°`, earthDir, UI.earth));
 
     // landing zone marker following the terrain
     const ringPts: THREE.Vector3[] = [];
@@ -167,7 +167,7 @@ export class SurfaceWorld {
       new THREE.MeshBasicMaterial({ color: 0x5cf2b0, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.beacon.position.set(this.lz.x, this.lz.y + 30, this.lz.z);
     this.lzMarker.add(this.beacon);
-    const lzLabel = textLabel([{ text: 'ZONA DE ALUNIZAJE', size: 40, color: '#5cf2b0', weight: 800, mono: true }, { text: `Ø 40 m · rugosidad ${this.roughness.toFixed(2)} m`, size: 30 }], 14);
+    const lzLabel = textLabel([{ text: 'ZONA DE ALUNIZAJE', size: 40, color: UI.ok, weight: 800, mono: true }, { text: `Ø 40 m · rugosidad ${this.roughness.toFixed(2)} m`, size: 30 }], 14);
     lzLabel.position.set(this.lz.x, this.lz.y + 64, this.lz.z);
     this.lzMarker.add(lzLabel);
     sc.add(this.lzMarker);
