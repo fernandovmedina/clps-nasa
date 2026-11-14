@@ -30,6 +30,15 @@ export interface AppOptions {
   room?: string;
   onRoomStatus?: (s: RoomStatus) => void;
   onRoomChange?: (room: string) => void;
+  /**
+   * True = this client generated its own room code (nobody handed it one) -
+   * the usual VR/inspector role: broadcasts its camera in pov.ts, doesn't
+   * render the spy-view PiP. False = arrived via a shared link or typed a
+   * code into "Cambiar" - the monitoring role: watches the host's camera,
+   * doesn't broadcast its own (a desktop mouse-look pose isn't useful to
+   * show the VR person). See LunarExperience.tsx's resolveInitialRoom/joinRoom.
+   */
+  isHost?: boolean;
 }
 
 type PhaseFactory = (app: LunarApp) => Phase;
@@ -46,6 +55,8 @@ export class LunarApp {
   readonly room: RoomClient;
   readonly audio = new AudioEngine();
   readonly eyeHeight = 1.6;
+  /** See AppOptions.isHost - mutable because joining a room at runtime (not just at load) also changes the role. */
+  isHost: boolean;
   phase: Phase | null = null;
   moonTex!: MoonTextures;
   data: MissionData | null = null;
@@ -95,6 +106,7 @@ export class LunarApp {
 
     this.input = new Input(this);
     this.room = new RoomClient(opts.room ?? 'touchdown', opts.onRoomStatus, opts.onRoomChange);
+    this.isHost = opts.isHost ?? true;
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
     this.resize();
