@@ -268,7 +268,7 @@ export class OrbitPhase implements Phase {
     if (!this.analysisDone && t > LAP) {
       this.analysisDone = true;
       this.app.flags.add('orbit-done');
-      if (!this.app.selected) this.app.selected = this.ranking[0];
+      if (!this.app.selected) this.app.selected = this.ranking.find((m) => m.site.id === this.data.requestedSiteId) ?? this.ranking[0];
       this.list.invalidate(); this.detail.invalidate();
     }
 

@@ -84,6 +84,7 @@ export default function LunarExperience() {
           </div>
           <div className={styles.bottombar}>
             <span className={styles.hint}>Arrastra para mirar · clic en paneles y puntos para seleccionar</span>
+            <a className={styles.control} href="/mission-control/">Elegir fecha de la misión</a>
             {xr === 'yes' && <button className={styles.vr} onClick={enterVR}>Entrar en VR</button>}
             {xr === 'no' && <span className={styles.novr}>VR no disponible aquí · ábrelo en el navegador del Quest (HTTPS)</span>}
           </div>
