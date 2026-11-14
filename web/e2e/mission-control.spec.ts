@@ -161,6 +161,7 @@ test('theme and language toggles change the interface and persist after a reload
 })
 
 test('axe finds no serious or critical violations in the main view in light and dark themes', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   await openApp(page)
   await waitForLoaded(page)
   for (const theme of ['light', 'dark'] as const) {
