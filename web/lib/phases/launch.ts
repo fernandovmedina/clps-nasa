@@ -164,8 +164,8 @@ export class LaunchPhase implements Phase {
   }
 
   exit() {
-    this.rumble?.stop(); this.wind?.stop(); this.crackle?.stop();
     this.hud.dispose(); this.count.dispose();
+    this.rumble?.stop(); this.wind?.stop(); this.crackle?.stop();
   }
 
   private drawHud(p: Panel, g: CanvasRenderingContext2D) {
