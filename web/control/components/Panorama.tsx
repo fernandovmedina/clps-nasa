@@ -84,7 +84,7 @@ export function Panorama({ horizon, samples, sun, earth, title, desc }: Props) {
             x={anchor === 'end' ? px - 12 : px + 12}
             y={py + 5}
             textAnchor={anchor}
-            fontSize={14}
+            fontSize={12}
             className="num"
             fill="var(--label)"
           >
@@ -118,13 +118,11 @@ export function Panorama({ horizon, samples, sun, earth, title, desc }: Props) {
           width={width - MARGIN.left - MARGIN.right}
           height={plotBottom - MARGIN.top}
           fill="var(--bg-field)"
-          stroke="var(--line)"
-          strokeWidth={0.5}
         />
         {ticks.map((v) => (
           <g key={v}>
-            <line x1={MARGIN.left} x2={width - MARGIN.right} y1={y(v)} y2={y(v)} stroke="var(--line)" strokeWidth={v === 0 ? 1 : 0.5} strokeDasharray={v === 0 ? undefined : '2 4'} />
-            <text x={MARGIN.left - 8} y={y(v) + 5} textAnchor="end" fontSize={14} fill="var(--label-2)" className="num">
+            <line x1={MARGIN.left} x2={width - MARGIN.right} y1={y(v)} y2={y(v)} stroke={v === 0 ? 'var(--line-strong)' : 'var(--line)'} strokeWidth={1} />
+            <text x={MARGIN.left - 8} y={y(v) + 4} textAnchor="end" fontSize={12} fill="var(--label-2)" className="num">
               {v}°
             </text>
           </g>
@@ -134,11 +132,11 @@ export function Panorama({ horizon, samples, sun, earth, title, desc }: Props) {
             <line x1={x(az)} x2={x(az)} y1={MARGIN.top} y2={plotBottom} stroke="var(--line)" strokeWidth={0.5} />
             <text
               x={x(az)}
-              y={HEIGHT - 8}
+              y={HEIGHT - 10}
               textAnchor={az === -180 ? 'start' : az === 180 ? 'end' : 'middle'}
-              fontSize={14}
-              fontWeight={500}
-              fill="var(--label-2)"
+              fontSize={12}
+              fontWeight={az === 0 ? 600 : 500}
+              fill={az === 0 ? 'var(--label)' : 'var(--label-2)'}
             >
               {label}
             </text>
@@ -146,7 +144,7 @@ export function Panorama({ horizon, samples, sun, earth, title, desc }: Props) {
         ))}
         <g clipPath={`url(#${clipId})`}>
           <path d={terrainArea ?? undefined} fill="var(--terrain)" />
-          <path d={terrainLine ?? undefined} fill="none" stroke="var(--terrain-line)" strokeWidth={1.25} />
+          <path d={terrainLine ?? undefined} fill="none" stroke="var(--terrain-line)" strokeWidth={1} />
           {(['earth', 'sun'] as const).map((body) =>
             runs[body].map((run, i) => (
               <path

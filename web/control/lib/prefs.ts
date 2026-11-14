@@ -20,11 +20,11 @@ export function writePref(key: 'theme' | 'lang', value: string): void {
 }
 
 export function readTheme(): Theme {
-  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
 }
 
 export function applyTheme(theme: Theme): void {
   document.documentElement.dataset.theme = theme
 }
 
-export const BOOT_SCRIPT = `(function(){var d=document.documentElement;try{var t=localStorage.getItem('${THEME_KEY}');if(t==='light'||t==='dark')d.setAttribute('data-theme',t)}catch(e){}var l=null;try{l=localStorage.getItem('${LANG_KEY}')}catch(e){}if(l!=='es'&&l!=='en'){l=((navigator.language||'').toLowerCase().indexOf('es')===0)?'es':'en'}d.setAttribute('lang',l)})()`
+export const BOOT_SCRIPT = `(function(){var d=document.documentElement;var t=null;try{t=localStorage.getItem('${THEME_KEY}')}catch(e){}d.setAttribute('data-theme',t==='dark'?'dark':'light');var l=null;try{l=localStorage.getItem('${LANG_KEY}')}catch(e){}if(l!=='es'&&l!=='en'){l=((navigator.language||'').toLowerCase().indexOf('es')===0)?'es':'en'}d.setAttribute('lang',l)})()`

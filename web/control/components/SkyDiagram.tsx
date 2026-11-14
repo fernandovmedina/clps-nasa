@@ -94,17 +94,16 @@ export function SkyDiagram({ horizon, samples, sun, earth, top, bottom, title, d
             cy={c}
             r={ringRadius(v)}
             fill="none"
-            stroke="var(--line)"
-            strokeWidth={v === 0 ? 1 : 0.5}
-            strokeDasharray={v === 0 ? undefined : '2 4'}
+            stroke={v === 0 ? 'var(--line-strong)' : 'var(--line)'}
+            strokeWidth={1}
           />
-          <text x={c + 4} y={c - ringRadius(v) + 15} fontSize={14} fill="var(--label-2)" className="num">
+          <text x={c + 4} y={c - ringRadius(v) + 14} fontSize={12} fill="var(--label-2)" className="num">
             {v}°
           </text>
         </g>
       ))}
-      <line x1={c} x2={c} y1={c - RADIUS} y2={c + RADIUS} stroke="var(--line)" strokeWidth={0.5} />
-      <line x1={c - RADIUS} x2={c + RADIUS} y1={c} y2={c} stroke="var(--line)" strokeWidth={0.5} />
+      <line x1={c} x2={c} y1={c - RADIUS} y2={c + RADIUS} stroke="var(--line)" strokeWidth={1} />
+      <line x1={c - RADIUS} x2={c + RADIUS} y1={c} y2={c} stroke="var(--line)" strokeWidth={1} />
       {(['earth', 'sun'] as const).map((body) =>
         runs[body].map((run, i) => (
           <path
@@ -120,7 +119,7 @@ export function SkyDiagram({ horizon, samples, sun, earth, top, bottom, title, d
         )),
       )}
       {cardinal.map(([x, y, label]) => (
-        <text key={label + x} x={x} y={y} textAnchor="middle" fontSize={14} fontWeight={500} fill="var(--label-2)">
+        <text key={label + x} x={x} y={y} textAnchor="middle" fontSize={12} fontWeight={500} fill="var(--label-2)">
           {label}
         </text>
       ))}

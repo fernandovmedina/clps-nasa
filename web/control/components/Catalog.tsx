@@ -44,13 +44,13 @@ export function Catalog({ sites, currentId, letter, onPick, onRetry, custom, hea
   }, [sites, query, t])
 
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-5">
       <div className="grid gap-1">
         {heading ?? <h2 className="text-heading">{t('catalogTitle')}</h2>}
         <p className="text-caption text-label-2">{t('appliesTo', { letter })}</p>
       </div>
       <div className="grid gap-1">
-        <label htmlFor={searchId} className="text-caption text-label-2">
+        <label htmlFor={searchId} className="text-label text-label-2">
           {t('searchLabel')}
         </label>
         <div className="relative">
@@ -75,7 +75,7 @@ export function Catalog({ sites, currentId, letter, onPick, onRetry, custom, hea
         </div>
       )}
       {sites.status === 'error' && (
-        <div role="alert" className="grid gap-3 rounded-control border border-line-strong p-4">
+        <div role="alert" className="grid gap-3 rounded-control border border-line-strong bg-raised p-4">
           <p>{t('catalogLoadError')}</p>
           <button type="button" className="btn btn-outline justify-self-start" onClick={onRetry}>
             {t('retry')}
@@ -83,13 +83,13 @@ export function Catalog({ sites, currentId, letter, onPick, onRetry, custom, hea
         </div>
       )}
       {sites.status === 'ready' && groups.length === 0 && (
-        <p className="rounded-control border border-line px-4 py-3 text-body text-label-2" role="status">
+        <p className="rounded-control border-[0.5px] border-line-strong px-4 py-3 text-body text-label-2" role="status">
           {t('noResults', { q: query.trim() })}
         </p>
       )}
       {groups.map((group) => (
-        <section key={group.id} className="grid gap-1.5" aria-label={t(group.key)}>
-          <h3 className="text-eyebrow text-label-2">{t(group.key)}</h3>
+        <section key={group.id} className="grid gap-1" aria-label={t(group.key)}>
+          <h3 className="px-3 text-label text-label-2">{t(group.key)}</h3>
           <ul className="grid gap-1">
             {group.items.map((site) => {
               const current = site.id === currentId
@@ -97,14 +97,14 @@ export function Catalog({ sites, currentId, letter, onPick, onRetry, custom, hea
                 <li key={site.id}>
                   <button
                     type="button"
-                    className="btn btn-quiet h-auto min-h-11 w-full justify-between gap-3 px-3 py-1.5 text-left"
+                    className="btn btn-quiet h-auto min-h-[52px] w-full justify-between gap-3 px-3 py-2 text-left"
                     aria-current={current ? 'true' : undefined}
                     data-site={site.id}
                     onClick={() => onPick(site.id)}
                   >
                     <span className="grid min-w-0 gap-1">
-                      <span className="text-body leading-5 font-medium whitespace-normal">{site.name}</span>
-                      <span className="num text-caption font-normal whitespace-normal text-label-2">
+                      <span className="text-[0.875rem] leading-5 font-medium whitespace-normal">{site.name}</span>
+                      <span className="num text-label font-normal whitespace-normal text-label-2">
                         {site.program} · {site.approx ? '≈ ' : ''}
                         {formatNumber(locale, site.lat, 2)}°, {formatNumber(locale, site.lon, 2)}°
                       </span>

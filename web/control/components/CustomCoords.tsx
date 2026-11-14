@@ -26,7 +26,7 @@ export function CustomCoords({ letter, onApply }: { letter: string; onApply: (la
 
   return (
     <form
-      className="grid gap-3 border-t border-line pt-5"
+      className="grid gap-3 rounded-[12px] border-[0.5px] border-line bg-elevated p-4"
       noValidate
       aria-labelledby="custom-title"
       data-testid="custom-form"

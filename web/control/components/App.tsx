@@ -125,7 +125,7 @@ function Shell({
       <CatalogDialog open={catalogOpen} onOpenChange={setCatalogOpen}>
         {(heading) => catalog(heading)}
       </CatalogDialog>
-      <main className="page-margin mx-auto max-w-[1600px] pt-24 pb-16" aria-busy={!ready}>
+      <main className="page-margin mx-auto max-w-[1440px] pt-8 pb-16" aria-busy={!ready}>
         <h1 className="sr-only print:not-sr-only print:text-title">
           {t('appName')} · {t('appSubtitle')}
         </h1>
@@ -135,11 +135,11 @@ function Shell({
             <div className="skeleton h-[560px]" aria-hidden="true" />
           </div>
         ) : (
-          <div className="grid items-start gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <div className="grid items-start gap-8 xl:grid-cols-[280px_minmax(0,1fr)]">
             <aside className="no-print catalog-aside hidden pr-1 xl:block" aria-label={t('catalogTitle')}>
               {catalog()}
             </aside>
-            <div className="grid min-w-0 grid-cols-1 gap-6">
+            <div className="grid min-w-0 grid-cols-1 gap-8">
               <div className="no-print">
                 <MissionBar
                   delayDays={state.delayDays}
@@ -205,7 +205,7 @@ export function App() {
   const [state, dispatch] = useReducer(reducer, undefined, defaultState)
   const [ready, setReady] = useState(false)
   const [lang, setLang] = useState<Lang>('es')
-  const [theme, setTheme] = useState<Theme>('dark')
+  const [theme, setTheme] = useState<Theme>('light')
 
   /* eslint-disable react-hooks/set-state-in-effect -- client-only state is read after the static render */
   useEffect(() => {
