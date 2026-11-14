@@ -7,8 +7,9 @@
  * does not compute it yet) - kept as a constant purely for the procedural
  * surface renderer in `surface-world.ts`, not used in scoring.
  */
-import type { EphemerisFile, GlobalFile, HorizonFile, HorizonSource, Site, SitesFile, Track } from '@touchdown/core';
+import type { EphemerisFile, GlobalFile, HorizonFile, HorizonSource, Site, SitesFile, TerrainInfo, Track } from '@touchdown/core';
 import { sphericalHorizon, trackFromFile } from '@touchdown/core';
+import { loadTerrainPatch, type TerrainPatch } from './terrain';
 
 const DEFAULT_SLOPE_DEG = 6.5;
 
@@ -25,6 +26,8 @@ export interface SiteInput {
   hasTerrain: boolean;
   horizonSource: HorizonSource;
   ephemerisSource: string;
+  /** Real LOLA heightmap, only set when hasTerrain is true. */
+  terrain?: TerrainPatch;
 }
 
 export interface MissionData {
@@ -48,9 +51,10 @@ async function fetchJson<T>(url: string): Promise<T> {
  */
 export async function loadMissionData(onProgress: (p: number, msg: string) => void): Promise<MissionData> {
   onProgress(0, 'Cargando catálogo de sitios · NASA LOLA + JPL Horizons');
-  const [catalog, global] = await Promise.all([
+  const [catalog, global, terrains] = await Promise.all([
     fetchJson<SitesFile>('/data/sites.json'),
     fetchJson<GlobalFile>('/data/global.json'),
+    fetchJson<Record<string, TerrainInfo>>('/data/terrains.json'),
   ]);
 
   const sites: SiteInput[] = [];
@@ -61,6 +65,13 @@ export async function loadMissionData(onProgress: (p: number, msg: string) => vo
       fetchJson<EphemerisFile>(`/data/ephemeris/${s.id}.json`),
       fetchJson<HorizonFile>(`/data/horizons/${s.id}.json`),
     ]);
+    let terrain: TerrainPatch | undefined;
+    if (s.has_terrain) {
+      onProgress((i + 0.8) / catalog.sites.length, `Terreno LOLA (heightmap) · ${s.name}`);
+      const info = terrains[s.id];
+      if (!info) throw new Error(`sitio ${s.id} marca has_terrain pero falta en terrains.json`);
+      terrain = await loadTerrainPatch(info);
+    }
     sites.push({
       id: s.id,
       name: s.name,
@@ -74,6 +85,7 @@ export async function loadMissionData(onProgress: (p: number, msg: string) => vo
       hasTerrain: s.has_terrain,
       horizonSource: s.horizon_source,
       ephemerisSource: s.ephemeris_source,
+      terrain,
     });
   }
 

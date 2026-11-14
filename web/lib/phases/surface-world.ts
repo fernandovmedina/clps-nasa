@@ -5,6 +5,7 @@ import { starField } from '../engine/particles';
 import { earthTexture, glowTexture, regolithTexture, solarCellTexture } from '../engine/textures';
 import { disposeTree, seeded, smooth } from '../engine/util';
 import { horizonAt, type SiteMetrics } from '../mission/scoring';
+import { sampleTerrainHeight, type TerrainPatch } from '../mission/terrain';
 
 const FAR_SIZE = 5200;
 const NEAR_SIZE = 420;
@@ -34,7 +35,9 @@ interface Crater { x: number; z: number; r: number; d: number }
 
 /**
  * The local landing-site world shared by phases 3–5 (POV, landing, transmission):
- * procedural terrain, a horizon ring built from the site's horizon profile, Sun and
+ * real LOLA terrain where available (plus fine cosmetic detail - the real DEM is
+ * ~39 m/px and can't show meter-scale bumps on its own), procedural terrain
+ * elsewhere, a horizon ring built from the site's real horizon profile, Sun and
  * Earth placed at their computed azimuth/elevation, landing zone marker and lander.
  */
 export class SurfaceWorld {
@@ -54,10 +57,12 @@ export class SurfaceWorld {
   private lzBase = 0;
   private flatten = false;
   private beacon: THREE.Mesh;
+  private readonly terrain: TerrainPatch | undefined;
 
   constructor(readonly app: LunarApp, readonly m: SiteMetrics) {
     const rnd = seeded(m.site.id + '-terrain');
     this.noise = perlin(rnd);
+    this.terrain = m.site.terrain;
     const sc = this.scene;
     sc.background = new THREE.Color(0x000002);
     sc.add(this.stars);
@@ -67,9 +72,13 @@ export class SurfaceWorld {
     this.earthHoriz = new THREE.Vector3(Math.sin(azE), 0, -Math.cos(azE)).normalize();
     this.lz = this.earthHoriz.clone().multiplyScalar(70);
 
-    // craters (keep the viewpoint and landing zone clear of big ones)
-    for (let i = 0; i < 140; i++) {
-      const big = i < 70;
+    // Craters: with real LOLA terrain, the macro shape (the actual hills/rims
+    // that block Sun/Earth) already comes from the DEM - only add small
+    // cosmetic ones for walking-surface detail. Without real terrain, keep
+    // the original two size classes to shape the whole procedural landscape.
+    const craterCount = this.terrain ? 70 : 140;
+    for (let i = 0; i < craterCount; i++) {
+      const big = !this.terrain && i < 70;
       const r = big ? 15 + Math.pow(rnd(), 2) * 260 : 2 + rnd() * 14;
       const spread = big ? 2400 : 260;
       const x = (rnd() * 2 - 1) * spread, z = (rnd() * 2 - 1) * spread;
@@ -169,14 +178,23 @@ export class SurfaceWorld {
 
   /* ----- height field ----- */
   private rawHeight(x: number, z: number) {
-    const n = this.noise, slopeK = this.m.site.slopeDeg / 6;
-    let h = slopeK * (55 * fbm(n, x / 800, z / 800, 4) + 6 * fbm(n, x / 90 + 31, z / 90 + 17, 3)) + 0.45 * fbm(n, x / 9 + 7, z / 9 + 3, 2);
+    const n = this.noise;
+    let h: number;
+    if (this.terrain) {
+      // Real LOLA elevation (bilinear, ~39 m/px) + a small cosmetic detail
+      // octave for walking-surface texture - NOT measured roughness, just
+      // rendering fill-in below the DEM's own resolution.
+      h = sampleTerrainHeight(this.terrain, x, z) + 0.35 * fbm(n, x / 9 + 7, z / 9 + 3, 2);
+    } else {
+      const slopeK = this.m.site.slopeDeg / 6;
+      h = slopeK * (55 * fbm(n, x / 800, z / 800, 4) + 6 * fbm(n, x / 90 + 31, z / 90 + 17, 3)) + 0.45 * fbm(n, x / 9 + 7, z / 9 + 3, 2);
+      h += 4.5 * Math.exp(-(x * x + z * z) / (2 * 22 * 22)); // small rise at the viewpoint
+    }
     for (const c of this.craters) {
       const d = Math.hypot(x - c.x, z - c.z) / c.r;
       if (d < 1) h -= c.d * (1 - d * d);
       else if (d < 1.5) h += c.d * 0.28 * (1 - (d - 1) / 0.5) ** 2;
     }
-    h += 4.5 * Math.exp(-(x * x + z * z) / (2 * 22 * 22)); // small rise at the viewpoint
     return h;
   }
   heightAt(x: number, z: number) {
