@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noUncheckedIndexedAccess": true },
+  "include": ["next-env.d.ts", "control", "e2e", "app/(control)", "playwright.config.ts", "vitest.config.mts"]
+}
