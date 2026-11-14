@@ -9,6 +9,7 @@
  */
 import type { EphemerisFile, GlobalFile, HorizonFile, HorizonSource, Site, SitesFile, TerrainInfo, Track } from '@touchdown/core';
 import { sphericalHorizon, trackFromFile } from '@touchdown/core';
+import { readLandingParams } from './landing-param';
 import { loadTerrainPatch, type TerrainPatch } from './terrain';
 
 const DEFAULT_SLOPE_DEG = 6.5;
@@ -38,6 +39,8 @@ export interface MissionData {
   global: GlobalFile;
   /** Valid range for landingDate - every site's track covers exactly this window. */
   ephemerisRange: { start: Date; end: Date };
+  /** Catalog id requested through `?site=`, only when it exists in `sites`. */
+  requestedSiteId?: string;
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -97,7 +100,9 @@ export async function loadMissionData(onProgress: (p: number, msg: string) => vo
     end: new Date(catalog.ephemeris_range.end),
   };
   // Landing date must fall inside ephemerisRange (checked by callers, e.g. orbit.ts's delay button).
-  return { landingDate: new Date(Date.UTC(2027, 0, 10, 0, 0)), sites, global, ephemerisRange };
+  const requested = readLandingParams(new URLSearchParams(window.location.search), ephemerisRange);
+  const requestedSiteId = sites.find((s) => s.id === requested?.site)?.id;
+  return { landingDate: requested?.landing ?? new Date(Date.UTC(2027, 0, 10, 0, 0)), sites, global, ephemerisRange, requestedSiteId };
 }
 
 export type { Site };

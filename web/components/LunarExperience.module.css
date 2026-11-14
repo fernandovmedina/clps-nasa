@@ -16,6 +16,11 @@
 .bottombar { position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; align-items: center;
   justify-content: space-between; gap: 12px; pointer-events: none; }
 .hint { font-size: 12px; color: rgba(232, 238, 247, 0.5); }
+.control { pointer-events: auto; margin: -12px auto -12px 0; padding: 10px 18px; border-radius: 999px; white-space: nowrap;
+  font: 600 13px ui-sans-serif, system-ui, sans-serif; color: #e8eef7; text-decoration: none;
+  background: rgba(7, 11, 19, 0.7); border: 1px solid rgba(255, 255, 255, 0.12); backdrop-filter: blur(8px); }
+.control:hover { background: rgba(7, 11, 19, 0.9); border-color: rgba(255, 255, 255, 0.3); }
+.control:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .vr { pointer-events: auto; border: 0; border-radius: 999px; padding: 12px 22px; cursor: pointer;
   font: 600 14px ui-sans-serif, system-ui, sans-serif; background: #ff9a3c; color: #141008; }
 .vr:hover { background: #ffb46b; }
