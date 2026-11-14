@@ -1,1 +1,52 @@
-Coloca aquí general.jpg, south-pole.jpg y north-pole.jpg
+Texturas reales de la Luna para la experiencia 3D
+=================================================
+
+Archivos (los carga web/lib/engine/moon.ts; la orientacion y la cobertura
+estan declaradas en MOON_TEXTURES, web/lib/mission/config.ts):
+
+- general.jpg      4096x2048, mapa global equirectangular (longitud -180 a la
+                   izquierda, norte arriba). Gris, JPEG progresivo, ~2.4 MB.
+- south-pole.jpg   2048x2048, proyeccion estereografica polar centrada en el
+- north-pole.jpg   polo, 20 grados desde el polo hasta el borde de la imagen
+                   (extentDeg: 20). Longitud este hacia la derecha; longitud 0
+                   arriba en el polo sur y abajo en el polo norte. Fuera del
+                   circulo inscrito la imagen es gris plano (el shader no la
+                   usa). ~1.5 MB cada una.
+
+Origen
+------
+Mosaico LROC WAC (LRO_WAC_Mosaic_Global_303ppd_v02) servido por NASA Moon Trek
+como teselas WMTS equirrectangulares (matriz default028mm, teselas de 256 px):
+
+  https://trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02/1.0.0/WMTSCapabilities.xml
+  https://trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02/1.0.0/default/default028mm/{z}/{fila}/{columna}.jpg
+
+- general.jpg: nivel 3 completo (16x8 = 128 teselas = 4096x2048 px, sin remuestrear).
+- south-pole.jpg / north-pole.jpg: nivel 6, franja de 8 filas por polo (128x8 =
+  1024 teselas por polo, ~91 px/grado), reproyectada a estereografica polar con
+  muestreo bilineal y supersampling 2x2. Moon Trek no ofrece una capa polar de
+  imagen con 20 grados de cobertura (las capas polares son sombreado LOLA de 75
+  grados, es decir 15 grados, o DEM crudo), por eso los polos salen de
+  reproyectar el mapa global. Catalogo consultado:
+  https://trek.nasa.gov/moon/TrekServices/ws/index/eq/searchItems
+
+Fecha de descarga: 2026-11-14 (2176 teselas en total).
+
+El mosaico WAC original tiene costuras de iluminacion en los ultimos grados
+cerca de los polos (cruces en longitudes -90 y 180); vienen de la fuente.
+
+Credito de los datos
+--------------------
+LROC WAC: NASA/GSFC/Arizona State University. LOLA: NASA/GSFC (altimetria del
+terreno del proyecto; estas texturas usan solo el mosaico WAC).
+Datos publicos de NASA, servidos por NASA Moon Trek (https://trek.nasa.gov/moon/).
+
+Regenerar
+---------
+Desde la raiz del repo:
+
+  uv run --project pipeline touchdown-moon-textures
+
+Las teselas se guardan en ~/.cache/touchdown/moontrek/ (fuera del repo) y se
+reutilizan; la primera corrida descarga unas 2200 teselas con pocas conexiones
+simultaneas (--workers, 3 por defecto). Opciones: --out, --cache, --workers.
