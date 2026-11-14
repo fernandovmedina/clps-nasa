@@ -20,6 +20,8 @@ export class Input {
   private hoverPanel: Panel | null = null;
   private hoverObj: THREE.Object3D | null = null;
   readonly controllers: THREE.XRTargetRaySpace[] = [];
+  /** Controller 3D models (not just the ray line) - a spy-view capture must hide these too. */
+  readonly grips: THREE.XRGripSpace[] = [];
   private lines: THREE.Line[] = [];
 
   constructor(private app: LunarApp) {
@@ -46,6 +48,7 @@ export class Input {
       const grip = app.renderer.xr.getControllerGrip(i);
       grip.add(factory.createControllerModel(grip));
       app.rig.add(grip);
+      this.grips.push(grip);
     }
   }
 

@@ -35,6 +35,15 @@ export class RoomHub extends DurableObject<Cloudflare.Env> {
       ws.send(PONG)
       return
     }
+    if (parsed.type === 'cam_update') {
+      // High-frequency (~10 Hz) and ephemeral - relay to peers, never touch
+      // storage or go through reduceRoom. A late joiner's `hello` never sees it.
+      const relayed = JSON.stringify(parsed)
+      for (const peer of this.ctx.getWebSockets()) {
+        if (peer !== ws && peer.readyState === SOCKET_OPEN) peer.send(relayed)
+      }
+      return
+    }
     const current = this.loadState()
     if (parsed.type === 'hello') {
       ws.send(JSON.stringify(current))

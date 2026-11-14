@@ -20,6 +20,16 @@ function add(id: string, extra: Partial<Marker> = {}): ClientMessage {
   return { type: 'marker_add', id, site_id: 'malapert-a', x_m: 1, y_m: 2, kind: 'rock', ...extra }
 }
 
+function cam(extra: Record<string, unknown> = {}): ClientMessage {
+  return {
+    type: 'cam_update',
+    site_id: 'malapert-a',
+    px: 1, py: 1.6, pz: -2,
+    qx: 0, qy: 0.5, qz: 0, qw: 0.866,
+    ...extra,
+  } as ClientMessage
+}
+
 describe('initialRoomState', () => {
   it('starts paused on Malapert A with no markers', () => {
     expect(initialRoomState(NOW)).toEqual({
@@ -65,6 +75,7 @@ describe('parseClientMessage', () => {
     })
     expect(parse(add('m1', { note: 'big rock' }))).toEqual(add('m1', { note: 'big rock' }))
     expect(parse({ type: 'marker_remove', id: 'm1' })).toEqual({ type: 'marker_remove', id: 'm1' })
+    expect(parse(cam())).toEqual(cam())
   })
 
   it('drops unknown fields', () => {
@@ -139,6 +150,20 @@ describe('parseClientMessage', () => {
     expect(parse({ type: 'marker_remove' })).toBeNull()
     expect(parse({ type: 'marker_remove', id: '' })).toBeNull()
   })
+
+  it('accepts boundary cam_update values', () => {
+    expect(parse(cam({ px: 100000, py: -100000, qx: 1, qy: -1, qz: 1.01, qw: -1.01 }))).not.toBeNull()
+  })
+
+  it('returns null when a cam_update field is invalid', () => {
+    expect(parse(cam({ site_id: '' }))).toBeNull()
+    expect(parse(cam({ px: 100001 }))).toBeNull()
+    expect(parse(cam({ py: '1' }))).toBeNull()
+    expect(parse(cam({ qw: 1.02 }))).toBeNull()
+    expect(parse(cam({ qx: Number.NaN }))).toBeNull()
+    const { px: _omit, ...missingPx } = cam() as unknown as Record<string, unknown>
+    expect(parse(missingPx)).toBeNull()
+  })
 })
 
 describe('reduceRoom', () => {
@@ -154,6 +179,10 @@ describe('reduceRoom', () => {
   it('returns the same state for hello and ping', () => {
     expect(reduceRoom(base, { type: 'hello' })).toBe(base)
     expect(reduceRoom(base, { type: 'ping' })).toBe(base)
+  })
+
+  it('never persists cam_update into room state (relay-only, see room-hub.ts)', () => {
+    expect(reduceRoom(base, cam())).toBe(base)
   })
 
   it('changes the site', () => {

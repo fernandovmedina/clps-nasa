@@ -2,8 +2,12 @@ import * as THREE from 'three';
 import type { LunarApp, Phase } from '../engine/app';
 import { Panel, UI, roundRect } from '../engine/panel';
 import { evaluateSites, fmtHours, scoreColor, skyPosAt, type SiteMetrics } from '../mission/scoring';
+import type { RoomEvent } from '../sync/room-client';
 import { defaultMission } from './orbit';
+import { SpyView } from './spy-view';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
+
+const CAM_SEND_INTERVAL_S = 1 / 10; // 10 Hz - tiny payload (7 numbers), see core/src/room.ts cam_update
 
 export function ensureSelection(app: LunarApp): SiteMetrics {
   if (!app.data) app.data = defaultMission();
@@ -22,14 +26,20 @@ export class PovPhase implements Phase {
   private world: SurfaceWorld;
   private m: SiteMetrics;
   private info: Panel; private actions: Panel;
+  private spy: SpyView;
   private series: Sample[] = [];
   private eye: THREE.Vector3;
+  private lastCamSentAt = -Infinity;
+  private camPos = new THREE.Vector3();
+  private camQuat = new THREE.Quaternion();
+  private camScale = new THREE.Vector3();
 
   constructor(private app: LunarApp) {
     this.m = ensureSelection(app);
     this.world = surfaceFor(app, this.m);
     this.scene = this.world.scene;
     this.eye = new THREE.Vector3(0, this.world.heightAt(0, 0) + app.eyeHeight, 0);
+    this.spy = new SpyView(this.world.scene, this.m.site.id);
 
     const start = app.data!.landingDate.getTime();
     for (let h = 0; h <= 14 * 24; h += 2) {
@@ -46,19 +56,46 @@ export class PovPhase implements Phase {
   enter() {
     this.world.lander.visible = false;
     this.world.lzMarker.visible = true;
-    this.app.rig.add(this.info.mesh, this.actions.mesh);
+    this.app.rig.add(this.info.mesh, this.actions.mesh, this.spy.mesh);
     this.info.place(-0.86, 1.4, -1.45);
     this.actions.place(0.84, 1.28, -1.45);
+    this.placeSpy();
     const look = this.world.lz.clone().add(new THREE.Vector3(0, 3, 0));
     this.app.setView(this.eye, look, { snap: true, rate: 3 });
+    this.app.room.setListener((msg: RoomEvent) => this.spy.handleRoomEvent(msg, this.app.time));
   }
 
-  exit() { this.info.dispose(); this.actions.dispose(); }
+  exit() {
+    this.app.room.setListener(null);
+    this.info.dispose(); this.actions.dispose(); this.spy.dispose();
+  }
+
+  /** Faces the rig's eye point, same convention as Panel.place(). */
+  private placeSpy() {
+    this.spy.mesh.position.set(0, 1.98, -1.55);
+    const m = new THREE.Matrix4().lookAt(new THREE.Vector3(0, 1.6, 0), this.spy.mesh.position, new THREE.Vector3(0, 1, 0));
+    this.spy.mesh.quaternion.setFromRotationMatrix(m);
+  }
 
   update(dt: number, t: number) {
     this.world.update(dt, t);
     this.app.setView(this.eye, this.world.lz.clone().add(new THREE.Vector3(0, 3, 0)), { rate: 3 });
     this.info.update(); this.actions.update();
+
+    if (t - this.lastCamSentAt > CAM_SEND_INTERVAL_S) {
+      this.lastCamSentAt = t;
+      this.app.camera.updateMatrixWorld();
+      this.app.camera.matrixWorld.decompose(this.camPos, this.camQuat, this.camScale);
+      this.app.room.send({
+        type: 'cam_update', site_id: this.m.site.id,
+        px: this.camPos.x, py: this.camPos.y, pz: this.camPos.z,
+        qx: this.camQuat.x, qy: this.camQuat.y, qz: this.camQuat.z, qw: this.camQuat.w,
+      });
+    }
+    this.spy.update(t, this.app.renderer, [
+      this.info.mesh, this.actions.mesh, this.spy.mesh, this.app.fadeMesh,
+      ...this.app.input.controllers, ...this.app.input.grips,
+    ]);
   }
 
   private drawInfo(p: Panel, g: CanvasRenderingContext2D) {

@@ -166,3 +166,14 @@ export type ClientMessage =
       note?: string
     }
   | { type: 'marker_remove'; id: string }
+  | {
+      type: 'cam_update'
+      site_id: string
+      px: number
+      py: number
+      pz: number
+      qx: number
+      qy: number
+      qz: number
+      qw: number
+    }

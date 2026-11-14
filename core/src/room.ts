@@ -32,6 +32,11 @@ function isCoordinate(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 100_000
 }
 
+function isQuatComponent(v: unknown): v is number {
+  // 1.01 instead of 1.0 for float round-trip slack, not a meaningful tolerance.
+  return typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 1.01
+}
+
 function isKind(v: unknown): v is MarkerKind {
   return typeof v === 'string' && MARKER_KINDS.includes(v)
 }
@@ -85,6 +90,12 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     }
     case 'marker_remove':
       return isId(value.id) ? { type: 'marker_remove', id: value.id } : null
+    case 'cam_update': {
+      const { site_id, px, py, pz, qx, qy, qz, qw } = value
+      if (!isId(site_id) || !isCoordinate(px) || !isCoordinate(py) || !isCoordinate(pz)) return null
+      if (!isQuatComponent(qx) || !isQuatComponent(qy) || !isQuatComponent(qz) || !isQuatComponent(qw)) return null
+      return { type: 'cam_update', site_id, px, py, pz, qx, qy, qz, qw }
+    }
     default:
       return null
   }

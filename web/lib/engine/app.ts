@@ -55,7 +55,8 @@ export class LunarApp {
   private clock = new THREE.Clock();
   private view = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), rate: 3, snap: true };
   private look = { yaw: 0, pitch: 0, idle: 0 };
-  private fadeMesh: THREE.Mesh;
+  /** Child of `camera`, not `rig` - a spy-view capture (spy-view.ts) must hide this too. */
+  readonly fadeMesh: THREE.Mesh;
   private fade = { value: 1, target: 1, speed: 1, resolve: null as null | (() => void) };
   private transitioning = false;
   private ro: ResizeObserver;

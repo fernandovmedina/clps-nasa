@@ -173,6 +173,28 @@ describe('room websocket', () => {
     expect(await viaRoot.next()).toMatchObject({ site_id: 'apollo-17' })
   })
 
+  it('relays cam_update live but never persists it into room state', async () => {
+    const a = await connect('camsync')
+    const b = await connect('camsync')
+    const cam = { type: 'cam_update', site_id: 'malapert-a', px: 1, py: 1.6, pz: -2, qx: 0, qy: 0, qz: 0, qw: 1 }
+    a.send(cam)
+    expect(await b.next()).toEqual(cam)
+    expect(await a.settle()).toEqual([])
+
+    const c = await connect('camsync')
+    c.send({ type: 'hello' })
+    const state = await c.next()
+    expect(state).not.toHaveProperty('px')
+    expect(state).toMatchObject({ site_id: 'malapert-a' })
+  })
+
+  it('rejects an invalid cam_update without relaying it', async () => {
+    const a = await connect('cambad')
+    const b = await connect('cambad')
+    a.send({ type: 'cam_update', site_id: 'malapert-a', px: 1, py: 1.6, pz: -2, qx: 0, qy: 0, qz: 0, qw: 2 })
+    expect(await b.settle()).toEqual([])
+  })
+
   it('answers ping with pong, with and without waking the object', async () => {
     const a = await connect('pings')
     a.send('{"type":"ping"}')
