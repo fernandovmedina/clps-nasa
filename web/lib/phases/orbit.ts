@@ -14,6 +14,8 @@ const R = 1000;               // moon radius in scene units (1 u ≈ 1.74 km)
 const ORBIT_ALT = 150;
 const LAP = 20;               // seconds for the scanning orbit
 const STATION_LAT = -70;      // where the spacecraft parks to show the south pole
+const DELAY_OPTIONS = [7, 14, 21, 30]; // days - matches the delay narrative in CLAUDE.md sec. 3
+const SUN_DIST = 5000, SUN_SPRITE_DIST = 150000, EARTHSHINE_DIST = 5000, EARTH_DIST = 60000;
 
 interface Marker { m: SiteMetrics; group: THREE.Group; beam: THREE.Mesh; head: THREE.Mesh; ring: THREE.Mesh; label: THREE.Sprite; shown: number; hover: boolean }
 
@@ -33,31 +35,42 @@ export class OrbitPhase implements Phase {
   private list: Panel; private detail: Panel;
   private stars = starField();
   private ranking: SiteMetrics[];
+  private baseRanking: SiteMetrics[]; // at the original landing date, for before/after delta
   private date: Date;
+  private baseDate: Date;
+  private delayDays = 0;
+  private data: MissionData;
+  private sunLight!: THREE.DirectionalLight;
+  private sunSprite!: THREE.Sprite;
+  private earthshineLight!: THREE.DirectionalLight;
+  private earthMesh!: THREE.Mesh;
 
   constructor(private app: LunarApp) {
     clearSurface();
     if (app.flags.has('orbit-done')) this.t = LAP + 0.01; // coming back: skip the scan lap
     const data = app.data ?? defaultMission();
     app.data = data;
+    this.data = data;
+    this.baseDate = data.landingDate;
     this.date = data.landingDate;
     this.ranking = evaluateSites(data.sites, data.landingDate);
+    this.baseRanking = this.ranking;
     app.ranking = this.ranking;
 
     const sc = this.scene;
     sc.background = new THREE.Color(0x000003);
     sc.add(this.stars);
     sc.add(new THREE.HemisphereLight(0x8899aa, 0x111111, 0.3));
-    const earthshine = new THREE.DirectionalLight(0x9db8e8, 0.9); // fill from the Earth so the dark pole stays readable
-    earthshine.position.copy(globalDirAt(data.global, this.date, 'earth')).multiplyScalar(5000);
-    sc.add(earthshine);
+    this.earthshineLight = new THREE.DirectionalLight(0x9db8e8, 0.9); // fill from the Earth so the dark pole stays readable
+    this.earthshineLight.position.copy(globalDirAt(data.global, this.date, 'earth')).multiplyScalar(EARTHSHINE_DIST);
+    sc.add(this.earthshineLight);
     const sunDir = globalDirAt(data.global, this.date, 'sun');
-    const sun = new THREE.DirectionalLight(0xfff4e6, 3.2);
-    sun.position.copy(sunDir).multiplyScalar(5000);
-    sc.add(sun, sun.target);
+    this.sunLight = new THREE.DirectionalLight(0xfff4e6, 3.2);
+    this.sunLight.position.copy(sunDir).multiplyScalar(SUN_DIST);
+    sc.add(this.sunLight, this.sunLight.target);
     const glow = glowTexture();
-    const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xfff1d0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
-    sunSprite.position.copy(sunDir).multiplyScalar(150000); sunSprite.scale.setScalar(12000); sc.add(sunSprite);
+    this.sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xfff1d0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    this.sunSprite.position.copy(sunDir).multiplyScalar(SUN_SPRITE_DIST); this.sunSprite.scale.setScalar(12000); sc.add(this.sunSprite);
 
     sc.add(createMoon(R, app.moonTex, 256));
     // cheap invisible proxy so markers behind the Moon can't be picked
@@ -66,9 +79,9 @@ export class OrbitPhase implements Phase {
     sc.add(blocker);
     this.targets.push(blocker);
 
-    const earth = new THREE.Mesh(new THREE.SphereGeometry(1500, 64, 32), new THREE.MeshStandardMaterial({ map: earthTexture(), roughness: 0.9 }));
-    earth.position.copy(globalDirAt(data.global, this.date, 'earth')).multiplyScalar(60000);
-    sc.add(earth);
+    this.earthMesh = new THREE.Mesh(new THREE.SphereGeometry(1500, 64, 32), new THREE.MeshStandardMaterial({ map: earthTexture(), roughness: 0.9 }));
+    this.earthMesh.position.copy(globalDirAt(data.global, this.date, 'earth')).multiplyScalar(EARTH_DIST);
+    sc.add(this.earthMesh);
 
     // orbit track
     const pts: THREE.Vector3[] = [];
@@ -118,6 +131,40 @@ export class OrbitPhase implements Phase {
   private select(m: SiteMetrics) {
     if (m.rank <= this.ranking.length - this.revealed) return; // not evaluated yet
     this.app.selected = m;
+    this.list.invalidate(); this.detail.invalidate();
+  }
+
+  /** The delay button: recompute the whole ranking at landing date + N days, in place. */
+  private applyDelay(days: number) {
+    if (days === this.delayDays) return;
+    this.delayDays = days;
+    this.date = new Date(this.baseDate.getTime() + days * 86_400_000);
+    this.data.landingDate = this.date; // downstream phases (pov.ts) read app.data.landingDate
+
+    let next: SiteMetrics[];
+    try {
+      next = evaluateSites(this.data.sites, this.date);
+    } catch (e) {
+      // Outside the precomputed ephemeris range - revert and bail out quietly.
+      this.delayDays = 0; this.date = this.baseDate; this.data.landingDate = this.baseDate;
+      console.warn('delay fuera de rango:', e);
+      return;
+    }
+    this.ranking = next;
+    this.app.ranking = next;
+
+    const byId = new Map(next.map((m) => [m.site.id, m]));
+    const prevSelectedId = this.app.selected?.site.id;
+    this.app.selected = prevSelectedId ? byId.get(prevSelectedId) ?? null : null;
+    for (const mk of this.markers) mk.m = byId.get(mk.m.site.id)!;
+
+    const sunDir = globalDirAt(this.data.global, this.date, 'sun');
+    const earthDir = globalDirAt(this.data.global, this.date, 'earth');
+    this.sunLight.position.copy(sunDir).multiplyScalar(SUN_DIST);
+    this.sunSprite.position.copy(sunDir).multiplyScalar(SUN_SPRITE_DIST);
+    this.earthshineLight.position.copy(earthDir).multiplyScalar(EARTHSHINE_DIST);
+    this.earthMesh.position.copy(earthDir).multiplyScalar(EARTH_DIST);
+
     this.list.invalidate(); this.detail.invalidate();
   }
 
@@ -187,15 +234,19 @@ export class OrbitPhase implements Phase {
   private drawList(p: Panel, g: CanvasRenderingContext2D) {
     p.frame(g);
     g.font = `700 40px ${UI.font}`; g.fillStyle = UI.text; g.fillText('Sitios candidatos · Polo Sur', 48, 86);
-    g.font = `500 26px ${UI.mono}`; g.fillStyle = UI.dim;
-    g.fillText(`Alunizaje ${this.date.toISOString().slice(0, 16).replace('T', ' ')} UTC`, 48, 128);
+    g.font = `500 26px ${UI.mono}`; g.fillStyle = this.delayDays ? '#ffb46b' : UI.dim;
+    const delayTag = this.delayDays ? `  ·  retraso +${this.delayDays} d` : '';
+    g.fillText(`Alunizaje ${this.date.toISOString().slice(0, 16).replace('T', ' ')} UTC${delayTag}`, 48, 128);
     const total = this.ranking.length;
+    g.font = `500 26px ${UI.mono}`;
     g.fillStyle = this.analysisDone ? '#7be38a' : UI.accent;
     g.fillText(this.analysisDone ? 'Ranking final · toca un sitio' : `Calculando óptimo… ${this.revealed}/${total}`, 48, 166);
 
+    if (this.analysisDone) this.drawDelayRow(p, g);
+
     // provisional ranking among the evaluated sites
     const evaluated = [...this.ranking].sort((a, b) => b.rank - a.rank).slice(0, this.revealed).sort((a, b) => a.rank - b.rank);
-    const rowH = 104, y0 = 200;
+    const rowH = 96, y0 = this.analysisDone ? 285 : 200;
     evaluated.forEach((m, i) => {
       const y = y0 + i * rowH;
       const sel = this.app.selected === m, hov = p.hover === `row-${m.site.id}`;
@@ -207,6 +258,14 @@ export class OrbitPhase implements Phase {
       g.font = `500 22px ${UI.mono}`; g.fillStyle = UI.dim;
       g.fillText(`SOL ${m.illumPct.toFixed(0)}%  ·  TIERRA ${m.earthPct.toFixed(0)}%  ·  PEND ${m.site.slopeDeg.toFixed(1)}°`, 124, y + 78);
       g.font = `800 40px ${UI.mono}`; g.fillStyle = col; g.textAlign = 'right'; g.fillText(`${Math.round(m.score)}%`, 972, y + 60); g.textAlign = 'left';
+      if (this.delayDays) {
+        const base = this.baseRanking.find((r) => r.site.id === m.site.id);
+        if (base) {
+          const d = Math.round(m.score - base.score);
+          g.font = `600 22px ${UI.mono}`; g.fillStyle = d > 0 ? '#7be38a' : d < 0 ? '#ff6b6b' : UI.dim;
+          g.textAlign = 'right'; g.fillText(d === 0 ? '± 0' : (d > 0 ? `↑ +${d}` : `↓ ${d}`), 972, y + 86); g.textAlign = 'left';
+        }
+      }
       p.region(`row-${m.site.id}`, 28, y, 968, rowH - 10, () => this.select(m));
     });
     if (!this.analysisDone) {
@@ -214,6 +273,18 @@ export class OrbitPhase implements Phase {
       roundRect(g, 48, 1240, 928, 10, 5); g.fillStyle = 'rgba(255,255,255,.15)'; g.fill();
       if (w > 1) { roundRect(g, 48, 1240, w, 10, 5); g.fillStyle = UI.accent; g.fill(); }
     }
+  }
+
+  /** Row of delay buttons: "the mission got delayed N days, what breaks?" */
+  private drawDelayRow(p: Panel, g: CanvasRenderingContext2D) {
+    g.font = `500 22px ${UI.mono}`; g.fillStyle = UI.dim; g.fillText('SIMULAR RETRASO', 48, 196);
+    const y = 206, h = 56, gap = 12, w = (928 - gap * (DELAY_OPTIONS.length + 1)) / (DELAY_OPTIONS.length + 1);
+    let x = 48;
+    for (const days of DELAY_OPTIONS) {
+      p.button(g, `delay-${days}`, x, y, w, h, `+${days} d`, () => this.applyDelay(days), this.delayDays === days ? 'primary' : 'ghost');
+      x += w + gap;
+    }
+    p.button(g, 'delay-reset', x, y, w, h, '↺ original', () => this.applyDelay(0), this.delayDays === 0 ? 'primary' : 'ghost');
   }
 
   private drawDetail(p: Panel, g: CanvasRenderingContext2D) {
@@ -231,6 +302,14 @@ export class OrbitPhase implements Phase {
     g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S  ${m.site.lon.toFixed(2)}°${m.site.lon >= 0 ? 'E' : 'W'}  ·  elev. +${m.site.elevationKm.toFixed(1)} km`, 48, 134);
     g.font = `800 96px ${UI.mono}`; g.fillStyle = col; g.fillText(`${Math.round(m.score)}%`, 48, 250);
     g.font = `600 28px ${UI.font}`; g.fillStyle = UI.text; g.fillText(`Viabilidad · puesto #${m.rank} de ${this.ranking.length}`, 340, 222);
+    if (this.delayDays) {
+      const base = this.baseRanking.find((r) => r.site.id === m.site.id);
+      if (base) {
+        const d = Math.round(m.score - base.score);
+        g.font = `700 30px ${UI.mono}`; g.fillStyle = d > 0 ? '#7be38a' : d < 0 ? '#ff6b6b' : UI.dim;
+        g.fillText(`antes ${Math.round(base.score)}% → ahora ${Math.round(m.score)}% (retraso +${this.delayDays} d)`, 340, 258);
+      }
+    }
 
     const rows: [string, string][] = [
       ['Elevación solar', `${m.sun.elevation.toFixed(2)}°`],
