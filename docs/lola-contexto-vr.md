@@ -648,11 +648,12 @@ src/
 
 ---
 
-## Nota de coherencia con el resto del proyecto
+## Nota de coherencia con el resto del proyecto — RESUELTA (14-nov-2026)
 
-Este documento fue escrito como contexto independiente para un enfoque **WebXR puro** (React + Three.js + `@react-three/xr`), distinto de la arquitectura 100% serverless en AWS descrita en `CLAUDE.md` (Next.js estático + Lambda + API Gateway WebSocket). Antes de usarlo como guía de implementación, reconciliar con el equipo:
+Este documento se escribió como contexto independiente para un enfoque **WebXR puro**, antes de que el equipo decidiera la arquitectura final. Los puntos que pedía reconciliar ya están resueltos:
 
-- **Terreno:** aquí se propone generar GLB/mallas 3D desde Python; el contrato de datos vigente (`CLAUDE.md` sección 7) especifica un heightmap RAW16 (`/api/sites/{id}/terrain`) para Unity. Si el VR se mueve a WebXR, decidir si se mantiene RAW16 (y se parsea en Three.js) o se cambia a GLB.
-- **Sitios:** este documento prioriza Site01 (Connecting Ridge) y Site04 (Shackleton Rim) del catálogo NASA PGDA; el catálogo actual del proyecto (`CLAUDE.md` sección 6) prioriza Malapert A, Mons Mouton y otros. Hay que unificar cuál catálogo de sitios usa el equipo.
-- **Efemérides:** coincide con `CLAUDE.md` en usar SPICE/Horizons con el observador anclado a la Luna (`MOON_ME`, `coord@301`), sin contradicción.
-- Útil sobre todo como **referencia científica profunda** (física de LOLA, fórmulas de horizonte con curvatura, límites de incertidumbre, pruebas sugeridas) más que como arquitectura final a seguir al pie de la letra.
+- **Terreno:** resuelto a favor de **RAW16** (no GLB) — `size_px: 513` (no 1025; el DEM fuente real es de 80 m/px), parseado directo en three.js. Ver `web/lib/mission/sites.ts` y el contrato en `CLAUDE.md` sección 7.
+- **Sitios:** resuelto a favor del catálogo del proyecto (Malapert A, Mons Mouton, Malapert Massif, Shackleton–de Gerlache ridge, Nobile Rim 1/2, + Chandrayaan-3/Chang'e 4/Apollo 11/17 sin terreno completo) — no Site01/Site04 de PGDA. Ver `web/public/data/sites.json`, fuente de verdad.
+- **Efemérides:** resuelto — **solo JPL Horizons** (`coord@301`, `QUANTITIES=4`), SPICE quedó descartado del pipeline real (no está en las dependencias de `pipeline/pyproject.toml`).
+- **Arquitectura:** resuelto a favor de **Cloudflare Workers + Durable Objects** (no AWS, no fue construido nada de AWS) — ver `CLAUDE.md` sección 5.
+- Sigue siendo útil como **referencia científica profunda** (física de LOLA, fórmulas de horizonte con curvatura, límites de incertidumbre, pruebas sugeridas en la sección 8) — eso no cambió.

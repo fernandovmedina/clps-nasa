@@ -1,0 +1,86 @@
+{
+  "malapert-a": {
+    "site_id": "malapert-a",
+    "heightmap_url": "/static/terrain/malapert-a.raw",
+    "format": "RAW16 little-endian",
+    "size_px": 513,
+    "extent_m": 20000,
+    "min_height_m": 1782.38,
+    "max_height_m": 2962.85,
+    "texture_url": "/static/terrain/malapert-a.png",
+    "site_px": [
+      256,
+      256
+    ]
+  },
+  "mons-mouton": {
+    "site_id": "mons-mouton",
+    "heightmap_url": "/static/terrain/mons-mouton.raw",
+    "format": "RAW16 little-endian",
+    "size_px": 513,
+    "extent_m": 20000,
+    "min_height_m": 4531.16,
+    "max_height_m": 5989.64,
+    "texture_url": "/static/terrain/mons-mouton.png",
+    "site_px": [
+      256,
+      256
+    ]
+  },
+  "malapert-massif": {
+    "site_id": "malapert-massif",
+    "heightmap_url": "/static/terrain/malapert-massif.raw",
+    "format": "RAW16 little-endian",
+    "size_px": 513,
+    "extent_m": 20000,
+    "min_height_m": 780.67,
+    "max_height_m": 5172.0,
+    "texture_url": "/static/terrain/malapert-massif.png",
+    "site_px": [
+      256,
+      256
+    ]
+  },
+  "shackleton-ridge": {
+    "site_id": "shackleton-ridge",
+    "heightmap_url": "/static/terrain/shackleton-ridge.raw",
+    "format": "RAW16 little-endian",
+    "size_px": 513,
+    "extent_m": 20000,
+    "min_height_m": -1223.98,
+    "max_height_m": 1957.42,
+    "texture_url": "/static/terrain/shackleton-ridge.png",
+    "site_px": [
+      256,
+      256
+    ]
+  },
+  "nobile-rim-1": {
+    "site_id": "nobile-rim-1",
+    "heightmap_url": "/static/terrain/nobile-rim-1.raw",
+    "format": "RAW16 little-endian",
+    "size_px": 513,
+    "extent_m": 20000,
+    "min_height_m": 2322.86,
+    "max_height_m": 6798.38,
+    "texture_url": "/static/terrain/nobile-rim-1.png",
+    "site_px": [
+      256,
+      256
+    ]
+  },
+  "nobile-rim-2": {
+    "site_id": "nobile-rim-2",
+    "heightmap_url": "/static/terrain/nobile-rim-2.raw",
+    "format": "RAW16 little-endian",
+    "size_px": 513,
+    "extent_m": 20000,
+    "min_height_m": -1324.33,
+    "max_height_m": 1644.65,
+    "texture_url": "/static/terrain/nobile-rim-2.png",
+    "site_px": [
+      256,
+      256
+    ]
+  }
+}

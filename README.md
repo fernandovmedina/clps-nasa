@@ -59,40 +59,41 @@ Las herramientas que existen (Quickmap, Moon Trek, JPL Horizons) son potentes, p
         │  Pipeline de datos (Python, offline)    │
         │  LOLA DEM → máscara de horizonte        │
         │  LOLA DEM → heightmap para VR/3D        │
-        │  SPICE / Horizons → efemérides          │
+        │  JPL Horizons → efemérides              │
         └───────────────────┬─────────────────────┘
                             │ JSON / RAW precalculados
         ┌───────────────────▼─────────────────────┐
-        │  ☁️ CloudFront (un solo dominio)        │
-        │  ├── /*     → S3: Next.js estático      │
-        │  └── /api/* → Lambda: API REST          │
+        │  ☁️ Cloudflare Worker (un solo dominio) │
+        │  ├── /*        → Static Assets (Next.js)│
+        │  ├── /static/* → Static Assets (terreno)│
+        │  └── /api/*    → API REST (Worker)      │
         └───────┬─────────────────────────┬───────┘
-                │ REST                    │ REST
+                │ REST + WS               │ REST + WS
    ┌────────────▼──────────┐   ┌──────────▼────────────┐
    │ 🖥️ Mission Control    │   │ 🥽 WebXR (three.js)   │
    │ (navegador)           │   │ Inspector de sitio    │
    └────────────┬──────────┘   └──────────┬────────────┘
                 │        WebSocket        │
         ┌───────▼─────────────────────────▼───────┐
-        │  ☁️ AWS API Gateway (WebSocket)         │
-        │  → Lambda → DynamoDB                    │
+        │  ☁️ Durable Object RoomHub              │
+        │  WebSocket Hibernation + SQLite         │
         │  conexiones + estado de cada sala       │
         └─────────────────────────────────────────┘
 ```
 
 - **Principio clave:** todo lo pesado se **precalcula**. Nada de llamadas en vivo a Horizons durante el demo.
-- **Plan de respaldo:** un servidor WebSocket local con el mismo protocolo, por si falla el internet del evento. La web también funciona sin sincronización.
+- **Plan de respaldo:** el mismo Worker corriendo en la laptop (`pnpm dev:lan`) para la red local del evento. La web también funciona sin sincronización, leyendo los JSON estáticos directo.
 
 ### Stack
 
 | Capa | Tecnologías |
 |---|---|
-| Datos | Python 3.11+, NumPy, `rasterio`, `spiceypy`, JPL Horizons API |
-| Web | **Next.js** (App Router, export estático), TypeScript, D3 / Three.js |
-| API REST | **AWS Lambda** (Node.js) detrás de CloudFront en `/api/*` |
-| Tiempo real | **AWS API Gateway WebSocket**, Lambda (Node.js), DynamoDB |
-| Hosting | **S3 + CloudFront** (front, heightmaps y texturas) |
-| Infra | AWS SAM / CDK |
+| Datos | Python 3.12 (`uv`), NumPy, Pillow, PDS LOLA GDR, JPL Horizons API |
+| Web + VR | **Next.js 15** (App Router, export estático), TypeScript, **three.js puro** (WebXR) |
+| Lógica compartida | `@touchdown/core`: tipos del contrato + motor de escenario, usado por `worker/` y `web/` |
+| API REST | **Cloudflare Worker** en `/api/*`, mismo dominio que la web |
+| Tiempo real | **Cloudflare Durable Objects** (`RoomHub`, WebSocket Hibernation + SQLite) |
+| Hosting | **Cloudflare Workers Static Assets** (front, heightmaps y texturas) |
 | VR | WebXR con three.js puro, dentro del mismo Next.js de `web/` (decisión 14-nov-2026; Unity descartado) |
 
 ## 🔭 La ciencia
@@ -103,7 +104,7 @@ $$\theta(d) = \arctan\left(\frac{h(d) - h_0 - h_{obs} - \frac{d^2}{2R}}{d}\right
 
 Un cuerpo es visible si su elevación supera `horizon_deg[az]`. Sin atmósfera **no hay refracción**: el horizonte lo definen solo el terreno y la esfera lunar.
 
-**Efemérides.** Azimut y elevación topocéntricos del Sol y la Tierra cada hora, con SPICE o JPL Horizons. La libración de la Tierra ya viene incluida.
+**Efemérides.** Azimut y elevación topocéntricos del Sol y la Tierra cada hora, con JPL Horizons (`coord@301`). La libración de la Tierra ya viene incluida.
 
 **Métricas.** Ventanas de Sol, de Tierra y de ambos; tiempo al siguiente ocaso; horas de energía y de comunicación en la misión; puntaje de viabilidad (50% energía, 50% comunicación).
 
@@ -119,18 +120,17 @@ Un cuerpo es visible si su elevación supera `horizon_deg[az]`. Sin atmósfera *
 
 ```
 clps-nasa/
-├── pipeline/   # Python: LOLA → horizonte y heightmap; efemérides
-├── web/        # Next.js (export estático): Mission Control + VR WebXR (three.js)
-├── api/        # Lambda de la API REST (/api/*)
-├── realtime/   # Lambda del WebSocket + servidor local de respaldo
-├── infra/      # AWS SAM/CDK: S3, CloudFront, Lambdas, API Gateway, DynamoDB
-├── vr/         # Prototipos/sandbox de prueba WebXR (no la app final, ver web/)
+├── pipeline/   # Python (uv): ingesta LOLA + JPL Horizons, máscaras y heightmaps
+├── core/       # @touchdown/core: tipos del contrato y motor de escenario (TS, compartido)
+├── worker/     # Cloudflare Worker (/api/*) + Durable Object (/ws) + wrangler.jsonc
+├── web/        # Next.js 15 (export estático): Mission Control + VR WebXR (three.js)
+├── vr/         # Sandbox/prototipos de prueba WebXR (no la app final, ver web/)
 ├── docs/       # Análisis de fuentes de datos oficiales del reto
 ├── CLAUDE.md   # Contexto completo del proyecto y contrato de datos
 └── README.md
 ```
 
-> 📜 **El contrato de datos** (formatos JSON, endpoints y mensajes de WebSocket) está en [`CLAUDE.md`](CLAUDE.md#7-contrato-de-datos-borrador-v01). **No se cambia sin avisar al equipo.**
+> 📜 **El contrato de datos** (formatos JSON, endpoints y mensajes de WebSocket) está en [`CLAUDE.md`](CLAUDE.md#7-contrato-de-datos-v01--ya-implementado-en-core-worker-y-web). **No se cambia sin avisar al equipo.**
 
 ## 👥 Equipo
 
@@ -138,7 +138,7 @@ clps-nasa/
 |---|---|
 | **Datos** | Pipeline LOLA → horizonte y heightmap; efemérides precalculadas |
 | **Web** | Mission Control: catálogo, diagrama polar, línea de tiempo, comparador |
-| **API + tiempo real + integración** | Lambda de la API, S3 + CloudFront, WebSocket en AWS, servidor de respaldo, contrato de datos, despliegue |
+| **API + tiempo real + integración** | Cloudflare Worker (`/api/*`, Static Assets, Durable Object), respaldo local, contrato de datos, despliegue |
 | **VR: mundo** | Terreno, Sol, Tierra e iluminación en WebXR (three.js, dentro de `web/`) |
 | **VR: interacción** | Panel flotante, marcadores, cliente WebSocket |
 | **Pitch y diseño** | Narrativa, identidad visual, video y página del proyecto |

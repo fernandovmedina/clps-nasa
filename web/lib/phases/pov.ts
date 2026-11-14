@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { LunarApp, Phase } from '../engine/app';
 import { Panel, UI, roundRect } from '../engine/panel';
-import { earthDirAt, evaluateSites, fmtHours, scoreColor, skyPos, sunDirAt, type SiteMetrics } from '../mission/scoring';
+import { evaluateSites, fmtHours, scoreColor, skyPosAt, type SiteMetrics } from '../mission/scoring';
 import { defaultMission } from './orbit';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
 
@@ -32,10 +32,9 @@ export class PovPhase implements Phase {
     this.eye = new THREE.Vector3(0, this.world.heightAt(0, 0) + app.eyeHeight, 0);
 
     const start = app.data!.landingDate.getTime();
-    const sv = new THREE.Vector3(), ev = new THREE.Vector3();
     for (let h = 0; h <= 14 * 24; h += 2) {
       const d = new Date(start + h * 3600000);
-      const s = skyPos(this.m.site, sunDirAt(d, sv)), e = skyPos(this.m.site, earthDirAt(d, ev));
+      const { sun: s, earth: e } = skyPosAt(this.m.site, d);
       this.series.push({ sun: s.elevation, earth: e.elevation, hSun: s.elevation - s.aboveHorizon, hEarth: e.elevation - e.aboveHorizon });
     }
 

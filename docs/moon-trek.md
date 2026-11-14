@@ -11,12 +11,10 @@
 
 **Formato / acceso:** interfaz web (SPA), descarga manual del recorte elegido. No se confirmó una API REST simple de recorte automatizado en esta revisión; se asume descarga manual vía la UI.
 
-## Utilidad para el proyecto
+## Utilidad para el proyecto — actualizado 14-nov-2026, no es lo que terminó usándose
 
-- **Datos (pipeline):** es la fuente **principal** para obtener el DEM real de cada sitio (Malapert A, Mons Mouton, etc.). El flujo es: recortar el área en Moon Trek → descargar GeoTIFF → abrir con `rasterio` en Python → generar la máscara de horizonte (sección 6 de `CLAUDE.md`) y el heightmap recortado para VR/3D.
-- **VR:** el heightmap que consume Unity (`GET /api/sites/{id}/terrain`, formato RAW16) se genera a partir de este GeoTIFF. Es el primer eslabón de la cadena que termina en el terreno que se ve en el Quest.
-- **Web:** mismo GeoTIFF es la fuente de la máscara de horizonte (`horizon_deg[az]`) que alimenta el diagrama polar.
+**El pipeline real NO usa Moon Trek.** `pipeline/src/touchdown_pipeline/lola.py` descarga directo los productos completos de **NASA Goddard PGDA** (`LDEM_80S_80M` 80 m/px, `LDEM_45S_400M` 400 m/px, `LDEM_16` global ~1.9 km/px — ver [`lola-contexto-vr.md`](./lola-contexto-vr.md) sección 2.1), sin pasar por la UI de recorte de Moon Trek. Era la ruta planeada originalmente, pero PGDA resultó más directo (descarga programática por URL, sin recorte manual).
 
-**Pendiente de confirmar con la persona de Datos:** si Moon Trek expone alguna API de descarga programática, o si el flujo es 100% manual (recortar y bajar un archivo por sitio).
-
-> **Ver también:** [`lola-contexto-vr.md`](./lola-contexto-vr.md) documenta una fuente alternativa/complementaria de DEMs ya recortados y listos para descarga directa por URL (NASA Goddard PGDA, sitios Site01/Site04), que puede ser más rápida que recortar a mano en Moon Trek para el MVP del hackathon.
+- **Datos (pipeline):** ya no es la fuente usada. Dejar esta página como referencia de una herramienta NASA útil para explorar/recortar visualmente, no como parte del pipeline real.
+- **VR / Web:** el heightmap real (`GET /api/sites/{id}/terrain`, RAW16 513×513) viene de los productos PGDA procesados por `pipeline/`, consumido por la app WebXR/three.js en `web/` (ya no Unity — ver `CLAUDE.md` sección 9, decisión 14-nov).
+- **Uso que le queda:** exploración visual manual y validación cruzada ad hoc, igual que QuickMap — no como fuente de datos del pipeline.

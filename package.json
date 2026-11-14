@@ -1,0 +1,14 @@
+{
+  "name": "touchdown-clps-nasa",
+  "private": true,
+  "packageManager": "pnpm@10.29.2",
+  "scripts": {
+    "dev": "pnpm --filter @touchdown/web build && pnpm --filter @touchdown/worker dev",
+    "dev:lan": "pnpm --filter @touchdown/web build && pnpm --filter @touchdown/worker dev --ip 0.0.0.0",
+    "dev:web": "pnpm --filter @touchdown/web dev",
+    "build": "pnpm --filter @touchdown/web build",
+    "test": "pnpm --filter @touchdown/core test && pnpm --filter @touchdown/worker test && pnpm --filter @touchdown/web test",
+    "typecheck": "pnpm --filter @touchdown/core typecheck && pnpm --filter @touchdown/worker typecheck && pnpm --filter @touchdown/web typecheck",
+    "lint": "pnpm --filter @touchdown/web lint"
+  }
+}

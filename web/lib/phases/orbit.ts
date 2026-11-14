@@ -5,8 +5,9 @@ import { starField } from '../engine/particles';
 import { createMoon } from '../engine/moon';
 import { earthTexture, glowTexture } from '../engine/textures';
 import { DEG, damp, latLonToVec3, smooth } from '../engine/util';
-import { earthDirAt, evaluateSites, fmtHours, scoreColor, sunDirAt, type SiteMetrics } from '../mission/scoring';
-import { DEFAULT_SITES } from '../mission/sites';
+import { globalDirAt } from '../mission/global-track';
+import { evaluateSites, fmtHours, scoreColor, type SiteMetrics } from '../mission/scoring';
+import { devFallbackMission, type MissionData } from '../mission/sites';
 import { clearSurface } from './surface-world';
 
 const R = 1000;               // moon radius in scene units (1 u ≈ 1.74 km)
@@ -16,8 +17,8 @@ const STATION_LAT = -70;      // where the spacecraft parks to show the south po
 
 interface Marker { m: SiteMetrics; group: THREE.Group; beam: THREE.Mesh; head: THREE.Mesh; ring: THREE.Mesh; label: THREE.Sprite; shown: number; hover: boolean }
 
-export function defaultMission() {
-  return { landingDate: new Date(Date.UTC(2027, 8, 14, 6, 0)), sites: DEFAULT_SITES };
+export function defaultMission(): MissionData {
+  return devFallbackMission();
 }
 
 /** Phase 2 — orbit the Moon, scan the south pole and rank the candidate sites. */
@@ -48,9 +49,9 @@ export class OrbitPhase implements Phase {
     sc.add(this.stars);
     sc.add(new THREE.HemisphereLight(0x8899aa, 0x111111, 0.3));
     const earthshine = new THREE.DirectionalLight(0x9db8e8, 0.9); // fill from the Earth so the dark pole stays readable
-    earthshine.position.copy(earthDirAt(this.date)).multiplyScalar(5000);
+    earthshine.position.copy(globalDirAt(data.global, this.date, 'earth')).multiplyScalar(5000);
     sc.add(earthshine);
-    const sunDir = sunDirAt(this.date);
+    const sunDir = globalDirAt(data.global, this.date, 'sun');
     const sun = new THREE.DirectionalLight(0xfff4e6, 3.2);
     sun.position.copy(sunDir).multiplyScalar(5000);
     sc.add(sun, sun.target);
@@ -66,7 +67,7 @@ export class OrbitPhase implements Phase {
     this.targets.push(blocker);
 
     const earth = new THREE.Mesh(new THREE.SphereGeometry(1500, 64, 32), new THREE.MeshStandardMaterial({ map: earthTexture(), roughness: 0.9 }));
-    earth.position.copy(earthDirAt(this.date)).multiplyScalar(60000);
+    earth.position.copy(globalDirAt(data.global, this.date, 'earth')).multiplyScalar(60000);
     sc.add(earth);
 
     // orbit track
