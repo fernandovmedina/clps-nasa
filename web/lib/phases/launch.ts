@@ -6,6 +6,7 @@ import { earthTexture, glowTexture } from '../engine/textures';
 import { createMoon } from '../engine/moon';
 import { clamp01, damp, lerp, rand, smooth } from '../engine/util';
 import { clearSurface } from './surface-world';
+import { disposeObject, loadRocketModel } from './rocket-model';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const EARTH_R = 3000;
@@ -78,7 +79,7 @@ export class LaunchPhase implements Phase {
   private tele = { alt: '0.0 km', vel: '0.00 km/s', dist: '384,400 km' };
   private uiT = 0; private countLabel = '';
 
-  private rocket: THREE.Group; private nozzles: THREE.Vector3[];
+  private rocket: THREE.Group; private nozzles: THREE.Vector3[]; private closed = false;
   private curve: THREE.CatmullRomCurve3; private curveLen: number; private travelUnits: number;
   private flame: Particles; private smoke: Particles;
   private flameLight = new THREE.PointLight(0xff8a3c, 0, 120, 1.4);
@@ -113,6 +114,14 @@ export class LaunchPhase implements Phase {
 
     sc.add(buildPad());
     const r = buildRocket(); this.rocket = r.group; this.nozzles = r.nozzles; sc.add(this.rocket);
+    loadRocketModel(this.rocket).then((model) => {
+      if (!model) return;
+      if (this.closed) { disposeObject(model); return; }
+      for (const child of [...this.rocket.children]) { this.rocket.remove(child); disposeObject(child); }
+      this.rocket.add(model);
+      const spread = model.userData.baseRadius * 0.5;
+      this.nozzles[1].x = -spread; this.nozzles[2].x = spread;
+    });
 
     const moon = createMoon(MOON_R, app.moonTex, 128);
     moon.position.copy(MOON_C); sc.add(moon);
@@ -160,6 +169,7 @@ export class LaunchPhase implements Phase {
   }
 
   exit() {
+    this.closed = true; disposeObject(this.rocket);
     this.hud.dispose(); this.count.dispose();
   }
 
