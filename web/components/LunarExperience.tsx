@@ -25,6 +25,7 @@ export default function LunarExperience() {
   const [xr, setXr] = useState<'checking' | 'yes' | 'no'>('checking');
   const [inVR, setInVR] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [muted, setMuted] = useState(false);
 
   useEffect(() => {
     const el = mount.current;
@@ -47,6 +48,7 @@ export default function LunarExperience() {
     app.register('transmit', (a) => new TransmitPhase(a));
     app.start().catch((e) => setError(String(e)));
     appRef.current = app;
+    setMuted(app.audio.muted);
 
     const onStart = () => setInVR(true);
     const onEnd = () => setInVR(false);
@@ -68,6 +70,13 @@ export default function LunarExperience() {
     try { await appRef.current?.enterVR(); } catch (e) { setError(`No se pudo iniciar VR: ${String(e)}`); }
   };
 
+  const toggleSound = () => {
+    const audio = appRef.current?.audio;
+    if (!audio) return;
+    audio.setMuted(!audio.muted);
+    setMuted(audio.muted);
+  };
+
   return (
     <div className={styles.root}>
       <div ref={mount} className={styles.canvas} />
@@ -83,6 +92,13 @@ export default function LunarExperience() {
             </ol>
           </div>
           <div className={styles.bottombar}>
+            <button type="button" className={styles.sound} aria-pressed={!muted} onClick={toggleSound}>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 9v6h4l5 4V5L8 9H4z" />
+                {muted ? <path d="M17 9l5 6M22 9l-5 6" /> : <path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" />}
+              </svg>
+              {muted ? 'Sonido silenciado' : 'Sonido activado'}
+            </button>
             <span className={styles.hint}>Arrastra para mirar · clic en paneles y puntos para seleccionar</span>
             {xr === 'yes' && <button className={styles.vr} onClick={enterVR}>Entrar en VR</button>}
             {xr === 'no' && <span className={styles.novr}>VR no disponible aquí · ábrelo en el navegador del Quest (HTTPS)</span>}
