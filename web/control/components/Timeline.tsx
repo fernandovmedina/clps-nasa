@@ -114,22 +114,22 @@ export function Timeline({
           {ticks.map((d) => (
             <g key={d}>
               <line x1={xOf(d * 24)} x2={xOf(d * 24)} y1={AXIS_H - 4} y2={HEIGHT - 16} stroke="var(--line)" strokeWidth={0.5} />
-              <text x={xOf(d * 24)} y={16} textAnchor={d === 0 ? 'start' : 'middle'} fontSize={14} fill="var(--label-2)" className="num">
+              <text x={xOf(d * 24)} y={16} textAnchor={d === 0 ? 'start' : 'middle'} fontSize={12} fill="var(--label-2)" className="num">
                 {d}
               </text>
             </g>
           ))}
-          <text x={0} y={16} fontSize={14} fill="var(--label-2)">
+          <text x={0} y={16} fontSize={12} fill="var(--label-2)">
             {t('axisDays')}
           </text>
           {bands.map(([label, color, intervals], i) => {
             const y = AXIS_H + i * (BAND_H + BAND_GAP)
             return (
               <g key={label}>
-                <text x={0} y={y + 14} fontSize={14} fontWeight={500} fill="var(--label)">
+                <text x={0} y={y + 13} fontSize={12} fontWeight={500} fill="var(--label-2)">
                   {label}
                 </text>
-                <rect x={LABEL_W} y={y} width={plotW} height={BAND_H} rx={4} fill="var(--bg-raised)" />
+                <rect x={LABEL_W} y={y} width={plotW} height={BAND_H} rx={3} fill="var(--bg-raised)" />
                 {intervals.map(([a, b]) => {
                   const x0 = xOf(Math.max(0, hoursOf(Date.parse(a))))
                   const x1 = xOf(Math.min(max, hoursOf(Date.parse(b))))

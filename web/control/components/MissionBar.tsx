@@ -19,12 +19,15 @@ export function MissionBar({ delayDays, scenarioCount, onAddDelay, onSetDelay, o
   const valueText = delayDays === 0 ? t('delayNone') : `+${t('delayValue', { n: delayDays })}`
 
   return (
-    <section aria-label={t('missionBar')} className="card grid gap-4 p-4 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center lg:gap-6">
+    <section
+      aria-label={t('missionBar')}
+      className="slate slate-banner grid gap-6 rounded-[12px] border-[0.5px] border-line p-6 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center"
+    >
       <div className="grid gap-1">
         <p className="text-caption text-label-2" id="delay-label">
           {t('delay')}
         </p>
-        <p className="num text-title" data-testid="delay-value" aria-live="polite">
+        <p className="num text-figure text-accent" data-testid="delay-value" aria-live="polite">
           {valueText}
         </p>
       </div>
@@ -54,18 +57,18 @@ export function MissionBar({ delayDays, scenarioCount, onAddDelay, onSetDelay, o
           value={[delayDays]}
           onValueChange={([v]) => onSetDelay(v ?? 0)}
         >
-          <Slider.Track className="relative h-2 grow rounded-full bg-raised">
-            <Slider.Range className="absolute h-full rounded-full bg-label" />
+          <Slider.Track className="relative h-2 grow rounded-full bg-line-strong">
+            <Slider.Range className="absolute h-full rounded-full bg-accent" />
           </Slider.Track>
           <Slider.Thumb
             aria-label={t('delaySlider')}
             aria-valuetext={valueText}
-            className="relative block h-6 w-6 rounded-full border-2 border-base bg-label outline-offset-2 after:absolute after:-inset-3 after:content-[''] active:opacity-80"
+            className="relative block h-6 w-6 rounded-full border-2 border-[var(--panel)] bg-accent outline-offset-2 after:absolute after:-inset-3 after:content-[''] active:opacity-80"
           />
         </Slider.Root>
       </div>
       <div className="grid justify-items-start gap-1 lg:justify-items-end">
-        <button type="button" className="btn btn-solid" disabled={atMax} onClick={onAdd}>
+        <button type="button" className="btn btn-outline" disabled={atMax} onClick={onAdd}>
           <Plus size={18} aria-hidden="true" />
           {t('addScenario')}
         </button>
