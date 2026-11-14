@@ -146,72 +146,63 @@ Ya hay repos públicos de otros equipos con este reto (buscar "CLPS Lunar Missio
 
 ## 5. Arquitectura
 
-**Arquitectura serverless en AWS** (decisión del 4 de nov de 2026; sustituye al backend FastAPI del borrador original). Como todo se precalcula, no hace falta un servidor siempre encendido.
-- **Front:** **Next.js como sitio estático** (`output: 'export'`) en **S3 + CloudFront**.
-- **API REST:** **una Lambda** detrás del mismo CloudFront, en la ruta `/api/*`.
-- **Tiempo real:** **API Gateway WebSocket + Lambda + DynamoDB**.
+**Arquitectura serverless unificada en Cloudflare Workers** (decisión del 14 de nov de 2026, hora ~5; sustituye a la topología AWS S3/CloudFront/Lambda/API Gateway/DynamoDB documentada antes — ningún recurso de esa topología llegó a crearse). Como los datos lunares se precalculan, no hay servidores pesados ni bases externas que mantener.
+- **Front:** **Next.js como sitio estático** (`output: 'export'`) servido por **Cloudflare Workers Static Assets**.
+- **API REST:** **Cloudflare Worker** en el mismo dominio bajo `/api/*`.
+- **Tiempo real:** **Cloudflare Durable Objects** (`RoomHub` con WebSocket Hibernation API y almacenamiento SQLite embebido) bajo `/ws?room=<room>`.
+- **VR (decisión 14-nov-2026, sustituye a Unity):** WebXR con **three.js puro** dentro del mismo Next.js de `web/` (no `@react-three/xr`, no Unity). Vive en la misma app que Mission Control, se despliega junto con ella, y el Quest la abre directo en su navegador por HTTPS — sin build nativo de Android, sin Meta XR SDK.
 
 ```
         ┌─────────────────────────────────────────┐
         │  Pipeline de datos (offline, Python)    │
         │  LOLA DEM → máscara de horizonte        │
         │  LOLA DEM → heightmap recortado (VR/3D) │
-        │  SPICE/Horizons → efemérides Sol/Tierra │
+        │  JPL Horizons → efemérides Sol/Tierra   │
         └───────────────────┬─────────────────────┘
-                            │ JSON / PNG / RAW precalculados (S3)
+                            │ JSON / PNG / RAW precalculados
         ┌───────────────────▼─────────────────────┐
-        │  CloudFront (un solo dominio)           │
-        │  ├── /*        → S3: Next.js estático   │
-        │  ├── /static/* → S3: heightmaps/texturas│
-        │  └── /api/*    → Lambda (Function URL)  │
-        │                  lee los JSON y calcula │
-        │                  el resumen del escenario│
+        │  Cloudflare Worker (un solo dominio)    │
+        │  ├── /*        → Static Assets (Next.js)│
+        │  ├── /static/* → Static Assets (terreno)│
+        │  ├── /api/*    → API REST (Worker)      │
+        │  └── /ws       → Durable Object RoomHub │
+        │                  (WebSocket + SQLite)   │
         └───────┬─────────────────────────┬───────┘
-                │ REST                    │ REST
+                │ REST + WS               │ REST + WS
    ┌────────────▼──────────┐   ┌──────────▼────────────┐
    │ Navegador             │   │ VR (WebXR, three.js)  │
    │ Mission Control       │   │ Inspector de sitio    │
-   └────────────┬──────────┘   └──────────┬────────────┘
-                │        WebSocket        │
-        ┌───────▼─────────────────────────▼───────┐
-        │  AWS API Gateway (WebSocket)            │
-        │  → Lambda (connect / disconnect / msg)  │
-        │  → DynamoDB (conexiones + último estado │
-        │    de cada sala)                        │
-        └─────────────────────────────────────────┘
+   └───────────────────────┘   └───────────────────────┘
 ```
 
 ### Stack
-- **Pipeline de datos:** Python 3.11+, NumPy, `rasterio` (DEMs), `spiceypy` (SPICE) y/o la API de JPL Horizons. Corre offline y su salida son archivos.
-- **Web:** **Next.js** (App Router) + TypeScript, compilado como **export estático** (`output: 'export'`). 3D con Three.js / React Three Fiber (o CesiumJS si se quiere un globo). Gráficas con D3 o Recharts (el diagrama polar en D3 o canvas).
-- **API REST:** **una Lambda** (Node.js/TypeScript) con Function URL, detrás de CloudFront en `/api/*`. Lee los JSON precalculados (empaquetados con la Lambda o desde S3) y calcula `/api/scenario`. Mismo dominio que la web, así que no hay CORS en el navegador.
-- **Hosting:** **S3 (privado) + CloudFront** con Origin Access Control. El deploy del front es `next build` y luego `aws s3 sync out/ s3://<bucket>` más una invalidación de CloudFront.
-- **Tiempo real:** AWS API Gateway WebSocket + una Lambda (Node.js/TypeScript) + DynamoDB.
-- **Infraestructura como código:** AWS SAM o CDK para todo (bucket, CloudFront, Lambda de la API y stack del WebSocket). La cuenta de AWS ya está configurada en el equipo de Oscar.
-- **Datos pesados:** los heightmaps RAW y las texturas van en S3 y se sirven por CloudFront en `/static/*`.
-- **VR (decisión 14-nov-2026, sustituye a Unity):** WebXR con **three.js puro** dentro del mismo Next.js de `web/` (no `@react-three/xr`, no Unity). Vive en la misma app que Mission Control, se despliega junto con ella en S3 + CloudFront, y el Quest la abre directo en su navegador por HTTPS — sin build nativo de Android, sin Meta XR SDK. Detalle y cómo correr/probar en el Quest: `web/README.md`.
-- *(Unity quedó descartado como plan: la fricción del build nativo Android/Quest en 48h no se justificaba frente a compartir stack con la web.)*
+- **Pipeline de datos:** Python 3.12 (`uv`), NumPy, Pillow, JPL Horizons API y PDS LOLA GDR. Para cada punto del terreno se usa el DEM de mejor resolución que lo cubre: `LDEM_80S_80M` (80 m/px, 80°S–90°S), `LDEM_45S_400M` (400 m/px, 45°S–90°S) y `LDEM_16` (~1.9 km/px, global). Corre offline y genera los JSON y heightmaps en `web/public/data/` y `web/public/static/terrain/`.
+- **Web + VR:** **Next.js 15** (App Router, `output: 'export'`) + React 19 + TypeScript strict, en `web/`. 3D/WebXR con **three.js puro** (no react-three-fiber): el motor (`lib/engine/`), las 5 fases de la experiencia (`lib/phases/`) y la capa de datos (`lib/mission/`) consumen `@touchdown/core` y los JSON precalculados directamente — funciona como sitio 100% estático sin depender del Worker para la demo.
+- **API REST:** **Cloudflare Worker** (`worker/src/index.ts`) en `/api/*`. Sirve catálogo, máscaras, efemérides, metadatos de terreno y `/api/scenario` en el mismo dominio (sin CORS).
+- **Lógica compartida:** `core/` (`@touchdown/core`): tipos TypeScript del contrato §7 y el motor de escenario (`computeScenario`, `positionAt`, `horizonAt`) — lo importan el Worker **y** la web.
+- **Tiempo real:** **Cloudflare Durable Object** (`RoomHub`) en `/ws?room=<room>` con persistencia SQLite por sala.
+- **Infraestructura y CI/CD:** `worker/wrangler.jsonc` + GitHub Actions (pendiente de configurar en este repo).
+- **Datos pesados:** heightmaps RAW16/PNG y texturas en `web/public/static/terrain/`, servidos en `/static/terrain/*`.
 
-### Por qué API Gateway WebSocket (y no otra opción)
-- Un sitio estático en S3 y una Lambda de la API **no pueden mantener WebSockets abiertos**, así que el tiempo real necesita un servicio aparte.
-- API Gateway habla **WebSocket estándar con JSON plano**, consumible con el cliente WebSocket nativo del navegador (Quest incluido). AppSync Events, Supabase Realtime y servicios similares usan protocolos propios que complican el cliente.
-- La lógica cabe en una sola Lambda de unas 50 líneas.
+### Por qué Durable Objects (y no otro servicio)
+- **WebSockets nativos con estado fuerte por sala** dentro del mismo Worker y dominio, sin tablas externas ni APIs adicionales.
+- Habla **WebSocket estándar con JSON plano**, compatible directamente con el cliente WebSocket nativo del navegador (Quest incluido).
+- Con la WebSocket Hibernation API (`ctx.acceptWebSocket`) el objeto sale de memoria entre mensajes sin cortar las conexiones y no cobra duración mientras hiberna. Al despertar pierde la memoria, por eso el estado de la sala vive en SQLite.
 
 ### Limitaciones del export estático de Next.js
-- **Sin route handlers dinámicos, server actions, middleware ni SSR.** Todo lo dinámico va a la Lambda de `/api/*` o se hace en el cliente.
-- **Rutas dinámicas** (por ejemplo `/sites/[id]`) necesitan `generateStaticParams`. Si no, se resuelven en el cliente con query strings.
-- **`next/image`** necesita `images: { unoptimized: true }`.
-- **URLs limpias:** usar `trailingSlash: true` o una CloudFront Function que reescriba `/ruta` → `/ruta/index.html`.
-- **Desarrollo local:** `next dev` para la UI más la Lambda de la API corriendo en local (`sam local start-api` o un script de Node). La URL base de la API va por `NEXT_PUBLIC_API_URL` (vacía en producción porque es el mismo dominio).
+- **Sin route handlers dinámicos, server actions, middleware ni SSR.** Todo lo dinámico va al Worker en `/api/*` o se resuelve en el cliente (como hace hoy `web/lib/mission/sites.ts`, que lee directo los JSON estáticos).
+- **Rutas dinámicas** usan query strings o `generateStaticParams`.
+- **`next/image`** usa `images: { unoptimized: true }`.
+- **Desarrollo local:** `pnpm dev` compila la web y levanta Worker + Static Assets + Durable Object en `http://localhost:8787`. `pnpm dev:web` corre solo el front con `next dev` (sirve para probar la VR/web contra los JSON estáticos sin el Worker).
 
-### Riesgos de la arquitectura serverless
-- **Depende de internet en el evento.** Mitigación obligatoria: un **servidor WebSocket local de respaldo** (un script pequeño en Node.js con el mismo protocolo) que corra en una laptop y al que se conecten la web y el Quest por la red local. La URL del WebSocket se configura por variable de entorno.
-- **La web tiene que funcionar sin sincronización** (con estado local) por si el WebSocket falla durante el video.
-- **Depurar es más lento** (logs en CloudWatch). Desarrollar contra el servidor local y desplegar a AWS solo para integrar.
-- **Costo:** dentro de la capa gratuita para el volumen de un hackathon. Igual conviene poner una alerta de presupuesto en AWS.
+### Riesgos y mitigaciones
+- **Depende de internet en el evento.** Mitigación: el mismo Worker servido a la red local con `pnpm dev:lan` (`wrangler dev --ip 0.0.0.0`); web y Quest apuntan a `ws://<ip-laptop>:8787/ws?room=<room>`.
+- **La web debe funcionar sin sincronización** (estado local independiente) si el WebSocket se desconecta durante el demo — hoy la web ya funciona así por defecto, leyendo los JSON estáticos sin WebSocket.
+- **Tamaño de assets:** Workers Static Assets admite hasta 25 MiB por archivo y 20 000 archivos por versión (plan Free). Los heightmaps son RAW16 de `513×513` (~0.5 MiB) porque el DEM fuente es de 80 m/px.
+- No crear, borrar ni renombrar recursos de Cloudflare (Workers, clases de Durable Object, dominios, tokens) sin confirmarlo con el equipo. Cada push a `main` (una vez configurado el CI/CD) despliega solo, y una migración que borra una clase de Durable Object elimina para siempre el estado de las salas.
 
 ### Principio clave: precalcular
-Las efemérides y las máscaras de horizonte se calculan **offline** y se sirven como JSON. Nada de cálculos pesados en vivo durante el demo. Las coordenadas personalizadas pueden usar el horizonte esférico (sin terreno) como fallback, con una etiqueta clara.
+Las efemérides y las máscaras de horizonte se calculan **offline** y se sirven como JSON. Nada de llamadas en vivo a Horizons durante el demo. Las coordenadas personalizadas usan horizonte esférico geométrico como fallback con la etiqueta `"source": "spherical"`.
 
 ---
 
@@ -250,31 +241,31 @@ Las efemérides y las máscaras de horizonte se calculan **offline** y se sirven
 - Elevación solar mínima, máxima y promedio.
 - **Puntaje de viabilidad** (configurable; pesos sugeridos 50% energía y 50% comunicación, más pendiente si se calcula) y semáforo: viable / marginal / no viable.
 
-### Catálogo inicial de sitios
-**Coordenadas aproximadas. Verificar contra fuentes oficiales antes de usar.**
+### Catálogo de sitios (ya calculado, no es un borrador)
+El pipeline ya generó esto con datos reales — fuente de verdad: `web/public/data/sites.json`. Coordenadas con fuente citada en `coord_source`; `approx: false` cuando ya se verificaron.
 
-| Sitio | Programa | Lat | Lon (E) | Notas |
+| Sitio | Programa | Lat | Lon (E) | Terreno real (LOLA) |
 |---|---|---|---|---|
-| Malapert A (IM-1 Odysseus) | CLPS, 2024 | ≈ −80.1 | ≈ 1.4 | Aterrizó de lado |
-| Mons Mouton (IM-2 Athena) | CLPS, 2025; IM-4 planeado | ≈ −84.5 | ≈ 29 | |
-| Malapert Massif | Artemis III candidato | ≈ −86 | ≈ 0 | |
-| Shackleton (borde / connecting ridge) | Artemis / interés científico | ≈ −89.5 | variable | Zona de iluminación casi permanente |
-| Haworth, Nobile Rim 1/2, de Gerlache Rim 2, Slater Plain, Peak near Cabeus B | Artemis III candidatos | polo sur | — | Lista de 9 regiones de NASA (2024) |
-| Chandrayaan-3 (Vikram) | ISRO, 2023 | ≈ −69.4 | ≈ 32.3 | |
-| Chang'e 4 | CNSA, 2019 | ≈ −45.4 | ≈ 177.6 | Lado oculto: la Tierra **nunca** es visible (buen ejemplo educativo) |
-| Apollo 11 | NASA, 1969 | ≈ 0.67 | ≈ 23.47 | Contraste ecuatorial |
-| Apollo 17 | NASA, 1972 | ≈ 20.19 | ≈ 30.77 | |
-| Personalizado | — | input | input | Horizonte esférico si no hay DEM |
+| Malapert A (IM-1 Odysseus) | CLPS, 2024 | −80.13 | 1.44 | ✅ |
+| Mons Mouton (IM-2 Athena) | CLPS/Artemis | −84.79 | 29.20 | ✅ |
+| Malapert Massif | Artemis III candidato | ver `sites.json` | | ✅ |
+| Shackleton–de Gerlache ridge | Artemis / científico | ver `sites.json` | | ✅ |
+| Nobile Rim 1 | Artemis III candidato | ver `sites.json` | | ✅ |
+| Nobile Rim 2 | Artemis III candidato | ver `sites.json` | | ✅ |
+| Chandrayaan-3 (Vikram) | ISRO, 2023 | ver `sites.json` | | — (solo efemérides) |
+| Chang'e 4 | CNSA, 2019 | ver `sites.json` | | — (lado oculto: la Tierra **nunca** es visible) |
+| Apollo 11 | NASA, 1969 | ver `sites.json` | | — (contraste ecuatorial) |
+| Apollo 17 | NASA, 1972 | ver `sites.json` | | — |
 
-**Sitios con terreno completo (LOLA + VR):** empezar con 3 del polo sur (Malapert, Mons Mouton y uno más). El resto, solo con efemérides y el horizonte esférico o de baja resolución.
+**Terreno real (RAW16 513×513, 20 km de extensión) en `web/public/static/terrain/`** para los 6 sitios del polo sur. Los otros 4 solo tienen efemérides + horizonte esférico geométrico (`horizon_source: "spherical"`).
 
 ---
 
-## 7. Contrato de datos (borrador v0.1)
+## 7. Contrato de datos (v0.1 — ya implementado en `core/`, `worker/` y `web/`)
 
-*Cambios v0 → v0.1 (4 nov): el WebSocket pasa a API Gateway (la sala va como query string), se agrega el mensaje `hello` y `state` incluye `markers`. Los endpoints REST no cambian.*
+*Cambios v0 → v0.1: el WebSocket pasa de API Gateway al Durable Object `RoomHub` del Worker — solo cambia la URL (`wss://<worker-host>/ws?room=<room>`), mensajes y endpoints REST no cambian. Los heightmaps se sirven a `513×513` (no 1025; el DEM fuente es de 80 m/px). Nuevo y opcional: `{ "type": "ping" }` → el servidor responde `{ "type": "pong" }` (latido para no perder la conexión).*
 
-Formato compartido entre pipeline, API (Lambda), web y VR. **No cambiarlo sin avisar al equipo.** Los endpoints REST los sirve la Lambda de la API detrás de CloudFront, con las mismas rutas `/api/...` de abajo. Tiempos en UTC ISO 8601 y ángulos en grados. Azimut desde el norte (0°) en sentido horario hacia el este (90°). En el polo sur "norte" es la dirección hacia el meridiano del sitio; documentar la convención exacta usada por el pipeline.
+Formato compartido entre `pipeline/`, `core/` (`@touchdown/core`), `worker/` y `web/`. **No cambiarlo sin avisar al equipo.** Los endpoints REST los sirve el Worker en el mismo dominio que la web. Tiempos en UTC ISO 8601 y ángulos en grados. Azimut desde el norte (0°) en sentido horario hacia el este (90°).
 
 ### `GET /api/sites`
 ```json
@@ -299,10 +290,11 @@ Formato compartido entre pipeline, API (Lambda), web y VR. **No cambiarlo sin av
   "az_step_deg": 0.5,
   "horizon_deg": [1.2, 1.3, 1.1],
   "observer_height_m": 2.0,
-  "source": "LOLA 20m polar stereographic",
-  "max_range_km": 100
+  "source": "LOLA LDEM_80S_80M + LDEM_45S_400M",
+  "max_range_km": 300
 }
 ```
+*`source: "spherical"` para sitios sin DEM local (horizonte geométrico, sin terreno).*
 
 ### `GET /api/sites/{id}/ephemeris?start=...&end=...&step=1h`
 ```json
@@ -336,6 +328,7 @@ Formato compartido entre pipeline, API (Lambda), web y VR. **No cambiarlo sin av
   "status": "marginal"
 }
 ```
+*`status`: `"viable"`, `"marginal"` o `"not_viable"` — fórmula exacta en `core/src/scenario.ts` (`computeScenario`): `score = 100 * (0.5 * fracción_sol + 0.5 * fracción_tierra)`.*
 
 ### Terreno para VR/3D: `GET /api/sites/{id}/terrain`
 ```json
@@ -343,20 +336,20 @@ Formato compartido entre pipeline, API (Lambda), web y VR. **No cambiarlo sin av
   "site_id": "malapert-a",
   "heightmap_url": "/static/terrain/malapert-a.raw",
   "format": "RAW16 little-endian",
-  "size_px": 1025,
+  "size_px": 513,
   "extent_m": 20000,
-  "min_height_m": 3200,
-  "max_height_m": 5400,
+  "min_height_m": 1782.38,
+  "max_height_m": 2962.85,
   "texture_url": "/static/terrain/malapert-a.png",
-  "site_px": [512, 512]
+  "site_px": [256, 256]
 }
 ```
-*(1025 = 2ⁿ+1, tamaño conveniente para una malla de terreno regular en three.js.)*
+*(513 = 2ⁿ+1. Leer `size_px`/`site_px` del JSON, no fijarlos en código — ver el loader real en `web/lib/mission/sites.ts`.)*
 
-### WebSocket (API Gateway) — estado compartido
-**Conexión:** `wss://<api-id>.execute-api.<region>.amazonaws.com/<stage>?room=<room>`
-- La sala va como query string porque API Gateway WebSocket no tiene rutas por path.
-- La URL se configura por variable de entorno (`NEXT_PUBLIC_WS_URL`), para poder cambiar al servidor local de respaldo (`ws://<ip-laptop>:8787?room=<room>`). Como VR y web comparten la misma app Next.js, ambos leen la misma variable.
+### WebSocket (Durable Object `RoomHub`) — estado compartido
+**Conexión:** `wss://<worker-host>/ws?room=<room>`
+- La sala va como query string, enrutada hacia el Durable Object correspondiente (`idFromName(room)`).
+- La URL se configura por variable de entorno (`NEXT_PUBLIC_WS_URL`), con fallback al Worker en la laptop (`ws://<ip-laptop>:8787/ws?room=<room>`, vía `pnpm dev:lan`). Como VR y web comparten la misma app Next.js, ambos leen la misma variable.
 
 Mensajes en JSON con `type`:
 ```json
@@ -366,14 +359,16 @@ Mensajes en JSON con `type`:
 { "type": "set_time", "t": "2027-01-31T00:00:00Z" }
 { "type": "marker_add", "id": "m1", "site_id": "malapert-a", "x_m": 120.5, "y_m": -40.2, "kind": "rock", "note": "roca ~2 m" }
 { "type": "marker_remove", "id": "m1" }
+{ "type": "ping" }
+{ "type": "pong" }
 ```
-- **Nuevo en v0.1: `hello`.** API Gateway no deja mandar mensajes dentro de `$connect`. Por eso cada cliente, al abrir la conexión, manda `{ "type": "hello" }`, y el servidor le responde **solo a él** con el `state` actual de la sala (marcadores incluidos). Así se cubre a quien se conecta tarde.
-- **Nuevo en v0.1: `markers` dentro de `state`.** Lista con los marcadores vigentes de la sala, para que quien se conecta tarde los vea.
+- **`hello`:** cada cliente, al abrir la conexión, manda `{ "type": "hello" }`, y el Durable Object le responde **solo a él** con el `state` actual de la sala (marcadores incluidos). Así se cubre a quien se conecta tarde.
+- **`markers` dentro de `state`:** lista con los marcadores vigentes de la sala.
 - Coordenadas de marcadores: metros locales relativos al sitio (este = +x, norte = +y).
 - **Sincronizar solo esto:** sitio, tiempo, reproducción y marcadores. Nada más.
-- El servidor reenvía (broadcast) cada mensaje a los demás clientes de la sala y guarda el estado en DynamoDB.
-- Límite de API Gateway: 128 KB por mensaje y conexiones de hasta 2 h (10 min sin tráfico las cierra). **Los clientes deben reconectar solos y volver a mandar `hello`.**
-- El servidor local de respaldo implementa exactamente este mismo protocolo.
+- El servidor reenvía (broadcast) cada cambio a los demás clientes de la sala y persiste el estado en SQLite del Durable Object.
+- **Los clientes deben reconectar solos y volver a mandar `hello`.** Mandar `ping` cada ~30 s para que la red no cierre conexiones inactivas.
+- El respaldo local (`pnpm dev:lan`) implementa exactamente este mismo protocolo.
 
 ---
 
@@ -383,7 +378,7 @@ Mensajes en JSON con `type`:
 |---|---|---|
 | Datos | 1 | Pipeline LOLA → horizonte y heightmap; efemérides precalculadas |
 | Web | 1 | Mission Control en Next.js: catálogo, comparador, diagrama polar, línea de tiempo, cuentas regresivas |
-| API + tiempo real + integración | 1 | Lambda de la API `/api/*`; S3 + CloudFront del front; API Gateway WebSocket + Lambda + DynamoDB (SAM/CDK); servidor local de respaldo; despliegue; reporte en la web; dueño del contrato de datos |
+| API + tiempo real + integración | 1 | Cloudflare Worker (`/api/*`, Static Assets, Durable Object WebSocket); respaldo local con `pnpm dev:lan`; despliegue CI/CD; reporte en la web; dueño del contrato de datos |
 | VR (WebXR, dentro de `web/`) | 2 | Una persona: terreno, Sol y Tierra, iluminación (`lib/engine`, `lib/phases/surface-world.ts`). Otra: interacción, panel flotante, marcadores y cliente WebSocket |
 | Pitch / video / diseño | 1 | Narrativa, identidad visual, video, página del proyecto; grabar desde el día 1 |
 | Integrador / flotante | (compartido) | Contrato de datos, pruebas en el Quest, apagar incendios |
@@ -403,10 +398,11 @@ Mensajes en JSON con `type`:
 - [x] VR: decisión de stack → WebXR + three.js dentro de `web/`, Unity descartado (14 nov)
 - [x] Web: decidir el stack → Next.js + serverless (4 nov)
 - [ ] Web: prototipar el diagrama polar
-- [x] Infra: hosting del front → Next.js estático en S3 + CloudFront; `/api/*` en una Lambda detrás del mismo CloudFront (4 nov)
-- [ ] Infra: plantilla SAM/CDK de S3 + CloudFront + Lambda de la API y script de deploy del front
-- [ ] Infra: prototipo de API Gateway WebSocket + Lambda + DynamoDB y del servidor local de respaldo
-- [ ] Infra: alerta de presupuesto en AWS
+- [x] Infra: hosting del front → Next.js estático en S3 + CloudFront; `/api/*` en una Lambda detrás del mismo CloudFront (4 nov, **obsoleto, ver abajo**)
+- [x] Infra: decisión final → **Cloudflare Workers + Durable Objects** en vez de AWS (14 nov); ningún recurso AWS llegó a crearse, no hay nada que desmantelar
+- [x] Infra/Datos: pipeline real (`pipeline/`), `core/` (`@touchdown/core`) y `worker/` (API REST + Durable Object `RoomHub`) ya integrados en el repo, con tests pasando (14 nov)
+- [ ] Infra: configurar GitHub Actions (CI en PRs + deploy a Cloudflare en `main`) — pendiente, no existe todavía
+- [ ] Infra: tokens/cuenta de Cloudflare para el equipo (hoy solo están en la cuenta personal de quien construyó `worker/`)
 - [ ] Web: wireframes de comparador, línea de tiempo, cuentas regresivas y reporte
 - [ ] Pitch: nombre final, logo, paleta, guion del demo, revisar ganadores de años anteriores
 - [ ] Todos: repo **privado**, entornos instalados, este contrato de datos acordado
@@ -431,9 +427,9 @@ Mensajes en JSON con `type`:
 - Responde y comenta en **español**; el código (nombres de variables y funciones) en **inglés**.
 - Respeta el **contrato de datos** de la sección 7. Si un cambio lo requiere, propónlo primero y explica el impacto en web y VR.
 - **Precalcula** todo lo pesado. Nada de llamadas a Horizons en vivo durante el demo; cachea en JSON.
-- **Serverless:** el front es un export estático de Next.js; no uses SSR, server actions, middleware ni route handlers dinámicos. Lo dinámico va en la Lambda de `/api/*`. Nada de estado en memoria en las Lambdas. El estado compartido vive en DynamoDB (o en el servidor local de respaldo). Las URLs de la API y del WebSocket siempre van por variables de entorno.
-- No crear ni borrar recursos de AWS sin confirmarlo con el equipo.
-- Marca con claridad cualquier dato aproximado o simulado (por ejemplo, el campo `"source": "approx"`). Nunca presentes datos inventados como reales de NASA.
+- **Edge serverless:** el front es un export estático de Next.js; no uses SSR, server actions, middleware ni route handlers dinámicos. Lo dinámico va en el Cloudflare Worker (`/api/*`) o se resuelve en el cliente leyendo los JSON estáticos directo (como ya hace `web/lib/mission/sites.ts`). El estado compartido vive en el Durable Object `RoomHub` (o en el mismo Worker con `pnpm dev:lan` para el respaldo local). Las URLs de la API y del WebSocket siempre van por variables de entorno.
+- No crear, borrar ni renombrar recursos de Cloudflare (Workers, clases de Durable Object, dominios, tokens) sin confirmarlo con el equipo.
+- Marca con claridad cualquier dato aproximado o simulado (por ejemplo, el campo `"source": "approx"` o `"spherical"`). Nunca presentes datos inventados como reales de NASA.
 - Valida los cálculos contra una fuente independiente (Moon Trek, Quickmap o Horizons) antes de confiar en ellos.
 - Prioridad: **web funcional > datos correctos > VR > extras.** La web tiene que funcionar sola en el video.
 - El VR vive dentro de `web/` (Next.js + three.js + WebXR), no en un proyecto Unity separado — ver `web/README.md` para correrlo y probarlo en el Quest.
