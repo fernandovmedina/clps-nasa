@@ -90,11 +90,15 @@ export class SurfaceWorld {
     this.flatten = true;
     this.lz.y = this.heightAt(this.lz.x, this.lz.z);
 
-    // terrain: coarse far mesh + detailed near mesh around viewpoint and LZ
+    // terrain: coarse far mesh + detailed near mesh around viewpoint and LZ.
+    // The real orthophoto only goes on the far mesh: at 513px over 20 km it has
+    // plenty of resolution there (~39 m/texel, same ballpark as the DEM), but
+    // would look blurry stretched across the near mesh's fine detail - that one
+    // keeps the tiled procedural texture regardless of whether terrain is real.
     const tex = regolithTexture();
-    const far = this.terrainMesh(FAR_SIZE, 220, new THREE.Vector2(0, 0), tex, 140, -1.5);
+    const far = this.terrainMesh(FAR_SIZE, 220, new THREE.Vector2(0, 0), tex, 140, -1.5, true);
     const nearC = new THREE.Vector2(this.lz.x * 0.5, this.lz.z * 0.5);
-    const near = this.terrainMesh(NEAR_SIZE, 260, nearC, tex, 12, 0);
+    const near = this.terrainMesh(NEAR_SIZE, 260, nearC, tex, 12, 0, false);
     near.castShadow = true; near.receiveShadow = true; far.receiveShadow = true;
     sc.add(far, near);
 
@@ -204,12 +208,15 @@ export class SurfaceWorld {
     return h + (this.lzBase - h) * w * 0.9;
   }
 
-  private terrainMesh(size: number, segs: number, c: THREE.Vector2, tex: THREE.Texture, repeat: number, sink: number) {
+  private terrainMesh(size: number, segs: number, c: THREE.Vector2, tex: THREE.Texture, repeat: number, sink: number, useRealTexture: boolean) {
     const geo = new THREE.PlaneGeometry(size, size, segs, segs);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position as THREE.BufferAttribute;
+    const uv = geo.attributes.uv as THREE.BufferAttribute;
     const half = NEAR_SIZE / 2 - 4;
     const nc = new THREE.Vector2(this.lz.x * 0.5, this.lz.z * 0.5);
+    const realTex = useRealTexture ? this.terrain?.texture ?? null : null;
+    const extentHalf = this.terrain ? this.terrain.info.extent_m / 2 : 0;
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i) + c.x, z = pos.getZ(i) + c.y;
       let y = this.heightAt(x, z);
@@ -217,10 +224,16 @@ export class SurfaceWorld {
       const r = Math.hypot(x, z);
       y -= (r * r) / (2 * 1737400) * 40; // exaggerated curvature at the edges
       pos.setXYZ(i, x, y, z);
+      if (realTex) {
+        // Full-extent UV from absolute world position (col/row math verified against
+        // pipeline/lola.py - see terrain.ts), NOT the plane's own 0..1 local UV.
+        uv.setXY(i, (x + extentHalf) / this.terrain!.info.extent_m, (z + extentHalf) / this.terrain!.info.extent_m);
+      }
     }
     geo.computeVertexNormals();
-    const t = tex.clone(); t.needsUpdate = true; t.repeat.set(repeat, repeat);
-    const mat = new THREE.MeshStandardMaterial({ map: t, color: 0xc8c6c0, roughness: 1, metalness: 0 });
+    const mat = realTex
+      ? new THREE.MeshStandardMaterial({ map: realTex, roughness: 1, metalness: 0 })
+      : new THREE.MeshStandardMaterial({ map: (() => { const t = tex.clone(); t.needsUpdate = true; t.repeat.set(repeat, repeat); return t; })(), color: 0xc8c6c0, roughness: 1, metalness: 0 });
     return new THREE.Mesh(geo, mat);
   }
 

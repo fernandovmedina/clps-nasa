@@ -10,21 +10,29 @@
  *   row = (z_local + extent/2) / cellM
  * (because z_local = -north_m, and row grows as north_m shrinks).
  */
+import * as THREE from 'three';
 import type { TerrainInfo } from '@touchdown/core';
+import { tryLoad } from '../engine/textures';
 
 export interface TerrainPatch {
   info: TerrainInfo;
   /** Meters, relative to the real height AT the site's own position (site_px). */
   heights: Float32Array;
   cellM: number;
+  /** Real orthophoto/shaded-relief, UV-mapped 1:1 to the full extent (not tiled). null if it failed to load. */
+  texture: THREE.Texture | null;
 }
 
 export async function loadTerrainPatch(info: TerrainInfo): Promise<TerrainPatch> {
-  const res = await fetch(info.heightmap_url);
-  if (!res.ok) throw new Error(`fetch ${info.heightmap_url} failed: ${res.status}`);
-  const buf = await res.arrayBuffer();
+  const [raw, texture] = await Promise.all([
+    fetch(info.heightmap_url).then((res) => {
+      if (!res.ok) throw new Error(`fetch ${info.heightmap_url} failed: ${res.status}`);
+      return res.arrayBuffer();
+    }).then((buf) => new Uint16Array(buf)),
+    tryLoad(info.texture_url),
+  ]);
+
   const n = info.size_px;
-  const raw = new Uint16Array(buf);
   if (raw.length !== n * n) {
     throw new RangeError(`terrain ${info.site_id}: expected ${n * n} samples, got ${raw.length}`);
   }
@@ -37,7 +45,17 @@ export async function loadTerrainPatch(info: TerrainInfo): Promise<TerrainPatch>
   for (let k = 0; k < raw.length; k++) {
     heights[k] = info.min_height_m + (raw[k]! / 65535) * span - siteHeightM;
   }
-  return { info, heights, cellM: info.extent_m / (n - 1) };
+
+  if (texture) {
+    // Full-extent mapping (not tiled), computed explicitly from world position in
+    // surface-world.ts - disable the default top/bottom flip so row 0 (north,
+    // per lola.py export_terrain_patch) lands at v=0 as expected there.
+    texture.flipY = false;
+    texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.needsUpdate = true;
+  }
+
+  return { info, heights, cellM: info.extent_m / (n - 1), texture };
 }
 
 /** Bilinear-sampled height (meters, relative to the site) at local (x = east, z = -north) meters. */
