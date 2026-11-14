@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { textLabel } from '../engine/panel';
+import { UI, textLabel } from '../engine/panel';
 import type { RoomEvent } from '../sync/room-client';
 
 const RT_W = 512, RT_H = 384;
@@ -49,7 +49,7 @@ export class SpyView {
     );
     this.mesh.add(this.frame);
 
-    this.label = textLabel([{ text: 'VISTA DEL INSPECTOR VR', size: 26, color: '#5cf2b0', weight: 800, mono: true }], LABEL_W);
+    this.label = textLabel([{ text: 'VISTA DEL INSPECTOR VR', size: 26, color: UI.ok, weight: 800, mono: true }], LABEL_W);
     this.label.position.y = h / 2 + 0.07;
     this.mesh.add(this.label);
   }

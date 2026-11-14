@@ -30,6 +30,7 @@ export default function LunarExperience() {
   useEffect(() => {
     const el = mount.current;
     if (!el) return;
+    let cancelled = false;
     const params = new URLSearchParams(window.location.search);
     const q = params.get('phase') as PhaseName | null;
     const app = new LunarApp(el, {
@@ -46,7 +47,11 @@ export default function LunarExperience() {
     app.register('pov', (a) => new PovPhase(a));
     app.register('landing', (a) => new LandingPhase(a));
     app.register('transmit', (a) => new TransmitPhase(a));
-    app.start().catch((e) => setError(String(e)));
+    // panels are drawn once on canvas: wait for Inter (max 1.5 s) so they never use the fallback font
+    Promise.race([document.fonts.load('600 16px "Inter Variable"'), new Promise((r) => setTimeout(r, 1500))])
+      .catch(() => {})
+      .then(() => (cancelled ? undefined : app.start()))
+      .catch((e) => setError(String(e)));
     appRef.current = app;
     setMuted(app.audio.muted);
 
@@ -59,6 +64,7 @@ export default function LunarExperience() {
     else setXr('no');
 
     return () => {
+      cancelled = true;
       app.renderer.xr.removeEventListener('sessionstart', onStart);
       app.renderer.xr.removeEventListener('sessionend', onEnd);
       app.dispose();

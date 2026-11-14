@@ -163,11 +163,11 @@ export class LandingPhase implements Phase {
   }
 
   private drawHud(p: Panel, g: CanvasRenderingContext2D) {
-    roundRect(g, 4, 4, 1016, 432, 24); g.fillStyle = 'rgba(2,8,6,.92)'; g.fill();
-    g.strokeStyle = 'rgba(92,242,176,.5)'; g.lineWidth = 3; g.stroke();
-    const green = '#5cf2b0';
+    roundRect(g, 4, 4, 1016, 432, 24); g.fillStyle = 'rgba(20,20,19,.92)'; g.fill();
+    g.strokeStyle = 'rgba(143,203,155,.5)'; g.lineWidth = 3; g.stroke();
+    const green = UI.ok;
     const status = this.touched ? 'LUZ DE CONTACTO · MOTOR APAGADO' : this.t < T_BRAKE ? 'DESCENSO MOTORIZADO · APROXIMACIÓN' : 'DESCENSO TERMINAL · VERTICAL';
-    g.font = `700 30px ${UI.mono}`; g.fillStyle = this.touched ? '#ffd27a' : green; g.fillText(status, 40, 62);
+    g.font = `700 30px ${UI.mono}`; g.fillStyle = this.touched ? UI.warn : green; g.fillText(status, 40, 62);
     const cells: [string, string][] = [
       ['ALTITUD', `${this.alt.toFixed(this.alt < 100 ? 1 : 0)} m`],
       ['VEL. VERTICAL', `${this.touched ? '0.0' : this.vs.toFixed(1)} m/s`],
@@ -176,11 +176,11 @@ export class LandingPhase implements Phase {
     ];
     cells.forEach(([k, v], i) => {
       const x = 40 + (i % 2) * 490, y = 130 + Math.floor(i / 2) * 130;
-      g.font = `600 24px ${UI.mono}`; g.fillStyle = 'rgba(92,242,176,.65)'; g.fillText(k, x, y);
+      g.font = `600 24px ${UI.mono}`; g.fillStyle = 'rgba(143,203,155,.65)'; g.fillText(k, x, y);
       g.font = `800 58px ${UI.mono}`; g.fillStyle = green; g.fillText(v, x, y + 64);
     });
     const tt = Math.max(0, T_TOUCH - this.t);
-    g.font = `600 26px ${UI.mono}`; g.fillStyle = 'rgba(92,242,176,.8)';
+    g.font = `600 26px ${UI.mono}`; g.fillStyle = 'rgba(143,203,155,.8)';
     g.fillText(this.touched ? 'ALUNIZAJE CONFIRMADO' : `CONTACTO EN ${tt.toFixed(1)} s`, 40, 410);
   }
 }
