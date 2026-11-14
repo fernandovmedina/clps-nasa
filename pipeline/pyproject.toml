@@ -10,6 +10,7 @@ dependencies = [
 
 [project.scripts]
 touchdown-build = "touchdown_pipeline.build_data:main"
+touchdown-moon-textures = "touchdown_pipeline.moon_textures:main"
 
 [dependency-groups]
 dev = [
