@@ -69,7 +69,7 @@ Las herramientas que existen (Quickmap, Moon Trek, JPL Horizons) son potentes, p
         └───────┬─────────────────────────┬───────┘
                 │ REST                    │ REST
    ┌────────────▼──────────┐   ┌──────────▼────────────┐
-   │ 🖥️ Mission Control    │   │ 🥽 Unity + Meta XR    │
+   │ 🖥️ Mission Control    │   │ 🥽 WebXR (three.js)   │
    │ (navegador)           │   │ Inspector de sitio    │
    └────────────┬──────────┘   └──────────┬────────────┘
                 │        WebSocket        │
@@ -93,7 +93,7 @@ Las herramientas que existen (Quickmap, Moon Trek, JPL Horizons) son potentes, p
 | Tiempo real | **AWS API Gateway WebSocket**, Lambda (Node.js), DynamoDB |
 | Hosting | **S3 + CloudFront** (front, heightmaps y texturas) |
 | Infra | AWS SAM / CDK |
-| VR | Unity LTS, Meta XR SDK, build para Android/Quest (plan B: WebXR) |
+| VR | WebXR con three.js puro, dentro del mismo Next.js de `web/` (decisión 14-nov-2026; Unity descartado) |
 
 ## 🔭 La ciencia
 
@@ -120,11 +120,12 @@ Un cuerpo es visible si su elevación supera `horizon_deg[az]`. Sin atmósfera *
 ```
 clps-nasa/
 ├── pipeline/   # Python: LOLA → horizonte y heightmap; efemérides
-├── web/        # Next.js (export estático): Mission Control
+├── web/        # Next.js (export estático): Mission Control + VR WebXR (three.js)
 ├── api/        # Lambda de la API REST (/api/*)
 ├── realtime/   # Lambda del WebSocket + servidor local de respaldo
 ├── infra/      # AWS SAM/CDK: S3, CloudFront, Lambdas, API Gateway, DynamoDB
-├── vr/         # Unity: Inspector de sitio (Quest 3S)
+├── vr/         # Prototipos/sandbox de prueba WebXR (no la app final, ver web/)
+├── docs/       # Análisis de fuentes de datos oficiales del reto
 ├── CLAUDE.md   # Contexto completo del proyecto y contrato de datos
 └── README.md
 ```
@@ -138,7 +139,7 @@ clps-nasa/
 | **Datos** | Pipeline LOLA → horizonte y heightmap; efemérides precalculadas |
 | **Web** | Mission Control: catálogo, diagrama polar, línea de tiempo, comparador |
 | **API + tiempo real + integración** | Lambda de la API, S3 + CloudFront, WebSocket en AWS, servidor de respaldo, contrato de datos, despliegue |
-| **VR: mundo** | Terreno, Sol, Tierra e iluminación en Unity |
+| **VR: mundo** | Terreno, Sol, Tierra e iluminación en WebXR (three.js, dentro de `web/`) |
 | **VR: interacción** | Panel flotante, marcadores, cliente WebSocket |
 | **Pitch y diseño** | Narrativa, identidad visual, video y página del proyecto |
 

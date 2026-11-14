@@ -169,7 +169,7 @@ Ya hay repos públicos de otros equipos con este reto (buscar "CLPS Lunar Missio
         └───────┬─────────────────────────┬───────┘
                 │ REST                    │ REST
    ┌────────────▼──────────┐   ┌──────────▼────────────┐
-   │ Navegador             │   │ VR (Unity + Meta XR)  │
+   │ Navegador             │   │ VR (WebXR, three.js)  │
    │ Mission Control       │   │ Inspector de sitio    │
    └────────────┬──────────┘   └──────────┬────────────┘
                 │        WebSocket        │
@@ -189,12 +189,12 @@ Ya hay repos públicos de otros equipos con este reto (buscar "CLPS Lunar Missio
 - **Tiempo real:** AWS API Gateway WebSocket + una Lambda (Node.js/TypeScript) + DynamoDB.
 - **Infraestructura como código:** AWS SAM o CDK para todo (bucket, CloudFront, Lambda de la API y stack del WebSocket). La cuenta de AWS ya está configurada en el equipo de Oscar.
 - **Datos pesados:** los heightmaps RAW y las texturas van en S3 y se sirven por CloudFront en `/static/*`.
-- **VR:** Unity (LTS) + Meta XR SDK (o OpenXR + XR Interaction Toolkit), build para Android/Quest. Opcional: Unity MCP con Claude Code (oficial de Unity o IvanMurzak/Unity-MCP). Consume la misma API REST y el mismo WebSocket que la web.
-- **Plan B de VR:** WebXR con `@react-three/xr` si Unity se complica (corre en el navegador del Quest y puede vivir dentro del mismo sitio de Next.js).
+- **VR (decisión 14-nov-2026, sustituye a Unity):** WebXR con **three.js puro** dentro del mismo Next.js de `web/` (no `@react-three/xr`, no Unity). Vive en la misma app que Mission Control, se despliega junto con ella en S3 + CloudFront, y el Quest la abre directo en su navegador por HTTPS — sin build nativo de Android, sin Meta XR SDK. Detalle y cómo correr/probar en el Quest: `web/README.md`.
+- *(Unity quedó descartado como plan: la fricción del build nativo Android/Quest en 48h no se justificaba frente a compartir stack con la web.)*
 
 ### Por qué API Gateway WebSocket (y no otra opción)
 - Un sitio estático en S3 y una Lambda de la API **no pueden mantener WebSockets abiertos**, así que el tiempo real necesita un servicio aparte.
-- API Gateway habla **WebSocket estándar con JSON plano**, y Unity lo consume con cualquier cliente WebSocket. AppSync Events, Supabase Realtime y servicios similares usan protocolos propios que complican el cliente de Unity.
+- API Gateway habla **WebSocket estándar con JSON plano**, consumible con el cliente WebSocket nativo del navegador (Quest incluido). AppSync Events, Supabase Realtime y servicios similares usan protocolos propios que complican el cliente.
 - La lógica cabe en una sola Lambda de unas 50 líneas.
 
 ### Limitaciones del export estático de Next.js
@@ -351,12 +351,12 @@ Formato compartido entre pipeline, API (Lambda), web y VR. **No cambiarlo sin av
   "site_px": [512, 512]
 }
 ```
-*(1025 = 2ⁿ+1, que es lo que espera el terreno de Unity.)*
+*(1025 = 2ⁿ+1, tamaño conveniente para una malla de terreno regular en three.js.)*
 
 ### WebSocket (API Gateway) — estado compartido
 **Conexión:** `wss://<api-id>.execute-api.<region>.amazonaws.com/<stage>?room=<room>`
 - La sala va como query string porque API Gateway WebSocket no tiene rutas por path.
-- La URL se configura por variable de entorno (`NEXT_PUBLIC_WS_URL` en la web y un campo de configuración en Unity), para poder cambiar al servidor local de respaldo (`ws://<ip-laptop>:8787?room=<room>`).
+- La URL se configura por variable de entorno (`NEXT_PUBLIC_WS_URL`), para poder cambiar al servidor local de respaldo (`ws://<ip-laptop>:8787?room=<room>`). Como VR y web comparten la misma app Next.js, ambos leen la misma variable.
 
 Mensajes en JSON con `type`:
 ```json
@@ -384,7 +384,7 @@ Mensajes en JSON con `type`:
 | Datos | 1 | Pipeline LOLA → horizonte y heightmap; efemérides precalculadas |
 | Web | 1 | Mission Control en Next.js: catálogo, comparador, diagrama polar, línea de tiempo, cuentas regresivas |
 | API + tiempo real + integración | 1 | Lambda de la API `/api/*`; S3 + CloudFront del front; API Gateway WebSocket + Lambda + DynamoDB (SAM/CDK); servidor local de respaldo; despliegue; reporte en la web; dueño del contrato de datos |
-| VR (Unity) | 2 | Una persona: terreno, Sol y Tierra, iluminación. Otra: interacción, panel flotante, marcadores y cliente WebSocket |
+| VR (WebXR, dentro de `web/`) | 2 | Una persona: terreno, Sol y Tierra, iluminación (`lib/engine`, `lib/phases/surface-world.ts`). Otra: interacción, panel flotante, marcadores y cliente WebSocket |
 | Pitch / video / diseño | 1 | Narrativa, identidad visual, video, página del proyecto; grabar desde el día 1 |
 | Integrador / flotante | (compartido) | Contrato de datos, pruebas en el Quest, apagar incendios |
 
@@ -398,8 +398,9 @@ Mensajes en JSON con `type`:
 - [ ] Datos: prototipo de máscara de horizonte para 1 sitio; validar contra Moon Trek/Quickmap
 - [ ] Datos: probar Horizons o SPICE y sacar la elevación del Sol y la Tierra para 1 sitio
 - [ ] Datos: lista de coordenadas oficiales de los sitios
-- [ ] Unity: modo desarrollador del Quest, build "hola mundo", MCP con Claude Code
-- [ ] Unity: importar un heightmap de LOLA de prueba y medir el rendimiento en el visor
+- [ ] VR: modo desarrollador del Quest, prototipo WebXR "hola mundo" corriendo en el headset (pendiente: emparejamiento Bluetooth con la app Meta Horizon)
+- [ ] VR: importar un heightmap de LOLA de prueba y medir el rendimiento en el visor
+- [x] VR: decisión de stack → WebXR + three.js dentro de `web/`, Unity descartado (14 nov)
 - [x] Web: decidir el stack → Next.js + serverless (4 nov)
 - [ ] Web: prototipar el diagrama polar
 - [x] Infra: hosting del front → Next.js estático en S3 + CloudFront; `/api/*` en una Lambda detrás del mismo CloudFront (4 nov)
@@ -435,7 +436,7 @@ Mensajes en JSON con `type`:
 - Marca con claridad cualquier dato aproximado o simulado (por ejemplo, el campo `"source": "approx"`). Nunca presentes datos inventados como reales de NASA.
 - Valida los cálculos contra una fuente independiente (Moon Trek, Quickmap o Horizons) antes de confiar en ellos.
 - Prioridad: **web funcional > datos correctos > VR > extras.** La web tiene que funcionar sola en el video.
-- Para Unity: la configuración del Meta XR SDK y los settings de build de Android se hacen a mano siguiendo la guía de Meta; usa el MCP para scripts, escenas y UI.
+- El VR vive dentro de `web/` (Next.js + three.js + WebXR), no en un proyecto Unity separado — ver `web/README.md` para correrlo y probarlo en el Quest.
 - Antes del 14 de noviembre todo es prototipo. Confirma con el equipo antes de tratar código como final.
 
 ---
