@@ -36,4 +36,8 @@
   .steps li { font-size: 0; padding: 6px; gap: 0; }
   .steps li span { font-size: 11px; }
   .hint { display: none; }
+  .bottombar { flex-wrap: wrap; }
+  .novr { order: -1; flex-basis: 100%; }
+  .sound { margin-right: 0; padding: 0; }
+  .soundLabel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
