@@ -9,8 +9,10 @@
 *La web decide con datos y el VR valida con los ojos.*
 
 ![Space Apps 2026](https://img.shields.io/badge/NASA%20Space%20Apps-2026-0B3D91?style=for-the-badge)
-![Estado](https://img.shields.io/badge/estado-preparación-orange?style=for-the-badge)
+![Estado](https://img.shields.io/badge/estado-desplegado-7be38a?style=for-the-badge)
 ![Hackathon](https://img.shields.io/badge/hackathon-14–15%20nov-FC3D21?style=for-the-badge)
+
+**🔗 Demo en vivo:** https://touchdown.villabruno2.workers.dev
 
 </div>
 

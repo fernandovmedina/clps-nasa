@@ -181,7 +181,7 @@ Ya hay repos públicos de otros equipos con este reto (buscar "CLPS Lunar Missio
 - **API REST:** **Cloudflare Worker** (`worker/src/index.ts`) en `/api/*`. Sirve catálogo, máscaras, efemérides, metadatos de terreno y `/api/scenario` en el mismo dominio (sin CORS).
 - **Lógica compartida:** `core/` (`@touchdown/core`): tipos TypeScript del contrato §7 y el motor de escenario (`computeScenario`, `positionAt`, `horizonAt`) — lo importan el Worker **y** la web.
 - **Tiempo real:** **Cloudflare Durable Object** (`RoomHub`) en `/ws?room=<room>` con persistencia SQLite por sala.
-- **Infraestructura y CI/CD:** `worker/wrangler.jsonc` + GitHub Actions (pendiente de configurar en este repo).
+- **Infraestructura y CI/CD:** `worker/wrangler.jsonc` + GitHub Actions. **Desplegado (14-nov-2026):** `https://touchdown.villabruno2.workers.dev` — cada push a `main` corre CI y despliega solo (`.github/workflows/deploy.yml`, gateado por la variable de repo `CLOUDFLARE_DEPLOY`). Probado end-to-end contra la URL real: `/api/health`, `/api/sites`, `/api/scenario`, `/data/*`, `/static/terrain/*` y `/ws` (WebSocket) responden correctamente.
 - **Datos pesados:** heightmaps RAW16/PNG y texturas en `web/public/static/terrain/`, servidos en `/static/terrain/*`.
 
 ### Por qué Durable Objects (y no otro servicio)
@@ -199,7 +199,7 @@ Ya hay repos públicos de otros equipos con este reto (buscar "CLPS Lunar Missio
 - **Depende de internet en el evento.** Mitigación: el mismo Worker servido a la red local con `pnpm dev:lan` (`wrangler dev --ip 0.0.0.0`); web y Quest apuntan a `ws://<ip-laptop>:8787/ws?room=<room>`.
 - **La web debe funcionar sin sincronización** (estado local independiente) si el WebSocket se desconecta durante el demo — hoy la web ya funciona así por defecto, leyendo los JSON estáticos sin WebSocket.
 - **Tamaño de assets:** Workers Static Assets admite hasta 25 MiB por archivo y 20 000 archivos por versión (plan Free). Los heightmaps son RAW16 de `513×513` (~0.5 MiB) porque el DEM fuente es de 80 m/px.
-- No crear, borrar ni renombrar recursos de Cloudflare (Workers, clases de Durable Object, dominios, tokens) sin confirmarlo con el equipo. Cada push a `main` (una vez configurado el CI/CD) despliega solo, y una migración que borra una clase de Durable Object elimina para siempre el estado de las salas.
+- No crear, borrar ni renombrar recursos de Cloudflare (Workers, clases de Durable Object, dominios, tokens) sin confirmarlo con el equipo. **Cada push a `main` despliega solo** (CI/CD ya activo), y una migración que borra una clase de Durable Object elimina para siempre el estado de las salas — pensarlo dos veces antes de tocar `worker/wrangler.jsonc`.
 
 ### Principio clave: precalcular
 Las efemérides y las máscaras de horizonte se calculan **offline** y se sirven como JSON. Nada de llamadas en vivo a Horizons durante el demo. Las coordenadas personalizadas usan horizonte esférico geométrico como fallback con la etiqueta `"source": "spherical"`.
@@ -401,8 +401,8 @@ Mensajes en JSON con `type`:
 - [x] Infra: hosting del front → Next.js estático en S3 + CloudFront; `/api/*` en una Lambda detrás del mismo CloudFront (4 nov, **obsoleto, ver abajo**)
 - [x] Infra: decisión final → **Cloudflare Workers + Durable Objects** en vez de AWS (14 nov); ningún recurso AWS llegó a crearse, no hay nada que desmantelar
 - [x] Infra/Datos: pipeline real (`pipeline/`), `core/` (`@touchdown/core`) y `worker/` (API REST + Durable Object `RoomHub`) ya integrados en el repo, con tests pasando (14 nov)
-- [ ] Infra: configurar GitHub Actions (CI en PRs + deploy a Cloudflare en `main`) — pendiente, no existe todavía
-- [ ] Infra: tokens/cuenta de Cloudflare para el equipo (hoy solo están en la cuenta personal de quien construyó `worker/`)
+- [x] Infra: GitHub Actions (CI en PRs + deploy a Cloudflare en `main`) configurado y verificado (14 nov)
+- [x] Infra: desplegado a Cloudflare — `https://touchdown.villabruno2.workers.dev` (14 nov). Los tokens siguen en la cuenta personal de quien construyó `worker/`; pendiente pasarlos a una cuenta de equipo si se quiere seguir usando después del hackathon.
 - [ ] Web: wireframes de comparador, línea de tiempo, cuentas regresivas y reporte
 - [ ] Pitch: nombre final, logo, paleta, guion del demo, revisar ganadores de años anteriores
 - [ ] Todos: repo **privado**, entornos instalados, este contrato de datos acordado
