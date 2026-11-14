@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Input } from './input';
+import { AudioEngine } from './audio';
 import { damp, lookQuat } from './util';
 import { loadMoonTextures, type MoonTextures } from './moon';
 import type { MissionData } from '../mission/sites';
@@ -42,6 +43,7 @@ export class LunarApp {
   readonly rig = new THREE.Group();
   readonly input: Input;
   readonly room: RoomClient;
+  readonly audio = new AudioEngine();
   readonly eyeHeight = 1.6;
   phase: Phase | null = null;
   moonTex!: MoonTextures;
@@ -228,6 +230,7 @@ export class LunarApp {
   dispose() {
     this.renderer.setAnimationLoop(null);
     this.phase?.exit();
+    this.audio.dispose();
     this.input.dispose();
     this.room.close();
     this.ro.disconnect();

@@ -26,6 +26,14 @@
 .vr:hover { background: #ffb46b; }
 .vr:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .novr { font-size: 12px; color: rgba(232, 238, 247, 0.5); }
+.sound { pointer-events: auto; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-width: 44px; min-height: 44px; margin-right: 12px; padding: 0 18px; border-radius: 999px; cursor: pointer;
+  font: 600 14px ui-sans-serif, system-ui, sans-serif; color: rgba(232, 238, 247, 0.9);
+  background: rgba(7, 11, 19, 0.7); border: 1px solid rgba(255, 255, 255, 0.12); backdrop-filter: blur(8px); }
+.sound[aria-pressed='true'] svg { color: #ff9a3c; }
+.sound + .hint { margin-right: auto; }
+.sound:hover { background: rgba(255, 255, 255, 0.12); }
+.sound:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .error { position: absolute; top: 70px; left: 50%; transform: translateX(-50%); padding: 10px 16px; border-radius: 10px;
   background: #3a1212; border: 1px solid #a33; font-size: 13px; }
 
@@ -33,4 +41,8 @@
   .steps li { font-size: 0; padding: 6px; gap: 0; }
   .steps li span { font-size: 11px; }
   .hint { display: none; }
+  .bottombar { flex-wrap: wrap; }
+  .novr { order: -1; flex-basis: 100%; }
+  .sound { margin-right: 0; padding: 0; }
+  .soundLabel { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }

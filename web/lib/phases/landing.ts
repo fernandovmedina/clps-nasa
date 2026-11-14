@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { LunarApp, Phase } from '../engine/app';
+import type { LoopControl } from '../engine/audio';
 import { Panel, UI, roundRect } from '../engine/panel';
 import { Particles } from '../engine/particles';
 import { glowTexture } from '../engine/textures';
@@ -56,6 +57,7 @@ export class LandingPhase implements Phase {
   private engine = new THREE.PointLight(0xffb070, 0, 90, 1.6);
   private P0: THREE.Vector3; private C: THREE.Vector3; private P1: THREE.Vector3; private P2: THREE.Vector3;
   private last = new THREE.Vector3(); private vs = 0; private hs = 0;
+  private thruster: LoopControl | null = null;
   private alt = 0; private fuel = 100; private touched = false; private leaving = false; private uiT = 0;
 
   constructor(private app: LunarApp) {
@@ -84,9 +86,11 @@ export class LandingPhase implements Phase {
     rig.add(this.cockpit.group, this.hud.mesh);
     this.hud.place(0, 0.98, -0.66);
     this.app.setView(this.pos(0), this.world.lz, { snap: true, rate: 6 });
+    this.thruster = this.app.audio.loop('landing_thruster');
   }
 
   exit() {
+    this.thruster?.stop();
     this.cockpit.group.removeFromParent(); disposeTree(this.cockpit.group);
     this.hud.dispose();
     this.scene.remove(this.dust.points, this.plume.points, this.engine);
@@ -124,6 +128,7 @@ export class LandingPhase implements Phase {
 
     // engine plume below the capsule + dust kicked up near the ground
     const thrusting = t < T_TOUCH;
+    this.thruster?.set('throttle', thrusting ? (t > T_BRAKE ? 1 : 0.6) : 0);
     const below = eye.clone().add(new THREE.Vector3(0, -app.eyeHeight - DECK + 0.6, 0));
     const scale = app.pointScale();
     this.engine.position.copy(below).add(new THREE.Vector3(0, -2, 0));
@@ -148,6 +153,7 @@ export class LandingPhase implements Phase {
 
     this.cockpit.lights.forEach((l, i) => (l.visible = Math.sin(time * (2 + (i % 5)) + i * 1.7) > -0.3));
 
+    if (!this.touched && t >= T_TOUCH) { app.audio.play('touchdown_thud'); app.audio.play('dust_hiss'); }
     if (!this.touched && t >= T_TOUCH) { this.touched = true; this.hud.invalidate(); }
     if (this.touched && !this.leaving && t > T_TOUCH + 2.8) { this.leaving = true; app.goTo('transmit', 1.0, 1.4); }
 

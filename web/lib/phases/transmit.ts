@@ -57,6 +57,7 @@ export class TransmitPhase implements Phase {
   private dishWorld = new THREE.Vector3();
   private relay: THREE.Vector3 | null = null;
   private sent = 0;
+  private chirpBin = -1;
   private uiT = 0;
 
   constructor(private app: LunarApp) {
@@ -192,6 +193,9 @@ export class TransmitPhase implements Phase {
     }
     this.packets.update(dt, app.pointScale());
     if (linkOn > 0.5) this.sent = clamp01(this.sent + dt / TX_SECONDS);
+    const bin = linkOn > 0.5 && this.sent < 1 ? Math.floor(this.sent * 16) : this.chirpBin;
+    if (bin !== this.chirpBin) { this.chirpBin = bin; app.audio.play('transmit_chirp'); }
+    if (this.sent >= 1 && this.chirpBin < 16) { this.chirpBin = 16; app.audio.play('success_chime'); }
     this.uiT += dt;
     if (this.uiT > 0.1) { this.uiT = 0; this.hud.invalidate(); }
     this.hud.update();

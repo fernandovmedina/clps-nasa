@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { LunarApp, Phase } from '../engine/app';
+import type { LoopControl } from '../engine/audio';
 import { Panel, UI, roundRect } from '../engine/panel';
 import { Particles, starField } from '../engine/particles';
 import { earthTexture, glowTexture } from '../engine/textures';
@@ -90,6 +91,7 @@ export class LaunchPhase implements Phase {
   private bg = new THREE.Color(0x86b6e6); private day = new THREE.Color(0x86b6e6); private space = new THREE.Color(0x000004);
   private padCam = new THREE.Vector3(34, 9, 46);
   private hud: Panel; private count: Panel;
+  private rumble: LoopControl | null = null; private wind: LoopControl | null = null; private crackle: LoopControl | null = null;
 
   constructor(private app: LunarApp) {
     clearSurface();
@@ -162,6 +164,8 @@ export class LaunchPhase implements Phase {
     this.hud.place(0, 1.02, -1.45);
     this.count.place(0, 2.05, -3.2);
     this.app.setView(this.padCam, new THREE.Vector3(0, 12, 0), { snap: true, rate: 3 });
+    this.rumble = this.app.audio.loop('engine_rumble');
+    this.wind = this.app.audio.loop('wind_maxq');
 
     this.app.opts.loadData((p, msg) => { this.progress = Math.max(this.progress, clamp01(p)); this.status = msg; this.hud.invalidate(); })
       .then((d) => { this.app.data = d; this.done = true; this.status = 'Datos listos · Rumbo al polo sur lunar'; })
@@ -171,6 +175,7 @@ export class LaunchPhase implements Phase {
   exit() {
     this.closed = true; disposeObject(this.rocket);
     this.hud.dispose(); this.count.dispose();
+    this.rumble?.stop(); this.wind?.stop(); this.crackle?.stop();
   }
 
   private drawHud(p: Panel, g: CanvasRenderingContext2D) {
@@ -202,6 +207,8 @@ export class LaunchPhase implements Phase {
     if (t > 0.4 && t < 1.2) label = 'T-3'; else if (t >= 1.2 && t < 2.0) label = 'T-2';
     else if (t >= 2.0 && t < T_IGN) label = 'T-1'; else if (t >= T_IGN && t < T_LIFT) label = 'IGNICIÓN';
     else if (t >= T_LIFT && t < T_LIFT + 1.6) label = 'DESPEGUE';
+    if (label !== this.countLabel && label.startsWith('T-')) app.audio.play('countdown_tick');
+    if (label !== this.countLabel && label === 'IGNICIÓN') app.audio.play('ignition');
     if (label !== this.countLabel) { this.countLabel = label; this.count.invalidate(); }
 
     // motion along the trajectory, gated by real loading progress
@@ -279,6 +286,12 @@ export class LaunchPhase implements Phase {
 
     // sky → space
     const sky = smooth(30, 900, alt);
+    this.rumble?.set('thrust', thrust);
+    this.rumble?.set('atmosphere', 1 - sky);
+    this.wind?.set('dynamic_pressure', smooth(60, 300, alt) * (1 - smooth(300, 850, alt)));
+    const grounded = t > T_IGN && alt < 140;
+    if (grounded && !this.crackle) this.crackle = app.audio.loop('liftoff_crackle');
+    else if (!grounded && this.crackle) { this.crackle.stop(); this.crackle = null; }
     this.bg.copy(this.day).lerp(this.space, sky);
     const fog = this.scene.fog as THREE.Fog;
     fog.color.copy(this.bg); fog.near = lerp(250, 40000, sky); fog.far = lerp(2600, 60000, sky);

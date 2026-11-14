@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { LunarApp, Phase } from '../engine/app';
+import type { LoopControl } from '../engine/audio';
 import { Panel, UI, roundRect, textLabel } from '../engine/panel';
 import { starField } from '../engine/particles';
 import { createMoon } from '../engine/moon';
@@ -48,6 +49,7 @@ export class OrbitPhase implements Phase {
   private earthshineLight!: THREE.DirectionalLight;
   private earthMesh!: THREE.Mesh;
   private lastRoomStatus: string;
+  private ambient: LoopControl | null = null;
 
   constructor(private app: LunarApp) {
     clearSurface();
@@ -136,6 +138,7 @@ export class OrbitPhase implements Phase {
 
   private select(m: SiteMetrics, opts: { broadcast?: boolean } = {}) {
     if (m.rank <= this.ranking.length - this.revealed) return; // not evaluated yet
+    if (opts.broadcast !== false) this.app.audio.play('ui_select');
     this.app.selected = m;
     this.list.invalidate(); this.detail.invalidate();
     if (opts.broadcast !== false) this.app.room.send({ type: 'set_site', site_id: m.site.id });
@@ -227,9 +230,11 @@ export class OrbitPhase implements Phase {
     if (!this.app.flags.has('orbit-done')) this.app.selected = null;
     this.placeViewer(this.t, true);
     this.app.room.setListener((msg) => this.handleRoomEvent(msg));
+    this.ambient = this.app.audio.loop('orbit_ambient');
   }
 
   exit() {
+    this.ambient?.stop();
     this.app.room.setListener(null);
     this.list.dispose(); this.detail.dispose();
   }
@@ -264,6 +269,7 @@ export class OrbitPhase implements Phase {
 
     // reveal + "compute" sites one by one during the scanning lap (worst → best for drama)
     const target = Math.min(this.ranking.length, Math.floor(smooth(LAP * 0.15, LAP * 0.92, t) * this.ranking.length + 0.0001));
+    if (target > this.revealed && t < LAP) this.app.audio.play('scan_blip');
     if (target !== this.revealed) { this.revealed = target; this.list.invalidate(); this.detail.invalidate(); }
     if (!this.analysisDone && t > LAP) {
       this.analysisDone = true;
@@ -429,6 +435,7 @@ export class OrbitPhase implements Phase {
 
     if (this.analysisDone) {
       p.button(g, 'preconfirm', 48, 1150, 928, 100, 'Preconfirmar punto', () => {
+        this.app.audio.play('ui_confirm');
         this.app.selected = m;
         this.app.goTo('pov', 0.8, 1.2);
       });
