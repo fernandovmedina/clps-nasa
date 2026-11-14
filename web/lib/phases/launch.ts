@@ -153,7 +153,7 @@ export class LaunchPhase implements Phase {
     this.count = new Panel(1024, 256, 2.2, (_p, g) => {
       if (!this.countLabel) return;
       g.font = `800 150px ${UI.mono}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.shadowColor = 'rgba(255,170,80,.7)'; g.shadowBlur = 40; g.fillStyle = '#fff';
+      g.shadowColor = 'rgba(217,119,87,.7)'; g.shadowBlur = 40; g.fillStyle = UI.text;
       g.fillText(this.countLabel, 512, 134);
     });
   }
@@ -180,7 +180,7 @@ export class LaunchPhase implements Phase {
 
   private drawHud(p: Panel, g: CanvasRenderingContext2D) {
     p.frame(g);
-    g.fillStyle = '#ff5a36'; g.beginPath(); g.arc(56, 62, 9, 0, 7); g.fill();
+    g.fillStyle = UI.accent; g.beginPath(); g.arc(56, 62, 9, 0, 7); g.fill();
     g.font = `600 26px ${UI.mono}`; g.fillStyle = UI.dim;
     g.fillText('MISSION CONTROL  /  LUNAR SOUTH POLE · SITE PLANNER', 80, 72);
     const cols: [string, string][] = [['ALTITUD', this.tele.alt], ['VELOCIDAD', this.tele.vel], ['DIST. A LA LUNA', this.tele.dist]];
@@ -190,7 +190,7 @@ export class LaunchPhase implements Phase {
       g.font = `700 46px ${UI.mono}`; g.fillStyle = UI.text; g.fillText(v, x, 192);
     });
     g.font = `500 30px ${UI.font}`; g.fillStyle = UI.text; g.fillText(this.status, 44, 270);
-    roundRect(g, 44, 300, 1200, 10, 5); g.fillStyle = 'rgba(255,255,255,.15)'; g.fill();
+    roundRect(g, 44, 300, 1200, 10, 5); g.fillStyle = 'rgba(250,249,245,.15)'; g.fill();
     if (this.shownPct > 0.002) { roundRect(g, 44, 300, 1200 * this.shownPct, 10, 5); g.fillStyle = UI.accent; g.fill(); }
     g.font = `700 30px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right';
     g.fillText(`${Math.round(this.shownPct * 100)}%`, 1356, 314); g.textAlign = 'left';

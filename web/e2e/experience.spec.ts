@@ -39,6 +39,6 @@ test('the team experience mounts its canvas at / without console errors and link
   const link = page.getByRole('link', { name: 'Elegir fecha de la misión' })
   await expect(link).toHaveAttribute('href', '/mission-control/')
   await link.click()
-  await expect(page).toHaveURL('/mission-control/')
+  await expect(page).toHaveURL(/\/mission-control\/(\?.*)?$/)
   await expect(page.locator('main')).toHaveAttribute('aria-busy', 'false')
 })

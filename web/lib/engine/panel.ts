@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { SiteMetrics } from '../mission/scoring';
 
 /**
  * A flat UI panel drawn with Canvas2D and shown as a plane in the 3D world.
@@ -10,14 +11,23 @@ export interface PanelButton {
 }
 
 export const UI = {
-  font: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-  mono: 'ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace',
-  bg: 'rgba(7,11,19,0.82)',
-  line: 'rgba(255,255,255,0.12)',
-  text: '#e8eef7',
-  dim: 'rgba(232,238,247,0.6)',
-  accent: '#ff9a3c',
+  font: '"Inter Variable", system-ui, sans-serif',
+  mono: '"Inter Variable", system-ui, sans-serif',
+  bg: 'rgba(20,20,19,0.82)',
+  line: 'rgba(250,249,245,0.14)',
+  text: '#FAF9F5',
+  dim: '#B0AEA5',
+  accent: '#D97757',
+  accentHover: '#E08B6D',
+  onAccent: '#141413',
+  ok: '#8FCB9B',
+  warn: '#E8C547',
+  bad: '#E58A7B',
+  sun: '#E8C547',
+  earth: '#8FB8E0',
 };
+
+export const statusColor = (status: SiteMetrics['status']) => (status === 'viable' ? UI.ok : status === 'marginal' ? UI.warn : UI.bad);
 
 export class Panel {
   readonly canvas: HTMLCanvasElement;
@@ -93,9 +103,9 @@ export class Panel {
     onClick: () => void, style: 'primary' | 'ghost' = 'primary') {
     const hov = this.hover === id;
     roundRect(ctx, x, y, w, h, h / 2);
-    if (style === 'primary') { ctx.fillStyle = hov ? '#ffb46b' : UI.accent; ctx.fill(); }
-    else { ctx.fillStyle = hov ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.06)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 2; ctx.stroke(); }
-    ctx.fillStyle = style === 'primary' ? '#141008' : UI.text;
+    if (style === 'primary') { ctx.fillStyle = hov ? UI.accentHover : UI.accent; ctx.fill(); }
+    else { ctx.fillStyle = hov ? 'rgba(250,249,245,.16)' : 'rgba(250,249,245,.06)'; ctx.fill(); ctx.strokeStyle = 'rgba(250,249,245,.3)'; ctx.lineWidth = 2; ctx.stroke(); }
+    ctx.fillStyle = style === 'primary' ? UI.onAccent : UI.text;
     ctx.font = `600 ${Math.round(h * 0.38)}px ${UI.font}`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(label, x + w / 2, y + h / 2 + 1);
@@ -134,8 +144,8 @@ export function textLabel(lines: { text: string; size: number; color?: string; w
   const H = lines.reduce((a, l) => a + l.size * 1.3, 0) + pad * 2;
   c.width = W; c.height = Math.ceil(H);
   roundRect(g, 2, 2, W - 4, c.height - 4, 22);
-  g.fillStyle = 'rgba(7,11,19,0.78)'; g.fill();
-  g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 2; g.stroke();
+  g.fillStyle = 'rgba(20,20,19,0.78)'; g.fill();
+  g.strokeStyle = UI.line; g.lineWidth = 2; g.stroke();
   let y = pad;
   for (const l of lines) {
     g.font = `${l.weight ?? 600} ${l.size}px ${l.mono ? UI.mono : UI.font}`;

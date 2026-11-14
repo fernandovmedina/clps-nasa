@@ -61,7 +61,7 @@ export function Report({
   }
 
   return (
-    <section className="card grid min-w-0 grid-cols-1 gap-5 p-5" aria-labelledby="report-title" data-testid="report">
+    <section className="card grid min-w-0 grid-cols-1 gap-6 p-6" aria-labelledby="report-title" data-testid="report">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="grid gap-1">
           <h2 id="report-title" className="text-title">
@@ -72,12 +72,12 @@ export function Report({
         <div className="no-print grid justify-items-end gap-1">
           <div className="flex flex-wrap items-center justify-end gap-2">
             {launch && (
-              <a href={launch} className="btn btn-solid" data-testid="launch-link-report">
+              <a href={launch} className="btn btn-outline" data-testid="launch-link-report">
                 <Rocket size={18} aria-hidden="true" />
                 {t('launchMission')}
               </a>
             )}
-            <button type="button" className="btn btn-outline" onClick={onCopy} disabled={entries.length === 0}>
+            <button type="button" className="btn btn-solid" onClick={onCopy} disabled={entries.length === 0}>
               {copy === 'copied' ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
               {t('copySummary')}
             </button>
@@ -97,21 +97,18 @@ export function Report({
       ) : (
         <>
           {recommended && (
-            <div
-              className="grid gap-3 rounded-control border border-line-strong bg-field p-4"
-              data-testid="recommended"
-            >
-              <p className="text-caption text-label-2">{t('recommendedScenario')}</p>
+            <div className="grid gap-3 rounded-[12px] bg-raised p-5" data-testid="recommended">
+              <p className="text-label text-label-2">{t('recommendedScenario')}</p>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <span className="grid h-11 w-11 place-items-center rounded-control border border-line-strong text-heading">
+                <span className="grid h-11 w-11 place-items-center rounded-control border-[0.5px] border-line-strong bg-elevated text-heading">
                   {recommended.letter}
                 </span>
                 <div className="grid min-w-0 gap-1">
-                  <p className="text-title break-words">{recommended.name}</p>
+                  <p className="text-lead break-words">{recommended.name}</p>
                   <p className="num text-body text-label-2">{formatUtc(recommended.landingMs)}</p>
                 </div>
                 <StatusPill status={recommended.response.status} />
-                <p className="num text-heading">{t('scoreValue', { n: recommended.response.score })}</p>
+                <p className="num text-title">{t('scoreValue', { n: recommended.response.score })}</p>
               </div>
               <p className="text-caption text-label-2">{t('recommendedReason', { score: recommended.response.score })}</p>
             </div>
@@ -121,7 +118,7 @@ export function Report({
             <table className="w-full border-collapse text-left">
               <caption className="sr-only">{t('compareTable')}</caption>
               <thead>
-                <tr className="border-b border-line-strong text-caption text-label-2">
+                <tr className="border-b-[0.5px] border-line-strong text-label text-label-2">
                   {(['colScenario', 'colSite', 'colLanding', 'colStatus', 'colScore', 'colSun', 'colEarth', 'colBoth'] as const).map(
                     (key, i) => (
                       <th key={key} scope="col" className={`px-2 py-2 font-medium ${i >= 4 ? 'text-right' : ''}`}>
@@ -133,7 +130,7 @@ export function Report({
               </thead>
               <tbody>
                 {entries.map((e) => (
-                  <tr key={e.letter} className="border-b border-line align-middle">
+                  <tr key={e.letter} className="border-b-[0.5px] border-line align-middle">
                     <th scope="row" className="px-2 py-3 font-semibold">
                       {e.letter}
                       {e === recommended && (
@@ -160,7 +157,7 @@ export function Report({
 
           <ul className="grid gap-3 md:hidden" aria-label={t('compareTable')}>
             {entries.map((e) => (
-              <li key={e.letter} className="grid gap-2 rounded-control bg-raised p-3">
+              <li key={e.letter} className="grid gap-2 rounded-control bg-raised p-4">
                 <p className="flex flex-wrap items-center gap-2 text-body font-semibold">
                   {e.letter} · {e.name}
                   {e === recommended && (
@@ -184,7 +181,7 @@ export function Report({
           </ul>
 
           <div className="grid gap-3">
-            <h3 className="text-heading">{t('risks')}</h3>
+            <h3 className="text-label text-label-2">{t('risks')}</h3>
             <div className="grid gap-3 lg:grid-cols-2">
               {entries.map((e) => {
                 const risks = risksFor(e)

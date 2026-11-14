@@ -6,7 +6,7 @@ import { useI18n } from '@/control/i18n'
 function Crashed({ onRetry }: { onRetry: () => void }) {
   const { t } = useI18n()
   return (
-    <div role="alert" className="card grid gap-3 p-5" data-testid="boundary-fallback">
+    <div role="alert" className="card grid gap-3 p-6" data-testid="boundary-fallback">
       <p className="text-body">{t('boundaryMessage')}</p>
       <button type="button" className="btn btn-outline justify-self-start" onClick={onRetry}>
         {t('retry')}

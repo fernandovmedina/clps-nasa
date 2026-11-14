@@ -19,7 +19,7 @@ export function CatalogDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="fade-enter fixed inset-0 z-50 bg-[var(--scrim)]" />
         <Dialog.Content
-          className="glass panel-enter fixed top-0 bottom-0 left-0 z-50 w-[min(380px,92vw)] overflow-y-auto rounded-r-[20px] p-5"
+          className="panel-enter fixed top-0 bottom-0 left-0 z-50 w-[min(380px,92vw)] overflow-y-auto rounded-r-[12px] border-r-[0.5px] border-line bg-base p-6"
           aria-describedby={undefined}
         >
           <Dialog.Close className="btn btn-quiet absolute top-3 right-3 px-0" aria-label={t('closeCatalog')}>
