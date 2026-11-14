@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>TOUCHDOWN — prueba de conexión Quest ↔ web</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #fff; font-family: sans-serif; }
+  #overlay { position: absolute; top: 12px; left: 12px; z-index: 10; max-width: 90vw; }
+  #status { font-size: 14px; white-space: pre-wrap; }
+  button { font-size: 16px; padding: 10px 18px; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <div id="overlay">
+    <div id="status">Cargando…</div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { VRButton } from 'three/addons/webxr/VRButton.js';
+    import { loadTerrain } from './terrain.js';
+    import { azElToDirection, placeCelestialBody } from './sun-earth.js';
+
+    const statusEl = document.getElementById('status');
+    const log = (msg) => { statusEl.textContent += `\n${msg}`; console.log(msg); };
+
+    statusEl.textContent = `Host: ${location.hostname}:${location.port}`;
+    log(`Contexto seguro (isSecureContext): ${window.isSecureContext}`);
+
+    if (!('xr' in navigator)) {
+      log('ERROR: navigator.xr no existe. ¿Estás en el navegador del Quest?');
+    } else {
+      navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+        log(`WebXR immersive-vr soportado: ${supported}`);
+      }).catch((e) => log(`Error checando soporte XR: ${e.message}`));
+    }
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000); // sin atmosfera: cielo negro, sin luz ambiental de "skylight"
+
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200000);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    document.body.appendChild(renderer.domElement);
+    document.body.appendChild(VRButton.createButton(renderer));
+
+    // Sin atmosfera -> sin luz ambiental difusa de "cielo". Solo luz direccional del Sol.
+    const sunLight = new THREE.DirectionalLight(0xffffff, 3.0);
+    scene.add(sunLight);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.03)); // pizca minima para que la cara oscura no sea 100% negra
+
+    // Objeto visual del Sol (solo referencia, no a escala fisica)
+    const sunMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(300, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xfff2cc })
+    );
+    scene.add(sunMesh);
+
+    // Objeto visual de la Tierra (solo referencia, no a escala fisica)
+    const earthMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(500, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0x3a6ea5 })
+    );
+    scene.add(earthMesh);
+
+    let rig; // ancla para la camara en VR (Group), se mueve en vez de la camara directo
+    rig = new THREE.Group();
+    rig.add(camera);
+    scene.add(rig);
+    camera.position.set(0, 0, 0); // dentro del rig
+
+    loadTerrain('./terrain/test-site').then(({ mesh, contract, siteLocalHeightM }) => {
+      scene.add(mesh);
+      log(`Terreno cargado: ${contract.site_id} (${contract.source})`);
+
+      const eyeHeightM = 1.6;
+      rig.position.set(0, siteLocalHeightM + eyeHeightM, 0);
+      camera.position.set(0, 0, 2); // vista desktop: un poco atras para ver el terreno
+
+      // Escenario de prueba: Sol bajo en el horizonte (tipico del polo sur lunar)
+      const sunAz = 90, sunEl = 8;
+      placeCelestialBody(sunMesh, sunAz, sunEl, 8000);
+      sunLight.position.copy(azElToDirection(sunAz, sunEl)).multiplyScalar(8000);
+      sunLight.position.add(rig.position);
+      sunLight.target.position.copy(rig.position);
+      scene.add(sunLight.target);
+
+      // Tierra en otra posicion, como referencia
+      placeCelestialBody(earthMesh, 10, 4, 12000);
+      earthMesh.position.add(rig.position);
+
+      log(`Sol en az=${sunAz} el=${sunEl} (convencion: ver sun-earth.js)`);
+    }).catch((e) => log(`ERROR cargando terreno: ${e.message}`));
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    renderer.setAnimationLoop(() => {
+      renderer.render(scene, camera);
+    });
+
+    log('Listo. Dale clic a "ENTER VR".');
+  </script>
+</body>
+</html>

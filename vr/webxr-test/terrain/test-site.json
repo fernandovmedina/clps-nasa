@@ -1,0 +1,15 @@
+{
+  "site_id": "test-site",
+  "heightmap_url": "/terrain/test-site.raw",
+  "format": "RAW16 little-endian",
+  "size_px": 1025,
+  "extent_m": 20000,
+  "min_height_m": 3200,
+  "max_height_m": 5400,
+  "texture_url": null,
+  "site_px": [
+    512,
+    512
+  ],
+  "source": "demo/mock - heightmap sintetico, NO es dato real de LOLA"
+}
