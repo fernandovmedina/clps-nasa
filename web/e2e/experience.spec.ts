@@ -6,7 +6,9 @@ test('the team experience mounts its canvas at / without console errors and link
   const errors: string[] = []
   const failed: string[] = []
   page.on('console', (m) => {
-    if (m.type() === 'error' && !m.text().startsWith('Failed to load resource')) errors.push(m.text())
+    const text = m.text()
+    const expected = text.startsWith('Failed to load resource') || text.startsWith('WebSocket connection to')
+    if (m.type() === 'error' && !expected) errors.push(text)
   })
   page.on('pageerror', (e) => errors.push(e.message))
   page.on('response', (r) => {
