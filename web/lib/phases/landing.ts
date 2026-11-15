@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import type { LunarApp, Phase } from '../engine/app';
 import type { LoopControl } from '../engine/audio';
-import { Panel, UI, roundRect } from '../engine/panel';
 import { Particles } from '../engine/particles';
 import { cockpitTexture, glowTexture } from '../engine/textures';
 import { clamp01, disposeTree, rand, smooth } from '../engine/util';
 import { ensureSelection } from './pov';
+import { CabinConsole } from './landing-console';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
 import { fmtInt, fmtLatLon, fmtPercent, type PhaseHud } from '../engine/hud';
 
@@ -61,16 +61,17 @@ export class LandingPhase implements Phase {
   readonly name = 'landing' as const;
   readonly scene: THREE.Scene;
   targets: THREE.Object3D[] = [];
+  readonly ownsRunControls = true;
   private world: SurfaceWorld;
   private t = 0;
   private cockpit: ReturnType<typeof buildCockpit>;
-  private hud: Panel;
+  private cabinConsole: CabinConsole;
   private dust: Particles; private plume: Particles;
   private engine = new THREE.PointLight(0xffb070, 0, 90, 1.6);
   private P0: THREE.Vector3; private C: THREE.Vector3; private P1: THREE.Vector3; private P2: THREE.Vector3;
   private last = new THREE.Vector3(); private vs = 0; private hs = 0;
   private thruster: LoopControl | null = null;
-  private alt = 0; private fuel = 100; private touched = false; private leaving = false; private uiT = 0;
+  private alt = 0; private fuel = 100; private touched = false; private leaving = false;
 
   constructor(private app: LunarApp) {
     const m = ensureSelection(app);
@@ -84,7 +85,7 @@ export class LandingPhase implements Phase {
     this.last.copy(this.P0);
 
     this.cockpit = buildCockpit(app);
-    this.hud = new Panel(1024, 440, 0.56, (p, g) => this.drawHud(p, g));
+    this.cabinConsole = new CabinConsole(app, () => this.controlHud());
     const glow = glowTexture();
     this.dust = new Particles(2400, glow, false);
     this.plume = new Particles(900, glow, true);
@@ -95,8 +96,8 @@ export class LandingPhase implements Phase {
     this.world.lander.visible = false;
     this.world.lzMarker.visible = true;
     const rig = this.app.rig;
-    rig.add(this.cockpit.group, this.hud.mesh);
-    this.hud.place(0, 0.98, -0.66);
+    rig.add(this.cockpit.group);
+    this.cabinConsole.mount(rig);
     this.app.setView(this.pos(0), this.world.lz, { snap: true, rate: 6 });
     this.thruster = this.app.audio.loop('landing_thruster');
   }
@@ -104,7 +105,7 @@ export class LandingPhase implements Phase {
   exit() {
     this.thruster?.stop();
     this.cockpit.group.removeFromParent(); disposeTree(this.cockpit.group);
-    this.hud.dispose();
+    this.cabinConsole.dispose();
     this.scene.remove(this.dust.points, this.plume.points, this.engine);
     this.dust.points.geometry.dispose(); this.plume.points.geometry.dispose();
   }
@@ -166,35 +167,11 @@ export class LandingPhase implements Phase {
     this.cockpit.lights.forEach((l, i) => (l.visible = Math.sin(time * (2 + (i % 5)) + i * 1.7) > -0.3));
 
     if (!this.touched && t >= T_TOUCH) { app.audio.play('touchdown_thud'); app.audio.play('dust_hiss'); }
-    if (!this.touched && t >= T_TOUCH) { this.touched = true; this.hud.invalidate(); }
+    if (!this.touched && t >= T_TOUCH) this.touched = true;
     if (this.touched && !this.leaving && t > T_TOUCH + 2.8) { this.leaving = true; app.goTo('transmit', 1.0, 1.4); }
-
-    this.uiT += dt;
-    if (this.uiT > 0.1) { this.uiT = 0; this.hud.invalidate(); }
-    this.hud.update();
   }
 
-  private drawHud(p: Panel, g: CanvasRenderingContext2D) {
-    roundRect(g, 4, 4, 1016, 432, 24); g.fillStyle = 'rgba(20,20,19,.92)'; g.fill();
-    g.strokeStyle = 'rgba(143,203,155,.5)'; g.lineWidth = 3; g.stroke();
-    const green = UI.ok;
-    const status = this.touched ? 'LUZ DE CONTACTO · MOTOR APAGADO' : this.t < T_BRAKE ? 'DESCENSO MOTORIZADO · APROXIMACIÓN' : 'DESCENSO TERMINAL · VERTICAL';
-    g.font = `700 30px ${UI.mono}`; g.fillStyle = this.touched ? UI.warn : green; g.fillText(status, 40, 62);
-    const cells: [string, string][] = [
-      ['ALTITUD', `${this.alt.toFixed(this.alt < 100 ? 1 : 0)} m`],
-      ['VEL. VERTICAL', `${this.touched ? '0.0' : this.vs.toFixed(1)} m/s`],
-      ['VEL. HORIZ.', `${this.touched ? '0.0' : this.hs.toFixed(1)} m/s`],
-      ['COMBUSTIBLE', `${this.fuel.toFixed(0)} %`],
-    ];
-    cells.forEach(([k, v], i) => {
-      const x = 40 + (i % 2) * 490, y = 130 + Math.floor(i / 2) * 130;
-      g.font = `600 24px ${UI.mono}`; g.fillStyle = 'rgba(143,203,155,.65)'; g.fillText(k, x, y);
-      g.font = `800 58px ${UI.mono}`; g.fillStyle = green; g.fillText(v, x, y + 64);
-    });
-    const tt = Math.max(0, T_TOUCH - this.t);
-    g.font = `600 26px ${UI.mono}`; g.fillStyle = 'rgba(143,203,155,.8)';
-    g.fillText(this.touched ? 'ALUNIZAJE CONFIRMADO' : `CONTACTO EN ${tt.toFixed(1)} s`, 40, 410);
-  }
+  updateUi() { this.cabinConsole.update(); }
 
   controlHud(): PhaseHud {
     const site = this.world.m.site;
