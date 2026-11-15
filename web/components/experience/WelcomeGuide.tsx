@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import type { DonkeyMood } from '@/lib/capcom/donkey';
+import { DonkeyStage } from '@/lib/capcom/donkey-stage';
 import type { LunarApp } from '@/lib/engine/app';
+import { NARRATION_LINES } from '@/lib/engine/narration-lines';
 import dialog from './Dialog.module.css';
 import layer from './MissionLayer.module.css';
 import styles from './WelcomeGuide.module.css';
@@ -14,25 +17,130 @@ interface Props {
   onChoose: (role: GuideRole) => void;
 }
 
+/** start: trying to speak; tap: the browser wants a gesture first; speaking: subtitle up; modal: the question. */
+type Step = 'start' | 'tap' | 'speaking' | 'modal';
+
 const FOCUSABLE = 'button:not(:disabled)';
+const READY_WAIT_MS = 1500;
+const NO_ENGINE_MS = 4000;
+/** However it goes wrong (a clip that never resolves, a stuck TTS), the question appears this long after the voice was asked for. */
+const SPEECH_CAP_MS = 15_000;
+const SILENT_SUBTITLE_MS = 6500;
+/** What the voice says, with the product name written the way it is on screen. */
+const SUBTITLE = NARRATION_LINES.welcome.replace('touchdown', 'TOUCHDOWN');
+
+const MOOD: Record<Step, DonkeyMood> = { start: 'idle', tap: 'idle', speaking: 'speaking', modal: 'listening' };
+
+interface Controls { skip: () => void; retry: () => void }
 
 /**
- * First thing shown when the page opens: the Burrito espacial greets the visitor and asks whether they are
- * flying the mission in VR or watching it from Mission Control. The answer decides which dialog opens next
- * (the launch planner for VR, or the follow-mission code for Monitor).
+ * First thing shown when the page opens: the Burrito espacial hops in, greets the visitor by voice (subtitled) and then
+ * asks whether they are flying the mission in VR or watching it from Mission Control. The answer decides which dialog
+ * opens next (the launch planner for VR, or the follow-mission code for Monitor). Browsers keep audio locked until the
+ * first gesture, so a blocked greeting waits for a tap; whatever happens, the two role buttons end up on screen.
  */
 export default function WelcomeGuide({ app, onChoose }: Props) {
   const titleId = useId();
-  const root = useRef<HTMLDivElement>(null);
-  const [chosen, setChosen] = useState(false);
+  const card = useRef<HTMLDivElement>(null);
+  const tapButton = useRef<HTMLButtonElement>(null);
+  const [step, setStep] = useState<Step>('start');
+  const stepRef = useRef<Step>('start');
+  const controls = useRef<Controls | null>(null);
+  const chosen = useRef(false);
+  const [done, setDone] = useState(false);
 
-  useEffect(() => {
-    root.current?.querySelector<HTMLButtonElement>(FOCUSABLE)?.focus();
+  const go = useCallback((next: Step) => {
+    if (stepRef.current === 'modal') return;
+    stepRef.current = next;
+    setStep(next);
   }, []);
 
+  const skip = useCallback(() => { if (controls.current) controls.current.skip(); else go('modal'); }, [go]);
+  const retry = useCallback(() => controls.current?.retry(), []);
+
+  useEffect(() => {
+    if (stepRef.current === 'modal') return;
+    let alive = true;
+    let pending = false;
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+    const after = (ms: number, fn: () => void) => {
+      const t = setTimeout(() => { timers.delete(t); if (alive) fn(); }, ms);
+      timers.add(t);
+      return t;
+    };
+    const clearTimers = () => { timers.forEach(clearTimeout); timers.clear(); };
+    // The engine boots synchronously and can freeze the page for seconds, so by the time a limit is checked, whatever it
+    // was waiting for (the engine's own state update, the clips' manifest) may be queued right behind it: give it a turn.
+    const afterLimit = (ms: number, fn: () => void) => after(ms, () => after(0, fn));
+    const openDialog = () => { clearTimers(); go('modal'); };
+
+    if (!app) {
+      controls.current = { skip: openDialog, retry: () => {} };
+      afterLimit(NO_ENGINE_MS, openDialog);
+      return () => { alive = false; clearTimers(); controls.current = null; };
+    }
+
+    let cap: ReturnType<typeof setTimeout> | undefined;
+    const armCap = () => {
+      if (cap) { clearTimeout(cap); timers.delete(cap); }
+      cap = after(SPEECH_CAP_MS, () => { app.narrator.stop(); openDialog(); });
+    };
+
+    const say = (retrying: boolean) => {
+      pending = true;
+      armCap();
+      void app.narrator.sayAndWait('welcome', () => { if (alive) { armCap(); go('speaking'); } }).then((outcome) => {
+        pending = false;
+        if (!alive) return;
+        if (cap) { clearTimeout(cap); timers.delete(cap); }
+        if (outcome === 'blocked' && !retrying) go('tap');
+        else if (outcome === 'silent') { go('speaking'); after(SILENT_SUBTITLE_MS, openDialog); }
+        else openDialog();
+      });
+    };
+
+    controls.current = {
+      skip: () => { app.narrator.stop(); openDialog(); },
+      // Runs inside the click that asks for it: the browser only unlocks audio for a call made during the gesture.
+      retry: () => { if (stepRef.current === 'tap') { go('start'); say(true); } },
+    };
+
+    const ready = new Promise<void>((resolve) => afterLimit(READY_WAIT_MS, resolve));
+    void Promise.race([app.narrator.ready, ready]).then(() => {
+      if (!alive) return;
+      // The engine loop only passes the saved mute setting on to the narrator once it runs, which is after this.
+      app.narrator.setMuted(app.audio.muted);
+      say(false);
+    });
+
+    return () => {
+      alive = false;
+      clearTimers();
+      controls.current = null;
+      if (pending) app.narrator.stop();
+    };
+  }, [app, go]);
+
+  useEffect(() => {
+    if (step === 'modal') card.current?.querySelector<HTMLButtonElement>(FOCUSABLE)?.focus();
+    else if (step === 'tap') tapButton.current?.focus();
+  }, [step]);
+
+  useEffect(() => {
+    if (step === 'modal') return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') skip(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [step, skip]);
+
+  const onVeil = () => {
+    if (stepRef.current === 'tap') retry();
+    else if (stepRef.current === 'speaking') skip();
+  };
+
   const trapTab = (e: React.KeyboardEvent) => {
-    if (e.key !== 'Tab' || !root.current) return;
-    const items = [...root.current.querySelectorAll<HTMLElement>(FOCUSABLE)]
+    if (e.key !== 'Tab' || !card.current) return;
+    const items = [...card.current.querySelectorAll<HTMLElement>(FOCUSABLE)]
       .sort((x, y) => (x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
     const first = items[0], last = items[items.length - 1];
     if (!first || !last) return;
@@ -41,43 +149,95 @@ export default function WelcomeGuide({ app, onChoose }: Props) {
   };
 
   const choose = (role: GuideRole) => {
-    if (chosen) return;
-    setChosen(true);
-    // The click is the user gesture browsers require before any audio can play.
-    app?.narrator.say('welcome');
+    if (chosen.current) return;
+    chosen.current = true;
+    setDone(true);
+    app?.narrator.stop();
     onChoose(role);
   };
 
   return (
-    <>
-      <div className={dialog.veil} data-level="welcome" aria-hidden="true" />
-      <div
-        ref={root}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className={dialog.card}
-        data-level="welcome"
-        onKeyDown={trapTab}
-      >
-        <div className={styles.guide}>
-          <span className={styles.avatar} aria-hidden="true">🫏</span>
-          <div className={dialog.head}>
-            <p className={dialog.eyebrow}>Burrito espacial</p>
-            <h2 id={titleId} className={dialog.title}>Bienvenido a TOUCHDOWN</h2>
-            <p className={dialog.lede}>Soy tu guía en esta misión. ¿Cuál es tu rol ahora?</p>
+    <div className={styles.root} data-step={step}>
+      <div className={dialog.veil} data-level="welcome" data-testid="welcome-veil" aria-hidden="true" onClick={onVeil} />
+      <div className={styles.column}>
+        <DonkeyView mood={MOOD[step]} />
+        <div className={styles.live} aria-live="polite">
+          {step === 'speaking' && <p className={styles.bubble}>{SUBTITLE}</p>}
+        </div>
+        {step === 'tap' && (
+          <button ref={tapButton} type="button" className={`${layer.btn} ${styles.tap}`} data-variant="primary" onClick={retry}>
+            Toca para empezar
+          </button>
+        )}
+        {step === 'modal' && (
+          <div
+            ref={card}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            className={`${dialog.card} ${styles.enter}`}
+            data-level="welcome"
+            onKeyDown={trapTab}
+          >
+            <div className={dialog.head}>
+              <p className={dialog.eyebrow}>Burrito espacial</p>
+              <h2 id={titleId} className={dialog.title}>Bienvenido a TOUCHDOWN</h2>
+              <p className={dialog.lede}>Soy tu guía en esta misión. ¿Cuál es tu rol ahora?</p>
+            </div>
+            <div className={styles.roles}>
+              <button type="button" className={layer.btn} data-variant="primary" disabled={done} onClick={() => choose('vr')}>
+                Voy en VR
+              </button>
+              <button type="button" className={layer.btn} disabled={done} onClick={() => choose('monitor')}>
+                Sigo la misión (Monitor)
+              </button>
+            </div>
           </div>
-        </div>
-
-        <div className={styles.roles}>
-          <button type="button" className={layer.btn} data-variant="primary" disabled={chosen} onClick={() => choose('vr')}>
-            Voy en VR
-          </button>
-          <button type="button" className={layer.btn} disabled={chosen} onClick={() => choose('monitor')}>
-            Sigo la misión (Monitor)
-          </button>
-        </div>
+        )}
       </div>
-    </>
+      {step !== 'modal' && (
+        <button type="button" className={`${layer.btn} ${styles.skip}`} onClick={skip}>Saltar</button>
+      )}
+    </div>
   );
+}
+
+/**
+ * The donkey's canvas is made here rather than in the markup: a canvas that has lost its WebGL context (what disposing
+ * the stage does) cannot get a new one, so every mount needs a fresh element.
+ */
+function DonkeyView({ mood }: { mood: DonkeyMood }) {
+  const host = useRef<HTMLDivElement>(null);
+  const stage = useRef<DonkeyStage | null>(null);
+  const canvas = useRef<HTMLCanvasElement | null>(null);
+  const first = useRef(mood);
+
+  useEffect(() => {
+    const slot = host.current;
+    if (!slot) return;
+    const el = document.createElement('canvas');
+    el.className = styles.canvas ?? '';
+    el.setAttribute('aria-hidden', 'true');
+    el.setAttribute('data-testid', 'welcome-donkey');
+    el.setAttribute('data-mood', first.current);
+    slot.appendChild(el);
+    const s = new DonkeyStage(el);
+    slot.setAttribute('data-ok', String(s.ok));
+    s.setMood(first.current);
+    canvas.current = el;
+    stage.current = s;
+    return () => {
+      stage.current = null;
+      canvas.current = null;
+      s.dispose();
+      el.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    stage.current?.setMood(mood);
+    canvas.current?.setAttribute('data-mood', mood);
+  }, [mood]);
+
+  return <div ref={host} className={styles.donkey} />;
 }

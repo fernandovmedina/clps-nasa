@@ -11,8 +11,8 @@
   max-height: calc(100vh - 104px); max-height: calc(100dvh - 104px); }
 .card[data-level='follow'] { z-index: 9; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 32px));
   max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); }
-.card[data-level='welcome'] { z-index: 11; top: 50%; transform: translate(-50%, -50%); width: min(480px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); }
+/* Sits in the welcome column under the donkey instead of floating over the screen. */
+.card[data-level='welcome'] { position: relative; left: auto; z-index: auto; flex: none; box-sizing: border-box; width: 100%; overflow: visible; }
 
 .form { display: flex; flex-direction: column; gap: 16px; }
 .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
