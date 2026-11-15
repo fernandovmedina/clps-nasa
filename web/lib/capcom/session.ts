@@ -24,7 +24,6 @@ import {
   systemPrompt,
   toolResult,
 } from './protocol';
-import { tripStatusTool } from './tools';
 import type {
   CapcomEvent,
   CapcomListener,
@@ -114,7 +113,7 @@ export class CapcomSession {
     this.voiceId = options.voiceId ?? CAPCOM_VOICE_ID;
     this.systemPromptText = options.systemPrompt ?? CAPCOM_SYSTEM_PROMPT;
     this.endpointing = options.endpointing ?? CAPCOM_ENDPOINTING;
-    for (const tool of options.tools ?? [tripStatusTool]) this.tools.set(tool.name, tool);
+    for (const tool of options.tools ?? []) this.tools.set(tool.name, tool);
   }
 
   get state(): CapcomState {

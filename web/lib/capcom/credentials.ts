@@ -1,9 +1,12 @@
 import {
+  CAPCOM_CREDENTIAL_SECONDS,
   CAPCOM_GUEST_ROLE_ARN,
   CAPCOM_IDENTITY_POOL_ID,
   CAPCOM_REGION,
 } from './config';
 import type { CredentialsProvider, GuestCredentials } from './types';
+
+export type GuestCredentialProvider = CredentialsProvider & { invalidate: () => void };
 
 const REFRESH_MARGIN_MS = 60_000;
 
@@ -12,7 +15,7 @@ const REFRESH_MARGIN_MS = 60_000;
  * y STS AssumeRoleWithWebIdentity. El flujo mejorado (GetCredentialsForIdentity)
  * aplica una política de sesión sin Bedrock, así que nunca se llama.
  */
-export function createGuestCredentialProvider(): CredentialsProvider {
+export function createGuestCredentialProvider(): GuestCredentialProvider {
   let identityId: string | null = null;
   let cached: GuestCredentials | null = null;
   let pending: Promise<GuestCredentials> | null = null;
@@ -36,6 +39,7 @@ export function createGuestCredentialProvider(): CredentialsProvider {
         RoleArn: CAPCOM_GUEST_ROLE_ARN,
         RoleSessionName: `capcom-${Math.random().toString(36).slice(2, 10)}`,
         WebIdentityToken: token.Token,
+        DurationSeconds: CAPCOM_CREDENTIAL_SECONDS,
       }),
     );
     const c = assumed.Credentials;
@@ -50,7 +54,7 @@ export function createGuestCredentialProvider(): CredentialsProvider {
     };
   }
 
-  return async () => {
+  const provider: CredentialsProvider = async () => {
     if (cached?.expiration && cached.expiration.getTime() - Date.now() > REFRESH_MARGIN_MS) {
       return cached;
     }
@@ -64,4 +68,9 @@ export function createGuestCredentialProvider(): CredentialsProvider {
       });
     return pending;
   };
+  return Object.assign(provider, {
+    invalidate: () => {
+      cached = null;
+    },
+  });
 }

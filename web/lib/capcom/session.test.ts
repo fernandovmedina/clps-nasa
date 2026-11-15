@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { bytesToBase64 } from './protocol';
 import { CapcomSession } from './session';
-import type { CapcomEvent, CapcomTransport, InputEvent, ServerEvent } from './types';
+import type { CapcomEvent, CapcomTool, CapcomTransport, InputEvent, ServerEvent } from './types';
+
+const tripStatus: CapcomTool = {
+  name: 'estado_del_viaje',
+  description: 'Estado del viaje.',
+  inputSchema: { type: 'object', properties: {}, required: [] },
+  run: () => ({ fase: 'Despegue', altitud_km: 169 }),
+};
 
 function fakeTransport() {
   const sent: InputEvent[] = [];
@@ -55,6 +62,7 @@ async function started() {
   const session = new CapcomSession({
     credentials: async () => ({ accessKeyId: 'a', secretAccessKey: 'b', sessionToken: 'c' }),
     transport: async () => fake.transport,
+    tools: [tripStatus],
   });
   const events: CapcomEvent[] = [];
   session.subscribe((event) => events.push(event));

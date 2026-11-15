@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { CAPCOM_SYSTEM_PROMPT } from './config';
 import { base64ToPcm, bytesToBase64, promptStart, sessionStart, toolResult } from './protocol';
-import { tripStatusTool } from './tools';
+import type { CapcomTool } from './types';
+
+const tripStatusTool: CapcomTool = {
+  name: 'estado_del_viaje',
+  description: 'Estado del viaje.',
+  inputSchema: { type: 'object', properties: {}, required: [] },
+  run: () => ({}),
+};
 
 describe('protocol', () => {
   it('declares the endpointing sensitivity and inference settings in sessionStart', () => {
@@ -52,8 +59,11 @@ describe('protocol', () => {
     expect(Array.from(decoded)).toEqual(Array.from(pcm));
   });
 
-  it('keeps the persona rules that make the model use the tool', () => {
-    expect(CAPCOM_SYSTEM_PROMPT).toContain('estado_del_viaje');
+  it('keeps the persona rules that make the model use the tools and stay brief', () => {
+    for (const name of ['estado_del_viaje', 'analisis_del_sitio', 'comparar_sitios', 'datos_de_mision']) {
+      expect(CAPCOM_SYSTEM_PROMPT).toContain(name);
+    }
     expect(CAPCOM_SYSTEM_PROMPT).toMatch(/SIEMPRE/);
+    expect(CAPCOM_SYSTEM_PROMPT).toMatch(/una a tres frases/);
   });
 });
