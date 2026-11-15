@@ -154,11 +154,12 @@ export class Avatar {
   private torsoYaw = 0;
   private placed = false;
   private arms: Arm[];
-  private suit = createSuitMaterials();
+  private suit: ReturnType<typeof createSuitMaterials>;
 
   constructor(private app: LunarApp) {
-    const { cloth, metal } = this.suit;
-    this.torso = new THREE.Mesh(buildTorso(CHEST_PLATE_LOCAL), cloth);
+    this.suit = createSuitMaterials(app.renderer);
+    const { cloth, metal, patch } = this.suit;
+    this.torso = new THREE.Mesh(buildTorso(CHEST_PLATE_LOCAL), [cloth, metal, patch]);
     this.group.add(this.torso);
 
     const upperGeo = buildUpperArm(UPPER_LEN);
