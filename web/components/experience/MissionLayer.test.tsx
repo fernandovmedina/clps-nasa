@@ -125,6 +125,17 @@ describe('MissionLayer', () => {
     expect(start).toHaveBeenCalledTimes(1);
   });
 
+  it('moves the focus to Pausar once the start button has gone', async () => {
+    const fake = fakeApp(launchHud({ waiting: true, primary: { id: 'start', label: 'Comenzar despegue', run: vi.fn() } }));
+    mount(fake);
+    await tick();
+    screen.getByRole('button', { name: 'Comenzar despegue' }).focus();
+    fake.state.hud = launchHud({ waiting: false });
+    await tick();
+    expect(screen.queryByRole('button', { name: 'Comenzar despegue' })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Pausar' }));
+  });
+
   it('selects a site from the ranking and keeps the pressed state in sync', async () => {
     const select = vi.fn();
     const rows = [

@@ -52,6 +52,13 @@ export default function MissionLayer({ app, vr, onEnterVR, room }: Props) {
     wasStopped.current = stopped;
   }, [stopped]);
 
+  const waiting = hud?.waiting === true;
+  const wasWaiting = useRef(false);
+  useEffect(() => {
+    if (wasWaiting.current && !waiting) pauseButton.current?.focus();
+    wasWaiting.current = waiting;
+  }, [waiting]);
+
   const act = (id: string) => {
     const current = app?.phase?.controlHud?.();
     if (current) collectActions(current).get(id)?.();
