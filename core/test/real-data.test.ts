@@ -68,9 +68,9 @@ describe.skipIf(!hasData)('real data', () => {
     })
   }
 
-  it('rounds the mons-mouton score half up', () => {
+  it('scores mons-mouton from the real horizon and ephemeris', () => {
     const r = scenarioFor('mons-mouton', '2027-03-27T02:03:27Z', 30)
-    expect(r.score).toBe(58)
+    expect(r.score).toBe(43)
   })
 
   it('sees one continuous sun window across the shackleton-ridge horizon graze', () => {

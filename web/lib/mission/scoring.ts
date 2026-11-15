@@ -4,13 +4,15 @@
  *
  * Score/status/windows come straight from `computeScenario` (the same
  * formula documented in CLAUDE.md sec. 7 and used by the Cloudflare Worker's
- * `/api/scenario`): score = 100 * (0.5 * sun_fraction + 0.5 * earth_fraction).
- * `breakdown` below is presentation-only (feeds the detail-panel bars in
- * orbit.ts) and does not affect the score.
+ * `/api/scenario`):
+ *   score = 100 * (0.30*energy + 0.25*comms + 0.30*ops + 0.15*continuity)
+ * `breakdown` holds exactly those four components (0..1), so the bars in the
+ * VR detail panel are the real terms of the score. Ranking order is the same as
+ * `compareScenarios`: status tier, then score, then ops, then energy.
  */
 import * as THREE from 'three';
-import { computeScenario, horizonAt as coreHorizonAt, positionAt } from '@touchdown/core';
-import { clamp01, smooth } from '../engine/util';
+import { computeScenario, horizonAt as coreHorizonAt, positionAt, visibleDiskFraction, SUN_RADIUS_DEG } from '@touchdown/core';
+import { clamp01 } from '../engine/util';
 import type { SiteInput } from './sites';
 
 export interface SkyPos { elevation: number; azimuth: number; local: THREE.Vector3; aboveHorizon: number }
@@ -59,8 +61,9 @@ export interface SiteMetrics {
   longestDarkH: number;
   maxSunElev: number;
   tempC: number;
-  powerPct: number;       // solar array output vs nominal, vertical array (presentation model)
-  breakdown: { illum: number; earth: number; slope: number; power: number; dark: number };
+  powerPct: number;       // % of the solar disk above the local horizon at landing (sun-tracking array)
+  /** The four score components (0..1) from computeScenario. */
+  breakdown: { energy: number; comms: number; ops: number; continuity: number };
 }
 
 const SUN_HALF_DISK = 0.27;
@@ -70,22 +73,11 @@ function hoursUntil(iso: string | null, landingMs: number, fallbackH: number): n
   return Math.max(0, (Date.parse(iso) - landingMs) / 3_600_000);
 }
 
-/** Longest gap (hours) between consecutive "visible" windows within [landingMs, endMs]. */
-function longestGapHours(windows: [string, string][], landingMs: number, endMs: number): number {
-  const spans = windows.map(([a, b]) => [Date.parse(a), Date.parse(b)] as const).sort((a, b) => a[0] - b[0]);
-  let cursor = landingMs, longest = 0;
-  for (const [s, e] of spans) {
-    if (s > cursor) longest = Math.max(longest, s - cursor);
-    cursor = Math.max(cursor, e);
-  }
-  if (endMs > cursor) longest = Math.max(longest, endMs - cursor);
-  return longest / 3_600_000;
-}
+const STATUS_TIER = { viable: 0, marginal: 1, not_viable: 2 } as const;
 
 /** Evaluates every site over a mission window (default 14 days) using real ephemeris + horizon data. */
 export function evaluateSites(sites: SiteInput[], landing: Date, windowDays = 14): SiteMetrics[] {
   const landingMs = landing.getTime();
-  const missionEndMs = landingMs + windowDays * 86_400_000;
 
   const results = sites.map((site) => {
     const scenario = computeScenario({
@@ -103,21 +95,14 @@ export function evaluateSites(sites: SiteInput[], landing: Date, windowDays = 14
 
     const hoursToSunset = hoursUntil(scenario.sun.next_set, landingMs, windowDays * 24);
     const hoursToEarthset = hoursUntil(scenario.earth.next_set, landingMs, windowDays * 24);
-    const longestDarkH = longestGapHours(scenario.windows.sun, landingMs, missionEndMs);
+    const longestDarkH = scenario.metrics.longest_dark_h;
 
     const sunUp = s0.aboveHorizon > -SUN_HALF_DISK;
-    const powerPct = sunUp
-      ? Math.round(100 * Math.cos(Math.max(0, s0.elevation) * (Math.PI / 180)) * smooth(-SUN_HALF_DISK, 0.6, s0.aboveHorizon))
-      : 0;
+    const powerPct = Math.round(100 * visibleDiskFraction(s0.aboveHorizon, SUN_RADIUS_DEG));
     const tempK = sunUp ? 390 * Math.pow(Math.sin(Math.max(0.3, s0.elevation) * (Math.PI / 180)), 0.25) : 95;
 
-    const breakdown = {
-      illum: scenario.fractions.sun,
-      earth: scenario.fractions.earth,
-      slope: clamp01(1 - (site.slopeDeg - 2) / 12),
-      power: powerPct / 100,
-      dark: 1 - clamp01(longestDarkH / 240),
-    };
+    const { energy, comms, ops, continuity } = scenario.metrics;
+    const breakdown = { energy, comms, ops, continuity };
 
     return {
       site, score: scenario.score, rank: 0, status: scenario.status,
@@ -130,7 +115,11 @@ export function evaluateSites(sites: SiteInput[], landing: Date, windowDays = 14
     } satisfies SiteMetrics;
   });
 
-  results.sort((a, b) => b.score - a.score);
+  results.sort((a, b) =>
+    STATUS_TIER[a.status] - STATUS_TIER[b.status] ||
+    b.score - a.score ||
+    b.breakdown.ops - a.breakdown.ops ||
+    b.breakdown.energy - a.breakdown.energy);
   results.forEach((r, i) => (r.rank = i + 1));
   return results;
 }

@@ -79,6 +79,7 @@ function entry(letter: string, score: number, status: ScenarioResponse['status']
       earth: body,
       windows: { sun: [], earth: [], both: [] },
       fractions: { sun: 0.3, earth: 0.3, both: 0.2 },
+      metrics: { energy: 0.3, comms: 0.3, ops: 0.2, continuity: 0.5, longest_dark_h: 100 },
       score,
       status,
     },

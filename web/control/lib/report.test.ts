@@ -24,6 +24,7 @@ function response(overrides: Partial<ScenarioResponse> = {}): ScenarioResponse {
       both: [['2027-01-10T00:00:00Z', '2027-01-24T00:00:00Z']],
     },
     fractions: { sun: 1, earth: 1, both: 1 },
+    metrics: { energy: 1, comms: 1, ops: 1, continuity: 1, longest_dark_h: 0 },
     score: 80,
     status: 'viable',
     ...overrides,

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  compareScenarios,
   computeScenario,
   sampleRange,
+  visibleDiskFraction,
+  SUN_RADIUS_DEG,
   visibilityWindows,
   type HorizonFile,
 } from '../src/index'
@@ -51,9 +54,14 @@ describe('scenario A: Sun sets at hour 24, Earth always visible', () => {
     expect(r.fractions).toEqual({ sun: 0.5, earth: 1, both: 0.5 })
   })
 
-  it('scores and classifies', () => {
-    expect(r.score).toBe(75)
-    expect(r.status).toBe('viable')
+  it('reports the score components', () => {
+    expect(r.metrics).toEqual({ energy: 0.5, comms: 1, ops: 0.5, continuity: 0.5, longest_dark_h: 24 })
+  })
+
+  it('scores and classifies: half the mission in the dark is marginal', () => {
+    // 0.30*0.5 + 0.25*1 + 0.30*0.5 + 0.15*0.5 = 0.625
+    expect(r.score).toBe(63)
+    expect(r.status).toBe('marginal')
   })
 
   it('finds the next events', () => {
@@ -91,8 +99,9 @@ describe('scenario B: 1 degree horizon', () => {
     expect(r.fractions.sun).toBe(0.25)
   })
 
-  it('is marginal with score 63', () => {
-    expect(r.score).toBe(63)
+  it('is marginal with score 44', () => {
+    expect(r.metrics.continuity).toBe(0.25)
+    expect(r.score).toBe(44)
     expect(r.status).toBe('marginal')
   })
 })
@@ -123,33 +132,41 @@ describe('scenario C: Earth hidden behind a ridge', () => {
 })
 
 describe('status thresholds', () => {
-  function withEarthEl(earthEl: (i: number) => number) {
-    return makeTrack({
-      count: 49,
-      sunAz: () => 100,
-      sunEl: (i) => 2 - (4 * i) / 48,
-      earthAz: () => 0,
-      earthEl,
-    })
+  function sunUp(earthEl: (i: number) => number) {
+    return makeTrack({ count: 49, sunAz: () => 100, sunEl: () => 5, earthAz: () => 0, earthEl })
+  }
+  function earthUpSunSetsAfter(k: number) {
+    return makeTrack({ count: 49, sunAz: () => 100, sunEl: (i) => (i <= k ? 5 : -5), earthAz: () => 0, earthEl: () => 5 })
   }
 
-  it('is viable at exactly score 70 with half of the mission in both', () => {
-    const track = withEarthEl((i) => (i <= 42 ? 5 : i === 43 ? 1 : -4))
-    const r = run(flatHorizon(0), 2, track)
-    expect(r.fractions).toEqual({ sun: 0.5, earth: 0.9, both: 0.5 })
-    expect(r.score).toBe(70)
+  it('is viable with score 73 and half of the mission in both', () => {
+    const r = run(flatHorizon(0), 2, sunUp((i) => (i <= 23 ? 5 : i === 24 ? 0 : -5)))
+    expect(r.fractions).toEqual({ sun: 1, earth: 0.5, both: 0.5 })
+    expect(r.score).toBe(73)
     expect(r.status).toBe('viable')
   })
 
+  it('is marginal at exactly score 70 when less than half of the mission is in both', () => {
+    const r = run(flatHorizon(0), 2, sunUp((i) => (i <= 21 ? 3 : -2)))
+    expect(r.fractions).toEqual({ sun: 1, earth: 0.45, both: 0.45 })
+    expect(r.score).toBe(70)
+    expect(r.status).toBe('marginal')
+  })
+
   it('is marginal at exactly score 40', () => {
-    const track = withEarthEl((i) => (i <= 13 ? 5 : i === 14 ? 2 : -3))
-    const r = run(flatHorizon(0), 2, track)
-    expect(r.fractions).toEqual({ sun: 0.5, earth: 0.3, both: 0.3 })
+    const r = run(flatHorizon(0), 2, earthUpSunSetsAfter(9))
+    expect(r.metrics).toEqual({ energy: 0.198, comms: 1, ops: 0.198, continuity: 0.198, longest_dark_h: 38.5 })
     expect(r.score).toBe(40)
     expect(r.status).toBe('marginal')
   })
 
-  it('is marginal when the score is high but the windows barely overlap', () => {
+  it('is not viable below score 40', () => {
+    const r = run(flatHorizon(0), 2, earthUpSunSetsAfter(8))
+    expect(r.score).toBe(38)
+    expect(r.status).toBe('not_viable')
+  })
+
+  it('is not viable when Sun and Earth are never up together', () => {
     const track = makeTrack({
       count: 49,
       sunAz: () => 100,
@@ -159,8 +176,8 @@ describe('status thresholds', () => {
     })
     const r = run(flatHorizon(0), 2, track)
     expect(r.fractions.both).toBe(0)
-    expect(r.score).toBe(50)
-    expect(r.status).toBe('marginal')
+    expect(r.score).toBe(35)
+    expect(r.status).toBe('not_viable')
   })
 
   it('is marginal when a body is visible 15 percent of the mission', () => {
@@ -186,7 +203,7 @@ describe('status thresholds', () => {
     })
     const r = run(flatHorizon(0), 2, track)
     expect(r.fractions).toEqual({ sun: 1, earth: 0.09, both: 0.09 })
-    expect(r.score).toBe(55)
+    expect(r.score).toBe(50)
     expect(r.status).toBe('not_viable')
   })
 })
@@ -212,21 +229,60 @@ describe('evaluation points', () => {
 })
 
 describe('score rounding', () => {
-  it('rounds an exact .5 score up from the published fractions', () => {
+  it('rounds an exact .5 score up from the published metrics', () => {
     const track = makeTrack({
       count: 1001,
       sunAz: () => 100,
-      sunEl: (i) => (i < 100 ? 1 : i === 100 ? 0 : -1),
+      sunEl: () => 1,
       earthAz: () => 0,
-      earthEl: (i) => (i < 690 ? 1 : i === 690 ? 0 : -1),
+      earthEl: (i) => (i < 500 ? 1 : i === 500 ? 0 : -1),
     })
     const r = run(flatHorizon(0), 1000 / 24, track)
-    expect(r.fractions.sun).toBe(0.1)
-    expect(r.fractions.earth).toBe(0.69)
-    expect(r.score).toBe(40)
-    expect(r.status).toBe('marginal')
+    expect(r.fractions.earth).toBe(0.5)
+    // 300 + 0.25*500 + 0.30*500 + 150 = 725 thousandths -> 72.5 -> 73
+    expect(r.score).toBe(73)
+    expect(r.status).toBe('viable')
   })
 })
+
+describe('solar disk above the horizon', () => {
+  it('is whole, half and gone at +r, 0 and -r', () => {
+    expect(visibleDiskFraction(SUN_RADIUS_DEG, SUN_RADIUS_DEG)).toBe(1)
+    expect(visibleDiskFraction(0, SUN_RADIUS_DEG)).toBeCloseTo(0.5, 10)
+    expect(visibleDiskFraction(-SUN_RADIUS_DEG, SUN_RADIUS_DEG)).toBe(0)
+  })
+
+  it('is symmetric and monotonic', () => {
+    const r = SUN_RADIUS_DEG
+    expect(visibleDiskFraction(0.1, r) + visibleDiskFraction(-0.1, r)).toBeCloseTo(1, 10)
+    expect(visibleDiskFraction(0.2, r)).toBeGreaterThan(visibleDiskFraction(0.1, r))
+  })
+
+  it('gives less energy when the Sun only grazes the horizon', () => {
+    const graze = makeTrack({ count: 25, sunAz: () => 100, sunEl: () => 0.1, earthAz: () => 0, earthEl: () => 5 })
+    const high = makeTrack({ count: 25, sunAz: () => 100, sunEl: () => 3, earthAz: () => 0, earthEl: () => 5 })
+    const a = run(flatHorizon(0), 1, graze)
+    const b = run(flatHorizon(0), 1, high)
+    expect(a.fractions.sun).toBe(1)
+    expect(a.metrics.energy).toBeLessThan(0.8)
+    expect(b.metrics.energy).toBe(1)
+    expect(b.score).toBeGreaterThan(a.score)
+  })
+})
+
+describe('ranking order', () => {
+  it('never puts a not-viable site above a marginal one', () => {
+    const notViable = run(flatHorizon(0), 2, makeTrack({ count: 49, sunAz: () => 100, sunEl: () => 5, earthAz: () => 0, earthEl: (i) => (i <= 3 ? 5 : i === 4 ? 8 : -17) }))
+    const marginal = run(flatHorizon(0), 2, earthUpSunSetsAfterForRanking(9))
+    expect(notViable.score).toBeGreaterThan(marginal.score)
+    const sorted = [notViable, marginal].sort(compareScenarios)
+    expect(sorted[0]).toBe(marginal)
+  })
+})
+
+function earthUpSunSetsAfterForRanking(k: number) {
+  return makeTrack({ count: 49, sunAz: () => 100, sunEl: (i) => (i <= k ? 5 : -5), earthAz: () => 0, earthEl: () => 5 })
+}
 
 describe('grazing horizon', () => {
   const grazing = makeTrack({

@@ -14,7 +14,7 @@ function metrics(id: string, name: string, rank: number, score: number, over: Pa
     earth: { elevation: 4.5, azimuth: 3.2, aboveHorizon: 2.1, local: undefined as never },
     illumPct: 62.4, earthPct: 40.2, hoursToSunset: 120.4, hoursToEarthset: 336,
     longestDarkH: 48.2, maxSunElev: 6, tempC: -20, powerPct: 71,
-    breakdown: { illum: 0, earth: 0, slope: 0, power: 0, dark: 0 },
+    breakdown: { energy: 0, comms: 0, ops: 0, continuity: 0 },
     ...over,
   };
 }

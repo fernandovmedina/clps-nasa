@@ -328,7 +328,18 @@ Formato compartido entre `pipeline/`, `core/` (`@touchdown/core`), `worker/` y `
   "status": "marginal"
 }
 ```
-*`status`: `"viable"`, `"marginal"` o `"not_viable"` — fórmula exacta en `core/src/scenario.ts` (`computeScenario`): `score = 100 * (0.5 * fracción_sol + 0.5 * fracción_tierra)`.*
+*`status`: `"viable"`, `"marginal"` o `"not_viable"` — fórmula exacta en `core/src/scenario.ts` (`computeScenario`):*
+
+```
+score = 100 × (0.30·energía + 0.25·comunicación + 0.30·operación + 0.15·continuidad)
+```
+- *`energía`: fracción media del **disco solar** (radio 0.2666°) por encima del horizonte LOLA en la dirección del Sol. Un Sol rasante cuenta menos que uno despejado.*
+- *`comunicación`: fracción de la misión con la Tierra sobre el horizonte (= `fractions.earth`).*
+- *`operación`: fracción con Sol **y** Tierra a la vez (= `fractions.both`).*
+- *`continuidad`: `1 − noche más larga / duración de la misión`.*
+- *Estado: `not_viable` si score < 40, energía < 0.1 o Tierra < 0.1; `viable` si score ≥ 70 y operación ≥ 0.5; si no, `marginal`.*
+- *Ranking (`compareScenarios`): primero el estado (un no viable nunca supera a un marginal), luego score, luego operación, luego energía.*
+- *Campo nuevo y aditivo en la respuesta: `metrics: { energy, comms, ops, continuity, longest_dark_h }`.*
 
 ### Terreno para VR/3D: `GET /api/sites/{id}/terrain`
 ```json

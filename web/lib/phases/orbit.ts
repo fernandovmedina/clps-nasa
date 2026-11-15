@@ -352,7 +352,7 @@ export class OrbitPhase implements Phase {
       g.font = `800 30px ${UI.mono}`; g.fillStyle = UI.onAccent; g.textAlign = 'center'; g.fillText(`${i + 1}`, 73, y + 58); g.textAlign = 'left';
       g.font = `600 32px ${UI.font}`; g.fillStyle = UI.text; g.fillText(m.site.name, 124, y + 44);
       g.font = `500 22px ${UI.mono}`; g.fillStyle = UI.dim;
-      g.fillText(`SOL ${m.illumPct.toFixed(0)}%  ·  TIERRA ${m.earthPct.toFixed(0)}%  ·  PEND ${m.site.slopeDeg.toFixed(1)}°`, 124, y + 78);
+      g.fillText(`SOL ${m.illumPct.toFixed(0)}%  ·  TIERRA ${m.earthPct.toFixed(0)}%  ·  AMBOS ${Math.round(m.breakdown.ops * 100)}%`, 124, y + 78);
       g.font = `800 40px ${UI.mono}`; g.fillStyle = col; g.textAlign = 'right'; g.fillText(`${Math.round(m.score)}%`, 972, y + 60); g.textAlign = 'left';
       if (this.delayDays) {
         const base = this.baseRanking.find((r) => r.site.id === m.site.id);
@@ -441,9 +441,9 @@ export class OrbitPhase implements Phase {
       ['Elevación Tierra', `${m.earth.elevation.toFixed(2)}°`],
       ['Visibilidad Tierra', `${m.earthPct.toFixed(0)}%`],
       ['Ocaso de la Tierra en', m.earth.aboveHorizon > 0 ? fmtHours(m.hoursToEarthset) : 'sin enlace'],
-      ['Pendiente media', `${m.site.slopeDeg.toFixed(1)}°`],
+      ['Sol + Tierra a la vez', `${Math.round(m.breakdown.ops * 100)}%`],
       ['Noche más larga', fmtHours(m.longestDarkH)],
-      ['Potencia solar ahora', `${m.powerPct}%`],
+      ['Disco solar visible', `${m.powerPct}%`],
     ];
     rows.forEach(([k, v], i) => {
       const x = 48 + (i % 2) * 480, y = 310 + Math.floor(i / 2) * 96;
@@ -452,8 +452,8 @@ export class OrbitPhase implements Phase {
     });
 
     const bars: [string, number][] = [
-      ['Iluminación', m.breakdown.illum], ['Enlace Tierra', m.breakdown.earth], ['Pendiente', m.breakdown.slope],
-      ['Potencia', m.breakdown.power], ['Noche corta', m.breakdown.dark],
+      ['Energía · 30%', m.breakdown.energy], ['Enlace Tierra · 25%', m.breakdown.comms],
+      ['Sol + Tierra · 30%', m.breakdown.ops], ['Continuidad · 15%', m.breakdown.continuity],
     ];
     bars.forEach(([k, v], i) => {
       const y = 820 + i * 52;

@@ -103,6 +103,18 @@ export interface BodySummary {
 
 export type ScenarioStatus = 'viable' | 'marginal' | 'not_viable'
 
+export interface ScenarioMetrics {
+  /** Mean fraction of the solar disk above the local horizon (power). */
+  energy: number
+  /** Fraction of the mission with the Earth above the local horizon. */
+  comms: number
+  /** Fraction of the mission with Sun and Earth visible at the same time. */
+  ops: number
+  /** 1 − longest continuous time without Sun / mission length. */
+  continuity: number
+  longest_dark_h: number
+}
+
 export interface ScenarioResponse {
   site_id: string
   site_name: string
@@ -115,6 +127,8 @@ export interface ScenarioResponse {
   earth: BodySummary
   windows: { sun: Interval[]; earth: Interval[]; both: Interval[] }
   fractions: { sun: number; earth: number; both: number }
+  /** Score components (0..1) and the longest continuous time without Sun. */
+  metrics: ScenarioMetrics
   score: number
   status: ScenarioStatus
 }
