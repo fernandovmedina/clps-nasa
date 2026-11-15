@@ -14,7 +14,8 @@
 import type { ClientMessage, RoomState } from '@touchdown/core';
 
 const ROOM_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
-const PING_INTERVAL_MS = 25_000;
+const PING_INTERVAL_MS = 10_000;
+const STALE_AFTER_MS = 25_000;
 const RECONNECT_DELAY_MS = 2_000;
 
 export type RoomStatus = 'connecting' | 'open' | 'closed';
@@ -47,12 +48,17 @@ export class RoomClient {
    * markers/site/time that existed before it connected.
    */
   private lastState: RoomState | null = null;
+  private lastMessageAt = 0;
   status: RoomStatus = 'connecting';
 
   constructor(room: string, onStatus?: (s: RoomStatus) => void, onRoomChange?: (room: string) => void) {
     this.room = ROOM_NAME_RE.test(room) ? room : 'touchdown';
     this.onStatus = onStatus ?? null;
     this.onRoomChange = onRoomChange ?? null;
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      window.addEventListener('online', this.onWake);
+      document.addEventListener('visibilitychange', this.onVisibility);
+    }
     this.connect();
   }
 
@@ -94,6 +100,10 @@ export class RoomClient {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.ws?.close();
     this.ws = null;
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      window.removeEventListener('online', this.onWake);
+      document.removeEventListener('visibilitychange', this.onVisibility);
+    }
   }
 
   private setStatus(s: RoomStatus) {
@@ -114,11 +124,13 @@ export class RoomClient {
     this.ws = ws;
 
     ws.onopen = () => {
+      this.lastMessageAt = Date.now();
       this.setStatus('open');
       this.send({ type: 'hello' });
-      this.pingTimer = setInterval(() => this.send({ type: 'ping' }), PING_INTERVAL_MS);
+      this.pingTimer = setInterval(() => this.heartbeat(), PING_INTERVAL_MS);
     };
     ws.onmessage = (ev) => {
+      this.lastMessageAt = Date.now();
       if (typeof ev.data !== 'string') return;
       let data: unknown;
       try { data = JSON.parse(ev.data); } catch { return; }
@@ -134,6 +146,35 @@ export class RoomClient {
       this.scheduleReconnect();
     };
     ws.onerror = () => { /* onclose fires right after; nothing extra to do */ };
+  }
+
+  /** Ping, or give up on a socket that has been silent for too long (the network died without a close event). */
+  private heartbeat() {
+    if (Date.now() - this.lastMessageAt > STALE_AFTER_MS) this.reconnectNow();
+    else this.send({ type: 'ping' });
+  }
+
+  private onWake = () => {
+    if (this.closed) return;
+    const healthy = this.ws?.readyState === WebSocket.OPEN && Date.now() - this.lastMessageAt <= STALE_AFTER_MS;
+    if (!healthy) this.reconnectNow();
+  };
+
+  private onVisibility = () => {
+    if (document.visibilityState === 'visible') this.onWake();
+  };
+
+  private reconnectNow() {
+    if (this.closed) return;
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
+    if (this.ws) {
+      this.ws.onopen = null; this.ws.onmessage = null; this.ws.onclose = null; this.ws.onerror = null;
+      this.ws.close();
+      this.ws = null;
+    }
+    this.setStatus('closed');
+    this.connect();
   }
 
   private scheduleReconnect() {
