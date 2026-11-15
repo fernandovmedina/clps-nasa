@@ -81,6 +81,7 @@ export class PovPhase implements Phase {
   enter() {
     this.world.lander.visible = false;
     this.world.lzMarker.visible = true;
+    this.world.showAstronaut('wave', this.eye);
     this.app.rig.add(this.info.mesh, this.actions.mesh);
     this.info.place(-0.86, 1.4, -1.45);
     this.actions.place(0.84, 1.28, -1.45);
@@ -93,6 +94,7 @@ export class PovPhase implements Phase {
 
   exit() {
     this.app.room.setListener(null);
+    this.world.hideAstronaut();
     this.info.dispose(); this.actions.dispose(); this.spy?.dispose();
     this.markerField.dispose();
     this.reticle.removeFromParent();
