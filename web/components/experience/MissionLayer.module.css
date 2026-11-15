@@ -214,7 +214,8 @@
   .sky section { flex: none; min-width: 200px; }
   .skyValue span:first-child { font-size: 28px; }
   .controls { justify-content: stretch; }
-  .controls .btn { flex: 1 1 auto; padding: 0 12px; }
+  .controls { gap: 6px; }
+  .controls .btn { flex: 1 1 auto; padding: 0 8px; gap: 6px; }
 }
 
 @media (max-height: 720px) and (max-width: 1023.98px) {
