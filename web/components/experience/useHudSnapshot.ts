@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LunarApp, PhaseName } from '@/lib/engine/app';
 import type { PhaseHud, RunMode } from '@/lib/engine/hud';
-import { describeMission, paintedHud, type MissionInfo } from './mission';
+import { describeMission, moonDistanceKm, paintedHud, summarizeRanking, summarizeSite, type MissionInfo, type RankSummary, type SiteSummary } from './mission';
 
 export interface HudSnapshot {
   phase: PhaseName;
@@ -13,6 +13,10 @@ export interface HudSnapshot {
   mission: MissionInfo;
   /** Only open or not: the socket flips between connecting and closed every two seconds with no server, and nothing paints that. */
   roomOpen: boolean;
+  /** What Mission Control's control room shows besides the phase HUD. */
+  site: SiteSummary | null;
+  ranking: RankSummary[];
+  moonKm: number | null;
 }
 
 const POLL_MS = 100;
@@ -36,6 +40,9 @@ export function useHudSnapshot(app: LunarApp | null) {
       hud: paintedHud(mode, app.phase?.controlHud?.() ?? null),
       mission: describeMission(app, window.location.search),
       roomOpen: app.room.status === 'open',
+      site: summarizeSite(app.selected),
+      ranking: summarizeRanking(app.ranking),
+      moonKm: moonDistanceKm(app.data),
     };
     const key = JSON.stringify(next);
     if (key === last.current) return;
