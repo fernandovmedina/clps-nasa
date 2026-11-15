@@ -392,3 +392,59 @@ describe('RoomClient snapshot', () => {
     expect(replay(client)).toBeUndefined();
   });
 });
+
+describe('RoomClient.setWatcher', () => {
+  function watched() {
+    const { client, socket } = connected();
+    socket.receive({ ...STATE_MSG, speed: 3 });
+    const phase = vi.fn();
+    const watcher = vi.fn();
+    client.setListener(phase);
+    client.setWatcher(watcher);
+    return { client, socket, phase, watcher };
+  }
+
+  it('replays the snapshot when it registers, like the phase listener does', () => {
+    const { client, watcher } = watched();
+    expect(watcher).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'state', speed: 3 }));
+    expect(client.snapshot).toMatchObject({ speed: 3 });
+  });
+
+  it('sees every event the phase listener sees, even with no phase listening, but not pongs', () => {
+    const { client, socket, phase, watcher } = watched();
+    phase.mockClear(); watcher.mockClear();
+    const set = { type: 'set_time', t: '2027-01-31T00:00:00Z', speed: 4 };
+
+    socket.receive(set);
+    socket.receive({ type: 'pong' });
+    expect(phase).toHaveBeenCalledExactlyOnceWith(set);
+    expect(watcher).toHaveBeenCalledExactlyOnceWith(set);
+
+    client.setListener(null);
+    socket.receive({ type: 'set_site', site_id: 'mons-mouton' });
+    expect(watcher).toHaveBeenLastCalledWith({ type: 'set_site', site_id: 'mons-mouton' });
+  });
+
+  it('sees the snapshot already up to date when the event arrives', () => {
+    const { client, socket } = watched();
+    let seen: unknown;
+    client.setWatcher(() => { seen = client.snapshot; });
+    socket.receive({ type: 'set_time', t: '2027-01-31T00:00:00Z', speed: 5 });
+    expect(seen).toMatchObject({ t: '2027-01-31T00:00:00Z', speed: 5 });
+  });
+
+  it('survives setRoom and can be removed', () => {
+    const { client, watcher } = watched();
+    client.setRoom('WXYZ');
+    const next = latest();
+    next.open();
+    watcher.mockClear();
+
+    next.receive({ ...STATE_MSG, speed: 2 });
+    expect(watcher).toHaveBeenCalledTimes(1);
+
+    client.setWatcher(null);
+    next.receive({ type: 'set_site', site_id: 'x' });
+    expect(watcher).toHaveBeenCalledTimes(1);
+  });
+});
