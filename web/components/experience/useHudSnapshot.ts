@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LunarApp, PhaseName } from '@/lib/engine/app';
 import type { PhaseHud, RunMode } from '@/lib/engine/hud';
-import { describeMission, type MissionInfo } from './mission';
+import { describeMission, paintedHud, type MissionInfo } from './mission';
 
 export interface HudSnapshot {
   phase: PhaseName;
@@ -26,11 +26,12 @@ export function useHudSnapshot(app: LunarApp | null) {
 
   const refresh = useCallback(() => {
     if (!app) return;
+    const mode = app.run.mode;
     const next: HudSnapshot = {
       phase: app.phase?.name ?? 'launch',
-      mode: app.run.mode,
+      mode,
       muted: app.audio.muted,
-      hud: app.phase?.controlHud?.() ?? null,
+      hud: paintedHud(mode, app.phase?.controlHud?.() ?? null),
       mission: describeMission(app, window.location.search),
     };
     const key = JSON.stringify(next);

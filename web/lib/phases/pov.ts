@@ -213,9 +213,6 @@ export class PovPhase implements Phase {
       facts: [
         { label: 'Noche más larga', value: fmtHours(m.longestDarkH) },
         { label: 'Puntaje', value: `${Math.round(m.score)} de 100 · ${STATUS_LABELS[m.status]}` },
-        { label: 'Potencia solar', value: fmtPercent(m.powerPct) },
-        { label: 'Temperatura estimada', value: `${m.tempC.toFixed(0)} °C` },
-        { label: 'Rugosidad de la zona', value: `${this.world.roughness.toFixed(2)} m` },
         { label: 'Ventana de comunicación', value: earthUp ? `${fmtHours(m.hoursToEarthset)} restantes` : 'requiere relevo' },
       ],
       side: {
@@ -231,6 +228,11 @@ export class PovPhase implements Phase {
             detail: earthUp ? 'visible · enlace directo' : 'oculta · requiere relevo',
             share: m.earthPct / 100, shareLabel: `Tierra visible el ${Math.round(m.earthPct)} % de los 14 días`,
           },
+        ],
+        extras: [
+          { label: 'Potencia solar', value: fmtPercent(m.powerPct) },
+          { label: 'Temperatura estimada', value: `${fmtSigned(m.tempC, 0)} °C` },
+          { label: 'Rugosidad de la zona', value: `${this.world.roughness.toFixed(2)} m` },
         ],
       },
       secondary: [{ id: 'back', label: 'Elegir otro sitio', run: () => this.app.goTo('orbit', 0.7, 1.0) }],

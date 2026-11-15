@@ -1,4 +1,4 @@
-import { PHASE_LABELS, PHASE_ORDER, fmtLanding, type RunMode } from '@/lib/engine/hud';
+import { PHASE_LABELS, PHASE_ORDER, fmtLanding, type PhaseHud, type RunMode } from '@/lib/engine/hud';
 import type { PhaseName } from '@/lib/engine/app';
 import { readLandingParams } from '@/lib/mission/landing-param';
 import type { SiteMetrics } from '@/lib/mission/scoring';
@@ -31,4 +31,10 @@ export function announce(prev: { phase: PhaseName; mode: RunMode }, next: { phas
   }
   if (prev.phase !== next.phase) return `Fase ${PHASE_ORDER.indexOf(next.phase) + 1} de ${PHASE_ORDER.length}: ${PHASE_LABELS[next.phase]}.`;
   return '';
+}
+
+/** The part of a phase's HUD that is actually painted in each run mode, so hidden changes never cause a render. */
+export function paintedHud(mode: RunMode, hud: PhaseHud | null): PhaseHud | null {
+  if (!hud || mode === 'stopped') return null;
+  return mode === 'paused' ? { ...hud, progress: undefined, detail: undefined } : hud;
 }

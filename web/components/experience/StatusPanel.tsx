@@ -16,7 +16,7 @@ export default function StatusPanel({ phase, mode, hud, frozen, onAct }: Props) 
     return (
       <section className={styles.status} aria-label="Estado de la misión">
         <p className={styles.figureRow}>
-          <span className={styles.figure}>Detenida</span>
+          <span className={styles.figure} data-testid="figure">Detenida</span>
           <span className={styles.caption}>fase de {PHASE_LABELS[phase].toLowerCase()}</span>
         </p>
         <p className={styles.detail}>Pausar congela la misión para seguir después; detener la termina y vuelve al inicio.</p>
@@ -31,7 +31,7 @@ export default function StatusPanel({ phase, mode, hud, frozen, onAct }: Props) 
     <section className={styles.status} aria-label="Estado de la fase">
       {paused && <p className={styles.pill} data-tone="warn"><PauseIcon size={14} />En pausa</p>}
       <p className={styles.figureRow} data-badge={figure.badge ? '' : undefined}>
-        <span className={styles.figure}>{figure.value}</span>
+        <span className={styles.figure} data-testid="figure">{figure.value}</span>
         {(figure.caption || figure.badge) && (
           <span className={styles.captionCol}>
             {figure.caption && <span className={styles.caption}>{figure.caption}</span>}

@@ -117,17 +117,18 @@ export default function MissionLayer({ app, vr, onEnterVR, room }: Props) {
         </section>
       </div>
 
-      <StatusPanel phase={phase} mode={mode} hud={hud} frozen={paused} onAct={act} />
-
       {hud && !stopped && (
         <section className={styles.side} aria-label="Datos de la fase">
           <SidePanel side={hud.side} frozen={paused} onAct={act} />
         </section>
       )}
 
-      {!stopped && (
-        <Controls mode={mode} hud={hud} pauseRef={pauseButton} onTogglePause={togglePause} onStop={stop} onAct={act} />
-      )}
+      <div className={styles.bottom}>
+        <StatusPanel phase={phase} mode={mode} hud={hud} frozen={paused} onAct={act} />
+        {!stopped && (
+          <Controls mode={mode} hud={hud} pauseRef={pauseButton} onTogglePause={togglePause} onStop={stop} onAct={act} />
+        )}
+      </div>
 
       {stopped && (
         <section className={styles.stopped} aria-labelledby="stopped-title">

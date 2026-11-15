@@ -51,7 +51,7 @@ export interface HudToggle {
 export type HudSide =
   | { kind: 'readouts'; items: HudReadout[]; note?: string }
   | { kind: 'ranking'; title: string; rows: HudRankRow[] }
-  | { kind: 'sky'; blocks: HudSky[] };
+  | { kind: 'sky'; blocks: HudSky[]; extras?: HudFact[] };
 
 /**
  * What a phase shows in the DOM control layer. Plain data plus the actions

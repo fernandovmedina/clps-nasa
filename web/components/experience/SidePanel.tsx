@@ -33,7 +33,7 @@ export default function SidePanel({ side, frozen, onAct }: Props) {
       <div className={styles.ranking}>
         <div className={styles.rankHead}><h2>{side.title}</h2><span>Puntaje</span></div>
         {side.rows.length === 0 ? (
-          <p className={styles.note}>Evaluando sitios…</p>
+          <p className={styles.note} data-align="start">Evaluando sitios…</p>
         ) : (
           <ol aria-label="Ranking de sitios">
             {side.rows.map((r) => (
@@ -67,6 +67,11 @@ export default function SidePanel({ side, frozen, onAct }: Props) {
           <p className={styles.small}>{b.shareLabel}</p>
         </section>
       ))}
+      {side.extras && (
+        <dl className={styles.extras}>
+          {side.extras.map((f) => (<div key={f.label}><dt>{f.label}</dt><dd>{f.value}</dd></div>))}
+        </dl>
+      )}
     </div>
   );
 }

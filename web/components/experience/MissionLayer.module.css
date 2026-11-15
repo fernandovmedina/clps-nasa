@@ -17,7 +17,7 @@
   display: grid; gap: 24px 32px; padding: 32px;
   grid-template-columns: 272px minmax(0, 1fr) 320px;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  grid-template-areas: 'header header header' 'rail . side' 'status status controls';
+  grid-template-areas: 'header header header' 'rail . side' 'bottom bottom bottom';
 }
 .layer h1, .layer h2, .layer h3, .layer p, .layer dl, .layer dd, .layer ol { margin: 0; padding: 0; }
 .layer ol { list-style: none; }
@@ -54,9 +54,9 @@
 .chip:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ---- left rail ---- */
-.rail { grid-area: rail; align-self: start; pointer-events: auto; display: flex; flex-direction: column; gap: 16px;
-  padding: 16px; border-radius: 12px; background: var(--card); border: 0.5px solid var(--hair); backdrop-filter: blur(8px); }
-.phases { display: flex; flex-direction: column; gap: 12px; }
+.rail { grid-area: rail; align-self: start; pointer-events: auto; display: flex; flex-direction: column; gap: 12px;
+  padding: 14px 16px; border-radius: 12px; background: var(--card); border: 0.5px solid var(--hair); backdrop-filter: blur(8px); }
+.phases { display: flex; flex-direction: column; gap: 10px; }
 .phases li { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--dim); }
 .dot { flex: none; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%;
   border: 0.5px solid var(--edge); font-size: 12px; font-weight: 500; }
@@ -65,7 +65,7 @@
 .phases li[data-state='current'] { color: var(--ink); font-weight: 600; }
 .phases li[data-state='current'] .dot { background: var(--accent); border-color: transparent; color: var(--slate); font-weight: 600; }
 
-.mission { display: flex; flex-direction: column; gap: 2px; padding-top: 12px; border-top: 0.5px solid var(--hair); }
+.mission { display: flex; flex-direction: column; gap: 2px; padding-top: 10px; border-top: 0.5px solid var(--hair); }
 .mission h2 { font-size: 12px; font-weight: 500; color: var(--dim); }
 .site { font-size: 15px; font-weight: 600; }
 .date { font-size: 13px; color: var(--soft); }
@@ -93,6 +93,7 @@
 .meter > div { height: 100%; background: var(--accent); }
 .readout .meter { align-self: flex-end; width: 200px; margin-top: 4px; }
 .note { margin-top: 12px; font-size: 12px; color: var(--dim); text-align: right; }
+.note[data-align='start'] { margin: 8px 10px; text-align: left; }
 
 .ranking { display: flex; flex-direction: column; gap: 4px; }
 .rankHead { display: flex; align-items: baseline; justify-content: space-between; padding: 0 10px; font-size: 12px; color: var(--dim); }
@@ -121,9 +122,14 @@
 .sky .meter[data-kind='sun'] > div { background: var(--warn); }
 .sky .meter[data-kind='earth'] > div { background: var(--earth); }
 .small { font-size: 13px; color: var(--soft); }
+.extras { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 0.5px solid var(--hair); }
+.extras div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.extras dt { font-size: 13px; color: var(--dim); }
+.extras dd { font-size: 14px; font-weight: 600; }
 
 /* ---- bottom left ---- */
-.status { grid-area: status; align-self: end; pointer-events: auto; display: flex; flex-direction: column; gap: 12px; width: min(100%, 560px);
+.bottom { grid-area: bottom; display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; min-width: 0; }
+.status { flex: none; align-self: flex-end; pointer-events: auto; display: flex; flex-direction: column; gap: 12px; width: min(100%, 560px);
   padding: 16px 20px; border-radius: 12px; background: var(--card); border: 0.5px solid var(--hair); backdrop-filter: blur(8px); }
 .status:empty { display: none; }
 .figureRow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
@@ -148,7 +154,7 @@
 .toggles > span { margin-right: 4px; font-size: 13px; color: var(--soft); }
 
 /* ---- bottom right ---- */
-.controls { grid-area: controls; align-self: end; justify-self: end; pointer-events: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.controls { flex: 1 1 0; min-width: 0; pointer-events: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .controls .btn { padding: 0 20px; }
 
 /* ---- stopped card ---- */
@@ -160,12 +166,17 @@
 .stopped > .btn + .btn { margin-top: -8px; }
 
 @media (max-width: 1180px) and (min-width: 1024px) {
-  .layer { grid-template-rows: auto minmax(0, 1fr) auto auto; grid-template-areas: 'header header header' 'rail . side' 'status status status' 'controls controls controls'; }
+  .bottom { flex-direction: column; align-items: stretch; gap: 12px; }
+  .status { align-self: flex-start; }
+  .controls { flex: none; }
 }
 
 @media (max-width: 1023.98px) {
   .layer { padding: 12px; gap: 8px; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
     grid-template-areas: 'header' 'rail' '.' 'status' 'side' 'controls'; }
+  .bottom { display: contents; }
+  .status { grid-area: status; }
+  .controls { grid-area: controls; }
   .header { padding: 4px 4px 4px 14px; }
   .brand span { display: none; }
   .headerActions { gap: 4px; }
@@ -183,8 +194,8 @@
   .facts { flex-wrap: nowrap; overflow-x: auto; gap: 16px; padding-bottom: 2px; }
   .facts div { flex: none; }
   .side { width: 100%; padding: 8px 12px; max-height: none; overflow: visible; }
-  .readouts { flex-direction: row; gap: 20px; overflow-x: auto; text-align: left; }
-  .readout { flex: none; min-width: 110px; }
+  .readouts { flex-direction: row; gap: 16px; overflow-x: auto; text-align: left; }
+  .readout { flex: none; }
   .readout dd, .readout[data-size='md'] dd { font-size: 16px; }
   .readout .meter { align-self: flex-start; width: 100%; }
   .note { text-align: left; margin-top: 8px; }
@@ -195,7 +206,7 @@
   .sky { flex-direction: row; gap: 16px; overflow-x: auto; }
   .sky section { flex: none; min-width: 200px; }
   .skyValue span:first-child { font-size: 28px; }
-  .controls { justify-self: stretch; justify-content: stretch; }
+  .controls { justify-content: stretch; }
   .controls .btn { flex: 1 1 auto; padding: 0 12px; }
 }
 
