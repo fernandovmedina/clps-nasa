@@ -59,6 +59,8 @@ export interface CapcomDeps {
 export const CAPCOM_UNAVAILABLE = 'CAPCOM no disponible';
 const MIC_MESSAGE = 'Permite el micrófono para hablar con CAPCOM.';
 const LOST_MESSAGE = 'CAPCOM perdió la conexión · pulsa para reintentar.';
+const CONNECT_MESSAGE = 'No se pudo conectar con CAPCOM · pulsa para reintentar.';
+const ACCESS_LOST = /AccessDenied|NotAuthorized|ExpiredToken|UnrecognizedClient|InvalidIdentityToken/i;
 const MAX_PENDING_FRAMES = 320;
 const MIN_HOLD_MS = 350;
 const ANSWER_WAIT_MS = 15_000;
@@ -71,6 +73,16 @@ async function defaultLoadSession(tools: CapcomTool[], provider: { current: unkn
   const credentials = (provider.current ??= createGuestCredentialProvider()) as ReturnType<typeof createGuestCredentialProvider>;
   credentials.invalidate();
   return new CapcomSession({ credentials, tools, endpointing: CAPCOM_ENDPOINTING });
+}
+
+/** The guest access is gone for good (expired, or AWS refuses it); anything else (network, timeout, socket) is worth retrying. */
+function isAccessLost(error: unknown, now: number): boolean {
+  if (now >= Date.parse(CAPCOM_ACCESS_EXPIRES_AT)) return true;
+  if (!error || typeof error !== 'object') return typeof error === 'string' && ACCESS_LOST.test(error);
+  const e = error as { name?: unknown; message?: unknown; code?: unknown; $metadata?: { httpStatusCode?: number } };
+  const status = e.$metadata?.httpStatusCode;
+  if (status === 401 || status === 403) return true;
+  return [e.name, e.code, e.message].some((part) => typeof part === 'string' && ACCESS_LOST.test(part));
 }
 
 function readMicPermission(): Promise<MicPermission> {
@@ -153,6 +165,11 @@ export class CapcomController {
   press() {
     if (this.disposed || this.unavailable || this.snap.talking) return;
     const now = this.deps.now();
+    if (now >= Date.parse(CAPCOM_ACCESS_EXPIRES_AT)) {
+      this.unavailable = true;
+      this.publish();
+      return;
+    }
     this.pressedAt = now;
     this.lastActivity = now;
     if (this.speaking) this.interrupt();
@@ -167,6 +184,7 @@ export class CapcomController {
     this.publish({ talking: true, question: '', answer: '', answerFinal: false });
     void Promise.all([this.ensureCapture(), this.ensureSession()]).then(() => {
       if (!this.capture && this.ready) void this.closeSession();
+      else if (this.capture && !this.ready && !this.connecting && !this.keepCapture) void this.stopCapture();
     });
   }
 
@@ -311,7 +329,8 @@ export class CapcomController {
     this.deps.debug?.({ type: 'error', code: error instanceof Error ? error.name : 'Error', message: error instanceof Error ? error.message : String(error) });
     this.endSpeaking();
     this.clearThinking();
-    this.unavailable = true;
+    if (isAccessLost(error, this.deps.now())) this.unavailable = true;
+    else this.errorMessage = CONNECT_MESSAGE;
     void this.teardown();
     this.publish({ talking: false });
   }
