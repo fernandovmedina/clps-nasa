@@ -13,6 +13,8 @@ import { LaunchEnvironment, rocketShadowProxy } from './launch-environment';
 import { LaunchExhaust } from './launch-exhaust';
 import { loadLaunchTower } from './launch-tower';
 import { MEAN_MOON_DISTANCE_KM, earthMoonDistanceKm } from './launch-telemetry';
+import { LaunchSync } from './launch-sync';
+import { currentLanding } from '../mission/launch-plan';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
@@ -63,11 +65,11 @@ export class LaunchPhase implements Phase {
 
   private t = 0; private s = 0; private speed = 0; private roll = 0; private arrivalT = 0;
   private progress = 0; private shownPct = 0; private done = false; private leaving = false;
-  private started = false;
+  private sync: LaunchSync;
   private narratedAtmo = false; private narratedApproach = false;
   private status = 'Inicializando sistemas de vuelo';
   private tele = { alt: '0.0 km', vel: '0.00 km/s', dist: '384,400 km' };
-  private moonKm = MEAN_MOON_DISTANCE_KM; private moonTarget = MEAN_MOON_DISTANCE_KM;
+  private moonKm = MEAN_MOON_DISTANCE_KM;
   private uiT = 0; private countLabel = '';
 
   /** update() scratch - reused every frame instead of allocating a dozen Vector3/Quaternion
@@ -98,6 +100,13 @@ export class LaunchPhase implements Phase {
   constructor(private app: LunarApp) {
     clearSurface();
     app.flags.clear(); app.selected = null; app.ranking = []; app.data = null;
+    this.sync = new LaunchSync({
+      get isHost() { return app.isHost; },
+      landing: () => currentLanding(app.data, window.location.search),
+      applyLanding: (date) => { app.setLanding(date); },
+      send: (msg) => app.room.send(msg),
+      applyMarkerEvent: (msg) => app.applyMarkerEvent(msg),
+    }, () => app.narrator.speak('Secuencia de despegue iniciada. Destino: polo sur lunar.'));
     this.motion?.addEventListener('change', this.onMotion);
     const sc = this.scene;
     this.env = new LaunchEnvironment(EARTH_R, this.sunDir, app.renderer.capabilities.getMaxAnisotropy(), Math.atan2(-this.padCam.x, -this.padCam.z) + Math.PI / 2);
@@ -176,17 +185,19 @@ export class LaunchPhase implements Phase {
     this.app.setView(this.padCam, new THREE.Vector3(0, 12, 0), { snap: true, rate: 3 });
     this.rumble = this.app.audio.loop('engine_rumble');
     this.wind = this.app.audio.loop('wind_maxq');
+    // The room client replays the snapshot it already received, which is what a monitor joining late needs.
+    this.app.room.setListener((msg) => this.sync.handle(msg));
 
     this.app.opts.loadData((p, msg) => { this.progress = Math.max(this.progress, clamp01(p)); this.status = msg; this.hud.invalidate(); })
       .then((d) => {
         this.app.data = d; this.done = true; this.status = 'Datos listos · Rumbo al polo sur lunar'; this.hud.invalidate();
-        this.moonTarget = earthMoonDistanceKm(d.global, d.landingDate) ?? this.moonTarget;
       })
       .catch((e) => { console.error(e); this.status = 'Error al cargar datos — reintenta'; this.hud.invalidate(); });
   }
 
   exit() {
     this.closed = true;
+    this.app.room.setListener(null);
     this.motion?.removeEventListener('change', this.onMotion);
     this.scene.remove(this.app.rig);
     this.hud.dispose(); this.count.dispose(); this.dock.removeFromParent();
@@ -196,12 +207,16 @@ export class LaunchPhase implements Phase {
     this.rumble?.stop(); this.wind?.stop(); this.crackle?.stop();
   }
 
-  /** Shared by the in-world "Comenzar despegue" button and the DOM control HUD's equivalent. */
-  private beginCountdown() {
-    if (this.started) return;
-    this.started = true;
-    this.app.narrator.speak('Secuencia de despegue iniciada. Destino: polo sur lunar.');
+  private get started() { return this.sync.started; }
+
+  /** Date-dependent, so read from the mission every time: the planner can change it while the launch waits. */
+  private get moonTarget() {
+    const d = this.app.data;
+    return (d && earthMoonDistanceKm(d.global, d.landingDate)) || MEAN_MOON_DISTANCE_KM;
   }
+
+  /** Shared by the in-world "Comenzar despegue" button and the DOM control HUD's equivalent. */
+  private beginCountdown() { this.sync.start('crew'); }
 
   private drawCount(p: Panel, g: CanvasRenderingContext2D) {
     const label = this.countLabel;
@@ -356,7 +371,8 @@ export class LaunchPhase implements Phase {
       const km = s >= 0.999 ? 384300 : 384400 * Math.pow(clamp01(u / this.travelUnits), 2.2);
       const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
       const v = t < T_LIFT ? 0 : lerp(lerp(0, 10.9, smooth(0, 0.25, s)), 1.7, smooth(0.6, 1, s)) * (0.75 + 0.25 * Math.min(1, this.speed / 0.04));
-      this.moonKm = Math.abs(this.moonTarget - this.moonKm) < 0.5 ? this.moonTarget : lerp(this.moonKm, this.moonTarget, damp(2.5, tick));
+      const moonTarget = this.moonTarget;
+      this.moonKm = Math.abs(moonTarget - this.moonKm) < 0.5 ? moonTarget : lerp(this.moonKm, moonTarget, damp(2.5, tick));
       const left = Math.max(100, this.moonKm * (1 - clamp01(km / 384300)));
       this.tele = { alt: km < 1000 ? `${km.toFixed(1)} km` : `${fmt(km)} km`, vel: `${v.toFixed(2)} km/s`, dist: `${fmt(left)} km` };
       this.hud.invalidate();
@@ -379,10 +395,19 @@ export class LaunchPhase implements Phase {
   controlHud(): PhaseHud {
     const pct = fmtPercent(this.shownPct * 100);
     const count = this.started ? countdownFigure(this.countLabel || (this.t < 0.4 ? 'T-3' : '')) : null;
+    const isHost = this.app.isHost;
+    const waitingFigure = this.started ? null
+      : !isHost ? { value: 'En espera', caption: '' }
+      : this.done ? { value: 'Listo', caption: 'para despegar' }
+      : null;
+    const detail = this.started ? this.status
+      : !isHost ? (this.app.room.status === 'open' ? 'Conectado. El despegue empezará aquí en cuanto la tripulación pulse «Comenzar despegue».' : 'Conectando con la sala…')
+      : this.done ? `Mission Control puede conectarse con el código ${this.app.room.room} antes de iniciar.`
+      : this.status;
     return {
-      figure: count ?? { value: pct, caption: 'de los datos de la misión cargados' },
+      figure: count ?? waitingFigure ?? { value: pct, caption: 'de los datos de la misión cargados' },
       progress: { value: this.shownPct, label: 'Carga de datos', text: count ? pct : undefined },
-      detail: this.status,
+      detail,
       side: {
         kind: 'readouts',
         items: [
@@ -391,7 +416,7 @@ export class LaunchPhase implements Phase {
           { label: 'Distancia a la Luna', value: groupThousands(this.tele.dist) },
         ],
       },
-      primary: this.started ? undefined : { id: 'start', label: 'Comenzar despegue', run: () => { this.beginCountdown(); this.hud.invalidate(); } },
+      primary: this.started || !isHost ? undefined : { id: 'start', label: 'Comenzar despegue', run: () => { this.beginCountdown(); this.hud.invalidate(); } },
       waiting: !this.started,
     };
   }

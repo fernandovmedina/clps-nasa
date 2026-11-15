@@ -1,16 +1,18 @@
-import { PHASE_LABELS, PHASE_ORDER, fmtLanding, type HudSide, type PhaseHud, type RunMode } from '@/lib/engine/hud';
+import { PHASE_LABELS, PHASE_ORDER, type HudSide, type PhaseHud, type RunMode } from '@/lib/engine/hud';
 import type { PhaseName } from '@/lib/engine/app';
 import { readLandingParams } from '@/lib/mission/landing-param';
+import { currentLanding, formatPlanDate, launchFromLanding } from '@/lib/mission/launch-plan';
 import type { SiteMetrics } from '@/lib/mission/scoring';
 import type { MissionData } from '@/lib/mission/sites';
 
-export interface MissionInfo { site: string; landing: string }
+export interface MissionInfo { site: string; launch: string; landing: string }
 
 const ANY_RANGE = { start: new Date(0), end: new Date(8.64e15) };
 
 /**
- * Site and landing date shown in the "Misión" block. Before the data has loaded
- * only the URL knows them (the launch phase clears the session on purpose).
+ * Site, launch and arrival shown in the "Misión" block. Before the data has loaded
+ * only the URL knows them (the launch phase clears the session on purpose); with
+ * neither, the mission falls back to the default landing the data loader uses.
  */
 export function describeMission(src: { data: MissionData | null; selected: SiteMetrics | null }, search: string): MissionInfo {
   const params = new URLSearchParams(search);
@@ -18,8 +20,8 @@ export function describeMission(src: { data: MissionData | null; selected: SiteM
   const data = src.data;
   const byRequest = data?.requestedSiteId ? data.sites.find((s) => s.id === data.requestedSiteId)?.name : undefined;
   const site = src.selected?.site.name ?? byRequest ?? (requested?.site && !data ? 'Cargando sitio…' : 'Por elegir en la órbita');
-  const date = data?.landingDate ?? requested?.landing;
-  return { site, landing: date ? `Aterrizaje ${fmtLanding(date)}` : 'Cargando fecha de aterrizaje…' };
+  const landing = currentLanding(data, search);
+  return { site, launch: `Despegue ${formatPlanDate(launchFromLanding(landing))}`, landing: `Llegada ${formatPlanDate(landing)}` };
 }
 
 /** What the polite live region says when the run mode or the phase changes; empty when nothing changed. */

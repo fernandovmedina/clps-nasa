@@ -11,6 +11,8 @@ export interface HudSnapshot {
   muted: boolean;
   hud: PhaseHud | null;
   mission: MissionInfo;
+  /** Only open or not: the socket flips between connecting and closed every two seconds with no server, and nothing paints that. */
+  roomOpen: boolean;
 }
 
 const POLL_MS = 100;
@@ -33,6 +35,7 @@ export function useHudSnapshot(app: LunarApp | null) {
       muted: app.audio.muted,
       hud: paintedHud(mode, app.phase?.controlHud?.() ?? null),
       mission: describeMission(app, window.location.search),
+      roomOpen: app.room.status === 'open',
     };
     const key = JSON.stringify(next);
     if (key === last.current) return;
