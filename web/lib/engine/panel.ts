@@ -29,6 +29,13 @@ export const UI = {
 
 export const statusColor = (status: SiteMetrics['status']) => (status === 'viable' ? UI.ok : status === 'marginal' ? UI.warn : UI.bad);
 
+const livePanels = new Set<Panel>();
+
+/** Panels are a VR surface: outside a headset they are hidden (and so unreachable by the pointer). */
+export function showPanels(visible: boolean) {
+  for (const p of livePanels) if (p.mesh.visible !== visible) p.mesh.visible = visible;
+}
+
 export class Panel {
   readonly canvas: HTMLCanvasElement;
   readonly ctx: CanvasRenderingContext2D;
@@ -56,13 +63,14 @@ export class Panel {
     this.mesh.renderOrder = 20;
     this.mesh.userData.panel = this;
     if (opts.transparentBg) this.mesh.userData.passThrough = true;
+    livePanels.add(this);
   }
 
   invalidate() { this.dirty = true; }
 
   /** Call once per frame; redraws only when something changed. */
   update() {
-    if (!this.dirty) return;
+    if (!this.dirty || !this.mesh.visible) return;
     this.dirty = false;
     this.buttons = [];
     this.ctx.clearRect(0, 0, this.pxW, this.pxH);
@@ -119,6 +127,7 @@ export class Panel {
   }
 
   dispose() {
+    livePanels.delete(this);
     this.mesh.removeFromParent();
     this.mesh.geometry.dispose();
     (this.mesh.material as THREE.Material).dispose();

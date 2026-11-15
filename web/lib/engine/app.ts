@@ -3,6 +3,9 @@ import { Input } from './input';
 import { AudioEngine } from './audio';
 import { damp, lookQuat } from './util';
 import { loadMoonTextures, type MoonTextures } from './moon';
+import { RunState, type PhaseHud } from './hud';
+import { showPanels, type Panel } from './panel';
+import { createRunPanel } from './run-panel';
 import type { MissionData } from '../mission/sites';
 import type { SiteMetrics } from '../mission/scoring';
 import { RoomClient, type RoomStatus } from '../sync/room-client';
@@ -15,6 +18,8 @@ export interface Phase {
   enter(): void;
   update(dt: number, t: number): void;
   exit(): void;
+  /** What the DOM control layer shows for this phase (see hud.ts). */
+  controlHud?(): PhaseHud;
 }
 
 export type PhaseName = 'launch' | 'orbit' | 'pov' | 'landing' | 'transmit';
@@ -65,6 +70,9 @@ export class LunarApp {
   /** Session flags (e.g. 'orbit-done' to skip the scan lap when coming back). */
   flags = new Set<string>();
   time = 0;
+  readonly run = new RunState();
+  /** Pause / stop controls for the headset; hidden outside VR like every Panel. */
+  readonly runPanel: Panel;
 
   private clock = new THREE.Clock();
   private view = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), rate: 3, snap: true };
@@ -73,6 +81,9 @@ export class LunarApp {
   readonly fadeMesh: THREE.Mesh;
   private fade = { value: 1, target: 1, speed: 1, resolve: null as null | (() => void) };
   private transitioning = false;
+  /** Bumped by stop/restart so a transition in flight does not swap the phase afterwards. */
+  private epoch = 0;
+  private runPanelMode = this.run.mode;
   private ro: ResizeObserver;
   private factories = new Map<PhaseName, PhaseFactory>();
 
@@ -105,6 +116,8 @@ export class LunarApp {
     this.camera.add(this.fadeMesh);
 
     this.input = new Input(this);
+    this.runPanel = createRunPanel(this);
+    this.rig.add(this.runPanel.mesh);
     this.room = new RoomClient(opts.room ?? 'touchdown', opts.onRoomStatus, opts.onRoomChange);
     this.isHost = opts.isHost ?? true;
     this.ro = new ResizeObserver(() => this.resize());
@@ -178,12 +191,46 @@ export class LunarApp {
   }
 
   async goTo(name: PhaseName, fadeOut = 0.7, fadeIn = 1.0) {
-    if (this.transitioning) return;
+    if (this.transitioning || !this.run.simulating) return;
+    const epoch = this.epoch;
     this.transitioning = true;
     await this.fadeTo(1, fadeOut);
+    if (epoch !== this.epoch) return;
     this.setPhase(name);
     await this.fadeTo(0, fadeIn);
+    if (epoch === this.epoch) this.transitioning = false;
+  }
+
+  /** Freezes the simulation and the sound; the scene keeps drawing so the viewer can still look around. */
+  setPaused(paused: boolean) {
+    if (paused ? !this.run.pause() : !this.run.resume()) return;
+    if (paused) this.audio.pause(); else this.audio.resume();
+  }
+
+  /** Ends the mission: silence, and the phase stays frozen on screen until restart(). */
+  stop() {
+    if (!this.run.stop()) return;
+    this.epoch++;
     this.transitioning = false;
+    this.audio.pause();
+    this.fadeTo(0, 0.4);
+  }
+
+  /** Starts over from the launch with no selection or session flags; date and site come from the URL again. */
+  restart() {
+    this.epoch++;
+    this.transitioning = false;
+    this.run.restart();
+    this.audio.resume();
+    this.flags.clear();
+    this.selected = null;
+    this.ranking = [];
+    this.data = null;
+    this.time = 0;
+    this.clock.getDelta();
+    this.fade.value = 1;
+    this.setPhase('launch');
+    this.fadeTo(0, 1.2);
   }
 
   /** Pixel scale for point sprites (desktop or per-eye in XR). */
@@ -207,27 +254,29 @@ export class LunarApp {
   }
 
   private loop = () => {
-    const dt = Math.min(this.clock.getDelta(), 1 / 20) * (this.opts.timeScale ?? 1);
+    const frame = Math.min(this.clock.getDelta(), 1 / 20) * (this.opts.timeScale ?? 1);
+    const dt = this.run.step(frame);
     this.time += dt;
     const p = this.phase;
     if (!p) return;
-    p.update(dt, this.time);
+    showPanels(this.isXR);
+    if (this.run.simulating) p.update(dt, this.time);
 
-    const k = this.view.snap ? 1 : damp(this.view.rate, dt);
+    const k = this.view.snap ? 1 : damp(this.view.rate, frame);
     this.view.snap = false;
     this.rig.position.lerp(this.view.pos, k);
     this.rig.quaternion.slerp(this.view.quat, k);
 
     if (!this.isXR) {
-      this.look.idle += dt;
-      if (this.look.idle > 4) { const d = damp(1.2, dt); this.look.yaw *= 1 - d; this.look.pitch *= 1 - d; }
+      this.look.idle += frame;
+      if (this.look.idle > 4) { const d = damp(1.2, frame); this.look.yaw *= 1 - d; this.look.pitch *= 1 - d; }
       this.camera.position.set(0, this.eyeHeight, 0);
       this.camera.rotation.set(this.look.pitch, this.look.yaw, 0, 'YXZ');
     }
 
     const f = this.fade;
     if (f.value !== f.target) {
-      const step = f.speed * dt * Math.sign(f.target - f.value);
+      const step = f.speed * frame * Math.sign(f.target - f.value);
       f.value = Math.abs(f.target - f.value) <= Math.abs(step) ? f.target : f.value + step;
       if (f.value === f.target) { f.resolve?.(); f.resolve = null; }
     }
@@ -237,12 +286,15 @@ export class LunarApp {
 
     this.rig.updateMatrixWorld(true);
     this.input.update();
+    if (this.run.mode !== this.runPanelMode) { this.runPanelMode = this.run.mode; this.runPanel.invalidate(); }
+    this.runPanel.update();
     this.renderer.render(p.scene, this.camera);
   };
 
   dispose() {
     this.renderer.setAnimationLoop(null);
     this.phase?.exit();
+    this.runPanel.dispose();
     this.audio.dispose();
     this.input.dispose();
     this.room.close();

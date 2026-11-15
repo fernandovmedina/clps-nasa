@@ -90,8 +90,12 @@ export class Input {
   }
   private cast(): Hit | null {
     const targets = this.app.phase?.targets;
-    if (!targets?.length) return null;
-    const hits = this.ray.intersectObjects(targets, true);
+    let hits = targets?.length ? this.ray.intersectObjects(targets, true) : [];
+    if (this.app.isXR) {
+      const own = this.ray.intersectObject(this.app.runPanel.mesh);
+      if (own.length) hits = [...hits, ...own].sort((a, b) => a.distance - b.distance);
+    }
+    if (!hits.length) return null;
     for (const h of hits) {
       let o: THREE.Object3D | null = h.object;
       if (!isVisible(o)) continue;
@@ -107,6 +111,7 @@ export class Input {
 
   private activate(hit: Hit | null) {
     if (!hit) return;
+    if (!this.app.run.simulating && hit.panel !== this.app.runPanel) return;
     if (hit.panel && hit.uv) hit.panel.pointer(hit.uv, 'click');
     else hit.obj?.userData.onSelect?.();
   }
