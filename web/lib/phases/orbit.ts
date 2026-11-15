@@ -42,6 +42,7 @@ export class OrbitPhase implements Phase {
   private markers: Marker[] = [];
   private revealed = 0;
   private analysisDone = false;
+  private narratedCriteria = false;
   private list: Panel; private detail: Panel;
   private stars = starField();
   private ranking: SiteMetrics[];
@@ -285,6 +286,16 @@ export class OrbitPhase implements Phase {
     }
     const camPos = new THREE.Vector3().setFromMatrixPosition(this.app.camera.matrixWorld);
     this.stars.position.copy(camPos);
+
+    // t < LAP also guards the "coming back from pov.ts" case, where the constructor starts
+    // t at LAP+0.01 to skip the scan lap entirely - no need to re-explain it then.
+    if (!this.narratedCriteria && t > 1.5 && t < LAP) {
+      this.narratedCriteria = true;
+      this.app.narrator.speak(
+        'Estoy comparando cada sitio por tres cosas: cuánto sol reciben sus paneles solares, '
+        + 'si tienen línea directa con la Tierra para comunicarse, y qué tan inclinado es el terreno para alunizar seguro.',
+      );
+    }
 
     // reveal + "compute" sites one by one during the scanning lap (worst → best for drama)
     const target = Math.min(this.ranking.length, Math.floor(smooth(LAP * 0.15, LAP * 0.92, t) * this.ranking.length + 0.0001));

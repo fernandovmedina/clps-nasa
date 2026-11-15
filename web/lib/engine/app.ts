@@ -4,6 +4,7 @@ import { AudioEngine } from './audio';
 import { Avatar } from './avatar';
 import { damp, lookQuat } from './util';
 import { loadMoonTextures, type MoonTextures } from './moon';
+import { Narrator } from './narration';
 import { RunState, type PhaseHud } from './hud';
 import { Panel, showPanels } from './panel';
 import { createRunPanel } from './run-panel';
@@ -61,6 +62,7 @@ export class LunarApp {
   readonly input: Input;
   readonly room: RoomClient;
   readonly audio = new AudioEngine();
+  readonly narrator = new Narrator();
   readonly eyeHeight = 1.6;
   /** See AppOptions.isHost - mutable because joining a room at runtime (not just at load) also changes the role. */
   isHost: boolean;
@@ -88,6 +90,11 @@ export class LunarApp {
 
   private clock = new THREE.Clock();
   private view = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), rate: 3, snap: true };
+  /** setView() scratch - reused every frame instead of allocating. */
+  private viewUpScratch = new THREE.Vector3();
+  private viewFScratch = new THREE.Vector3();
+  private viewTgtScratch = new THREE.Vector3();
+  private viewRigUpScratch = new THREE.Vector3();
   private look = { yaw: 0, pitch: 0, idle: 0 };
   /** Child of `camera`, not `rig` - a spy-view capture (spy-view.ts) must hide this too. */
   readonly fadeMesh: THREE.Mesh;
@@ -202,18 +209,22 @@ export class LunarApp {
     this.renderer.xr.getSession()?.end().catch(() => {});
   }
 
-  /** Where the viewer's eyes should be and what they should face. Smoothed every frame. */
+  /**
+   * Where the viewer's eyes should be and what they should face. Smoothed every frame.
+   * Called every frame by every phase - uses scratch vectors (below) instead of `new`/
+   * `.clone()` so this doesn't add to per-frame GC pressure on top of each phase's own.
+   */
   setView(eye: THREE.Vector3, target: THREE.Vector3, o: { up?: THREE.Vector3; rate?: number; snap?: boolean } = {}) {
-    const up = o.up ?? new THREE.Vector3(0, 1, 0);
+    const up = o.up ?? this.viewUpScratch.set(0, 1, 0);
     let tgt = target;
     if (this.isXR) {
       // In VR only yaw the rig (pitch/roll belong to the user's head — far more comfortable)
-      const f = target.clone().sub(eye);
+      const f = this.viewFScratch.copy(target).sub(eye);
       f.addScaledVector(up, -f.dot(up));
-      if (f.lengthSq() > 1e-6) tgt = eye.clone().add(f);
+      if (f.lengthSq() > 1e-6) tgt = this.viewTgtScratch.copy(eye).add(f);
     }
     lookQuat(eye, tgt, up, this.view.quat);
-    const rigUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.view.quat);
+    const rigUp = this.viewRigUpScratch.set(0, 1, 0).applyQuaternion(this.view.quat);
     this.view.pos.copy(eye).addScaledVector(rigUp, -this.eyeHeight);
     if (o.rate !== undefined) this.view.rate = o.rate;
     if (o.snap) this.view.snap = true;
@@ -325,6 +336,7 @@ export class LunarApp {
     this.exitPanel.mesh.visible = this.isXR;
     this.exitPanel.update();
     this.avatar.update(frame);
+    this.narrator.setMuted(this.audio.muted);
 
     const k = this.view.snap ? 1 : damp(this.view.rate, frame);
     this.view.snap = false;
@@ -369,6 +381,7 @@ export class LunarApp {
     this.runPanel.dispose();
     this.exitPanel.dispose();
     this.avatar.dispose();
+    this.narrator.dispose();
     this.audio.dispose();
     this.input.dispose();
     this.room.close();

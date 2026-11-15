@@ -15,6 +15,7 @@ import { loadLaunchTower } from './launch-tower';
 import { MEAN_MOON_DISTANCE_KM, earthMoonDistanceKm } from './launch-telemetry';
 
 const UP = new THREE.Vector3(0, 1, 0);
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
 const EARTH_R = 3000;
 const EARTH_C = new THREE.Vector3(0, -EARTH_R, 0);
 const MOON_R = 150;
@@ -63,10 +64,21 @@ export class LaunchPhase implements Phase {
   private t = 0; private s = 0; private speed = 0; private roll = 0; private arrivalT = 0;
   private progress = 0; private shownPct = 0; private done = false; private leaving = false;
   private started = false;
+  private narratedAtmo = false; private narratedApproach = false;
   private status = 'Inicializando sistemas de vuelo';
   private tele = { alt: '0.0 km', vel: '0.00 km/s', dist: '384,400 km' };
   private moonKm = MEAN_MOON_DISTANCE_KM; private moonTarget = MEAN_MOON_DISTANCE_KM;
   private uiT = 0; private countLabel = '';
+
+  /** update() scratch - reused every frame instead of allocating a dozen Vector3/Quaternion
+   *  per frame (the main source of per-frame GC pressure during the launch animation). */
+  private _pos = new THREE.Vector3(); private _tan = new THREE.Vector3();
+  private _vel = new THREE.Vector3(); private _back = new THREE.Vector3();
+  private _camPos = new THREE.Vector3(); private _side = new THREE.Vector3();
+  private _chase = new THREE.Vector3(); private _chaseLook = new THREE.Vector3();
+  private _toMoon = new THREE.Vector3(); private _tmp = new THREE.Vector3();
+  private _eye = new THREE.Vector3(); private _look = new THREE.Vector3();
+  private _q = new THREE.Quaternion(); private _qi = new THREE.Quaternion(); private _qroll = new THREE.Quaternion();
 
   private rocket: THREE.Group; private nozzles: THREE.Vector3[]; private closed = false;
   private curve: THREE.CatmullRomCurve3; private curveLen: number; private travelUnits: number;
@@ -184,6 +196,13 @@ export class LaunchPhase implements Phase {
     this.rumble?.stop(); this.wind?.stop(); this.crackle?.stop();
   }
 
+  /** Shared by the in-world "Comenzar despegue" button and the DOM control HUD's equivalent. */
+  private beginCountdown() {
+    if (this.started) return;
+    this.started = true;
+    this.app.narrator.speak('Secuencia de despegue iniciada. Destino: polo sur lunar.');
+  }
+
   private drawCount(p: Panel, g: CanvasRenderingContext2D) {
     const label = this.countLabel;
     if (!label) return;
@@ -220,7 +239,7 @@ export class LaunchPhase implements Phase {
       if (this.shownPct > 0.002) { roundRect(g, 44, 170, 1200 * this.shownPct, 10, 5); g.fillStyle = UI.accent; g.fill(); }
       g.font = `700 24px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right';
       g.fillText(`${Math.round(this.shownPct * 100)}%`, 1356, 184); g.textAlign = 'left';
-      p.button(g, 'start', 44, 215, 1200, 96, 'Comenzar despegue', () => { this.started = true; });
+      p.button(g, 'start', 44, 215, 1200, 96, 'Comenzar despegue', () => this.beginCountdown());
       return;
     }
     const cols: [string, string][] = [['ALTITUD', this.tele.alt], ['VELOCIDAD', this.tele.vel], ['DIST. A LA LUNA', this.tele.dist]];
@@ -253,6 +272,7 @@ export class LaunchPhase implements Phase {
     else if (t >= T_LIFT && t < T_LIFT + 1.6) label = 'DESPEGUE';
     if (label !== this.countLabel && label.startsWith('T-')) app.audio.play('countdown_tick');
     if (label !== this.countLabel && label === 'IGNICIÓN') app.audio.play('ignition');
+    if (label !== this.countLabel && label === 'DESPEGUE') app.narrator.speak('Despegue confirmado.');
     if (label !== this.countLabel) { this.countLabel = label; this.count.mesh.visible = label !== ''; this.count.invalidate(); }
 
     // motion along the trajectory, gated by real loading progress
@@ -267,27 +287,28 @@ export class LaunchPhase implements Phase {
       if (this.s > 0.96) thrust *= lerp(1, 0.25, smooth(0.96, 1, this.s));
     }
     const s = this.s;
-    const pos = this.curve.getPointAt(s), tan = this.curve.getTangentAt(s);
+    const pos = this.curve.getPointAt(s, this._pos), tan = this.curve.getTangentAt(s, this._tan);
     this.rocket.position.copy(pos);
     if (!app.isXR && !this.reduceMotion && t > T_IGN && t < T_LIFT + 2.5) {
       const k = 0.07 * thrust * (1 - smooth(T_LIFT + 1, T_LIFT + 2.5, t));
       this.rocket.position.x += rand(-k, k); this.rocket.position.z += rand(-k, k);
     }
-    const q = new THREE.Quaternion().setFromUnitVectors(UP, tan);
-    const qi = new THREE.Quaternion().slerp(q, smooth(0, 0.03, s));
+    const q = this._q.setFromUnitVectors(UP, tan);
+    const qi = this._qi.identity().slerp(q, smooth(0, 0.03, s));
     this.roll += dt * 0.35 * smooth(0.04, 0.15, s);
-    this.rocket.quaternion.copy(qi).multiply(new THREE.Quaternion().setFromAxisAngle(UP, this.roll));
+    this.rocket.quaternion.copy(qi).multiply(this._qroll.setFromAxisAngle(UP, this.roll));
     this.rocket.updateMatrixWorld();
 
     const alt = pos.y;
-    const vel = tan.clone().multiplyScalar(this.speed * this.curveLen);
-    const back = tan.clone().negate();
+    const vel = this._vel.copy(tan).multiplyScalar(this.speed * this.curveLen);
+    const back = this._back.copy(tan).negate();
 
-    const camPos = new THREE.Vector3().setFromMatrixPosition(app.camera.matrixWorld);
+    const camPos = this._camPos.setFromMatrixPosition(app.camera.matrixWorld);
     this.exhaust.update({ dt, t, ignited: t > T_IGN, thrust, alt, scale: app.pointScale(), rocket: this.rocket, nozzles: this.nozzles, back, vel });
 
     // sky → space
     const sky = smooth(30, 900, alt);
+    if (!this.narratedAtmo && sky > 0.5) { this.narratedAtmo = true; app.narrator.speak('Hemos salido de la atmósfera. Rumbo a la Luna.'); }
     this.rumble?.set('thrust', thrust);
     this.rumble?.set('atmosphere', 1 - sky);
     this.wind?.set('dynamic_pressure', smooth(60, 300, alt) * (1 - smooth(300, 850, alt)));
@@ -302,20 +323,20 @@ export class LaunchPhase implements Phase {
     this.atmo.material.uniforms.opacity.value = smooth(80, 700, alt) * 0.9;
 
     // viewer: pad camera → chase camera → moon framing
-    const side = new THREE.Vector3().crossVectors(tan, new THREE.Vector3(0, 0, 1));
+    const side = this._side.crossVectors(tan, Z_AXIS);
     if (side.lengthSq() < 1e-4) side.set(1, 0, 0);
     side.normalize().applyAxisAngle(tan, t * 0.1 * smooth(0.25, 0.45, s));
-    const chase = pos.clone().addScaledVector(side, 38).addScaledVector(tan, -30);
-    const chaseLook = pos.clone().addScaledVector(tan, 12);
+    const chase = this._chase.copy(pos).addScaledVector(side, 38).addScaledVector(tan, -30);
+    const chaseLook = this._chaseLook.copy(pos).addScaledVector(tan, 12);
     const m = smooth(0.72, 1, s);
     if (m > 0) {
-      const toMoon = MOON_C.clone().sub(pos).normalize();
-      chase.lerp(pos.clone().addScaledVector(toMoon, -75).addScaledVector(side, 45).addScaledVector(UP, -20), m);
-      chaseLook.lerp(pos.clone().lerp(MOON_C, 0.4), m);
+      const toMoon = this._toMoon.copy(MOON_C).sub(pos).normalize();
+      chase.lerp(this._tmp.copy(pos).addScaledVector(toMoon, -75).addScaledVector(side, 45).addScaledVector(UP, -20), m);
+      chaseLook.lerp(this._tmp.copy(pos).lerp(MOON_C, 0.4), m);
     }
     const w = smooth(0.004, 0.05, s);
-    const eye = this.padCam.clone().lerp(chase, w);
-    const look = pos.clone().addScaledVector(UP, 9).lerp(chaseLook, w);
+    const eye = this._eye.copy(this.padCam).lerp(chase, w);
+    const look = this._look.copy(pos).addScaledVector(UP, 9).lerp(chaseLook, w);
     if (!app.isXR && !this.reduceMotion && t > T_IGN) {
       const tremor = 0.3 * thrust * (1 - smooth(T_LIFT + 1, T_LIFT + 2.5, t));
       look.x += tremor * Math.sin(t * 47); look.y += tremor * Math.sin(t * 61 + 1); look.z += tremor * Math.sin(t * 53 + 2);
@@ -343,6 +364,11 @@ export class LaunchPhase implements Phase {
     this.layoutDock();
     this.hud.update(); this.count.update();
 
+    if (!this.narratedApproach && this.done && s > 0.85) {
+      this.narratedApproach = true;
+      app.narrator.speak('Aproximándonos a la Luna. Preparando inserción orbital.');
+    }
+
     // arrival → orbit insertion
     if (this.done && s >= 0.999 && !this.leaving) {
       this.arrivalT += dt;
@@ -365,7 +391,7 @@ export class LaunchPhase implements Phase {
           { label: 'Distancia a la Luna', value: groupThousands(this.tele.dist) },
         ],
       },
-      primary: this.started ? undefined : { id: 'start', label: 'Comenzar despegue', run: () => { this.started = true; this.hud.invalidate(); } },
+      primary: this.started ? undefined : { id: 'start', label: 'Comenzar despegue', run: () => { this.beginCountdown(); this.hud.invalidate(); } },
       waiting: !this.started,
     };
   }

@@ -49,10 +49,12 @@ export function seeded(seedStr: string) {
   };
 }
 
+const lookMat = new THREE.Matrix4(); // scratch: called every frame from every phase's setView, never needs to persist
+
 /** Quaternion that makes an object's −Z look from `eye` to `target` with the given up. */
 export function lookQuat(eye: THREE.Vector3, target: THREE.Vector3, up: THREE.Vector3, out = new THREE.Quaternion()) {
-  const m = new THREE.Matrix4().lookAt(eye, target, up);
-  return out.setFromRotationMatrix(m);
+  lookMat.lookAt(eye, target, up);
+  return out.setFromRotationMatrix(lookMat);
 }
 
 export function disposeTree(root: THREE.Object3D) {
