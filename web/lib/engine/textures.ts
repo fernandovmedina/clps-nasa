@@ -40,7 +40,23 @@ export function moonFallbackTexture() {
   return srgb(new THREE.CanvasTexture(c));
 }
 
+export const EARTH_TEXTURE_URL = '/textures/earth/earth.jpeg';
+
+let _earth: THREE.Texture | null = null;
+/**
+ * Earth texture (equirectangular image in /public/textures/earth). Returned synchronously
+ * and shared by every scene; falls back to the procedural Earth if the image fails to load.
+ */
 export function earthTexture() {
+  if (_earth) return _earth;
+  const tex = srgb(new THREE.TextureLoader().load(EARTH_TEXTURE_URL, undefined, undefined, () => {
+    tex.image = earthFallbackCanvas();
+    tex.needsUpdate = true;
+  }));
+  return (_earth = tex);
+}
+
+function earthFallbackCanvas() {
   const [c, g] = canvas(1024, 512);
   g.fillStyle = '#1b4f7d'; g.fillRect(0, 0, 1024, 512);
   const land = (x: number, y: number, rx: number, ry: number, col: string) => {
@@ -55,7 +71,7 @@ export function earthTexture() {
     g.fillStyle = `rgba(255,255,255,${rand(0.15, 0.45)})`;
     g.beginPath(); g.ellipse(x, y, rand(15, 70), rand(6, 22), rand(-0.3, 0.3), 0, Math.PI * 2); g.fill();
   }
-  return srgb(new THREE.CanvasTexture(c));
+  return c;
 }
 
 /** Tileable regolith for the surface terrain. */
