@@ -6,6 +6,7 @@ import { earthTexture, glowTexture, regolithTexture, solarCellTexture } from '..
 import { disposeTree, seeded, smooth } from '../engine/util';
 import { horizonAt, type SiteMetrics } from '../mission/scoring';
 import { sampleTerrainHeight, type TerrainPatch } from '../mission/terrain';
+import { Astronaut, astronautSpot, loadAstronaut, type AstronautMode } from './astronaut';
 import { loadLanderModel } from './lander-model';
 import { disposeObject } from './rocket-model';
 
@@ -63,6 +64,8 @@ export class SurfaceWorld {
   private beacon: THREE.Mesh;
   private readonly terrain: TerrainPatch | undefined;
   private hull: THREE.Group; private model: THREE.Group | null = null; private closed = false;
+  private astronaut: Astronaut | null = null;
+  private astronautAsk: { mode: AstronautMode; viewer: THREE.Vector3 } | null = null;
 
   constructor(readonly app: LunarApp, readonly m: SiteMetrics) {
     const rnd = seeded(m.site.id + '-terrain');
@@ -190,7 +193,28 @@ export class SurfaceWorld {
       this.hull.removeFromParent(); disposeObject(this.hull);
       this.model = model; this.lander.add(model);
     });
+    loadAstronaut().then((astronaut) => {
+      if (!astronaut) return;
+      if (this.closed) { astronaut.dispose(); return; }
+      this.astronaut = astronaut; astronaut.root.visible = false; sc.add(astronaut.root);
+      if (this.astronautAsk) this.showAstronaut(this.astronautAsk.mode, this.astronautAsk.viewer);
+    });
   }
+
+  /** Puts the astronaut by the lander, in view of `viewer`; asked before the model has loaded, it appears once it does. */
+  showAstronaut(mode: AstronautMode, viewer: THREE.Vector3) {
+    this.astronautAsk = { mode, viewer: viewer.clone() };
+    const a = this.astronaut;
+    if (!a) return;
+    const horizontal = (v: THREE.Vector3) => new THREE.Vector3(v.x, 0, v.z).normalize();
+    const spot = astronautSpot(horizontal(this.sunPos), horizontal(viewer.clone().sub(this.lz)), this.earthHoriz);
+    spot.x += this.lz.x; spot.z += this.lz.z; spot.y = this.heightAt(spot.x, spot.z);
+    a.place(spot, viewer);
+    a.setMode(mode); a.setPoint(0);
+    a.root.visible = true;
+  }
+  hideAstronaut() { this.astronautAsk = null; if (this.astronaut) this.astronaut.root.visible = false; }
+  pointAstronaut(amount: number) { this.astronaut?.setPoint(amount); }
 
   /* ----- height field ----- */
   private rawHeight(x: number, z: number) {
@@ -318,12 +342,13 @@ export class SurfaceWorld {
     const camPos = new THREE.Vector3().setFromMatrixPosition(this.app.camera.matrixWorld);
     this.stars.position.copy(camPos);
     (this.beacon.material as THREE.MeshBasicMaterial).opacity = 0.22 + 0.18 * Math.sin(t * 3);
-    void dt;
+    if (this.astronaut?.root.visible) this.astronaut.update(dt, camPos, this.earthPos);
   }
 
   dispose() {
     this.closed = true; disposeTree(this.scene);
     if (this.model) disposeObject(this.model);
+    this.astronaut?.dispose();
   }
 }
 

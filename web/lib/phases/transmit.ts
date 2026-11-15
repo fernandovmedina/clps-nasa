@@ -134,6 +134,7 @@ export class TransmitPhase implements Phase {
 
   enter() {
     this.world.lzMarker.visible = false;
+    this.world.showAstronaut('point', this.eyeBase);
     this.app.rig.add(this.hud.mesh);
     this.hud.place(-0.84, 1.36, -1.45);
     this.app.setView(this.eyeBase, this.lookAt(), { snap: true, rate: 2 });
@@ -146,6 +147,7 @@ export class TransmitPhase implements Phase {
   exit() {
     this.hud.dispose();
     this.scene.remove(this.fx); disposeTree(this.fx);
+    this.world.hideAstronaut();
     this.world.lzMarker.visible = true;
   }
 
@@ -195,6 +197,7 @@ export class TransmitPhase implements Phase {
     }
     this.packets.update(dt, app.pointScale());
     if (linkOn > 0.5) this.sent = clamp01(this.sent + dt / TX_SECONDS);
+    w.pointAstronaut(linkOn * (1 - smooth(0.9, 1, this.sent)));
     const bin = linkOn > 0.5 && this.sent < 1 ? Math.floor(this.sent * 16) : this.chirpBin;
     if (bin !== this.chirpBin) { this.chirpBin = bin; app.audio.play('transmit_chirp'); }
     if (this.sent >= 1 && this.chirpBin < 16) { this.chirpBin = 16; app.audio.play('success_chime'); }
