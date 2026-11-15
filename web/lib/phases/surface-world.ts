@@ -14,6 +14,17 @@ const FAR_SIZE = 5200;
 const NEAR_SIZE = 420;
 const HORIZON_R = 2500;
 const SKY_DIST = 30000;
+const GROUND_COLOR = 0xc8c6c0;
+// Orthophoto brightness only shows from this distance to the near-mesh centre; the same
+// world-space ramp drives both ground meshes so no seam can appear between them.
+const ORTHO_FADE_FROM = 150, ORTHO_FADE_TO = 700, ORTHO_GAIN = 1.4;
+// Cosmetic relief (small craters, the 9 m bumps) only exists where the near mesh can resolve it:
+// it dies out before the near mesh ends, so the coarse far mesh meets it without a visible step.
+const DETAIL_FADE_FROM = 120, DETAIL_FADE_TO = 190;
+const FAR_SINK = 3;
+const SHADOW_FADE_FROM = 70, SHADOW_FADE_TO = 190;
+// The near mesh dissolves (screen-door) into the far one over this distance band from its centre.
+const NEAR_DISSOLVE_FROM = 150, NEAR_DISSOLVE_TO = 205;
 
 /* ---- seeded 2D Perlin noise ---- */
 function perlin(rnd: () => number) {
@@ -34,7 +45,7 @@ function perlin(rnd: () => number) {
   };
 }
 
-interface Crater { x: number; z: number; r: number; d: number }
+interface Crater { x: number; z: number; r: number; d: number; cosmetic: boolean }
 
 /**
  * The local landing-site world shared by phases 3–5 (POV, landing, transmission):
@@ -60,6 +71,7 @@ export class SurfaceWorld {
   private noise: (x: number, y: number) => number;
   private craters: Crater[] = [];
   private lzBase = 0;
+  private readonly nearC: THREE.Vector2;
   private flatten = false;
   private beacon: THREE.Mesh;
   private readonly terrain: TerrainPatch | undefined;
@@ -79,6 +91,7 @@ export class SurfaceWorld {
     const azE = m.earth.azimuth * Math.PI / 180;
     this.earthHoriz = new THREE.Vector3(Math.sin(azE), 0, -Math.cos(azE)).normalize();
     this.lz = this.earthHoriz.clone().multiplyScalar(70);
+    this.nearC = new THREE.Vector2(this.lz.x * 0.5, this.lz.z * 0.5);
 
     // Craters: with real LOLA terrain, the macro shape (the actual hills/rims
     // that block Sun/Earth) already comes from the DEM - only add small
@@ -92,21 +105,19 @@ export class SurfaceWorld {
       const x = (rnd() * 2 - 1) * spread, z = (rnd() * 2 - 1) * spread;
       const dLz = Math.hypot(x - this.lz.x, z - this.lz.z), dO = Math.hypot(x, z);
       if (dLz < r * 1.4 + 26 || dO < r * 1.4 + 10) continue;
-      this.craters.push({ x, z, r, d: r * (0.16 + rnd() * 0.08) });
+      this.craters.push({ x, z, r, d: r * (0.16 + rnd() * 0.08), cosmetic: !big });
     }
     this.lzBase = this.rawHeight(this.lz.x, this.lz.z);
     this.flatten = true;
     this.lz.y = this.heightAt(this.lz.x, this.lz.z);
 
-    // terrain: coarse far mesh + detailed near mesh around viewpoint and LZ.
-    // The real orthophoto only goes on the far mesh: at 513px over 20 km it has
-    // plenty of resolution there (~39 m/texel, same ballpark as the DEM), but
-    // would look blurry stretched across the near mesh's fine detail - that one
-    // keeps the tiled procedural texture regardless of whether terrain is real.
+    // terrain: coarse far mesh + detailed near mesh around viewpoint and LZ. Both share
+    // one albedo (tiled procedural regolith); the real orthophoto (~39 m/texel) only
+    // modulates its brightness, fading in with distance, so the two meshes match at the seam.
     const tex = regolithTexture();
-    const far = this.terrainMesh(FAR_SIZE, 220, new THREE.Vector2(0, 0), tex, 140, -1.5, true);
-    const nearC = new THREE.Vector2(this.lz.x * 0.5, this.lz.z * 0.5);
-    const near = this.terrainMesh(NEAR_SIZE, 260, nearC, tex, 12, 0, false);
+    const nearC = this.nearC;
+    const far = this.terrainMesh(FAR_SIZE, 220, new THREE.Vector2(0, 0), tex, 140, FAR_SINK);
+    const near = this.terrainMesh(NEAR_SIZE, 260, nearC, tex, 12, 0);
     near.castShadow = true; near.receiveShadow = true; far.receiveShadow = true;
     sc.add(far, near);
     this.groundMeshes.push(far, near);
@@ -219,21 +230,23 @@ export class SurfaceWorld {
   /* ----- height field ----- */
   private rawHeight(x: number, z: number) {
     const n = this.noise;
+    const detail = 1 - smooth(DETAIL_FADE_FROM, DETAIL_FADE_TO, Math.hypot(x - this.nearC.x, z - this.nearC.y));
     let h: number;
     if (this.terrain) {
       // Real LOLA elevation (bilinear, ~39 m/px) + a small cosmetic detail
       // octave for walking-surface texture - NOT measured roughness, just
       // rendering fill-in below the DEM's own resolution.
-      h = sampleTerrainHeight(this.terrain, x, z) + 0.35 * fbm(n, x / 9 + 7, z / 9 + 3, 2);
+      h = sampleTerrainHeight(this.terrain, x, z) + detail * 0.35 * fbm(n, x / 9 + 7, z / 9 + 3, 2);
     } else {
       const slopeK = this.m.site.slopeDeg / 6;
-      h = slopeK * (55 * fbm(n, x / 800, z / 800, 4) + 6 * fbm(n, x / 90 + 31, z / 90 + 17, 3)) + 0.45 * fbm(n, x / 9 + 7, z / 9 + 3, 2);
+      h = slopeK * (55 * fbm(n, x / 800, z / 800, 4) + 6 * fbm(n, x / 90 + 31, z / 90 + 17, 3)) + detail * 0.45 * fbm(n, x / 9 + 7, z / 9 + 3, 2);
       h += 4.5 * Math.exp(-(x * x + z * z) / (2 * 22 * 22)); // small rise at the viewpoint
     }
     for (const c of this.craters) {
       const d = Math.hypot(x - c.x, z - c.z) / c.r;
-      if (d < 1) h -= c.d * (1 - d * d);
-      else if (d < 1.5) h += c.d * 0.28 * (1 - (d - 1) / 0.5) ** 2;
+      const k = c.cosmetic ? detail : 1;
+      if (d < 1) h -= k * c.d * (1 - d * d);
+      else if (d < 1.5) h += k * c.d * 0.28 * (1 - (d - 1) / 0.5) ** 2;
     }
     return h;
   }
@@ -244,33 +257,63 @@ export class SurfaceWorld {
     return h + (this.lzBase - h) * w * 0.9;
   }
 
-  private terrainMesh(size: number, segs: number, c: THREE.Vector2, tex: THREE.Texture, repeat: number, sink: number, useRealTexture: boolean) {
+  private terrainMesh(size: number, segs: number, c: THREE.Vector2, tex: THREE.Texture, repeat: number, sink: number) {
     const geo = new THREE.PlaneGeometry(size, size, segs, segs);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position as THREE.BufferAttribute;
-    const uv = geo.attributes.uv as THREE.BufferAttribute;
-    const half = NEAR_SIZE / 2 - 4;
-    const nc = new THREE.Vector2(this.lz.x * 0.5, this.lz.z * 0.5);
-    const realTex = useRealTexture ? this.terrain?.texture ?? null : null;
-    const extentHalf = this.terrain ? this.terrain.info.extent_m / 2 : 0;
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i) + c.x, z = pos.getZ(i) + c.y;
-      let y = this.heightAt(x, z);
-      if (sink && Math.abs(x - nc.x) < half && Math.abs(z - nc.y) < half) y += sink * 2; // hide under the near mesh
       const r = Math.hypot(x, z);
-      y -= (r * r) / (2 * 1737400) * 40; // exaggerated curvature at the edges
-      pos.setXYZ(i, x, y, z);
-      if (realTex) {
-        // Full-extent UV from absolute world position (col/row math verified against
-        // pipeline/lola.py - see terrain.ts), NOT the plane's own 0..1 local UV.
-        uv.setXY(i, (x + extentHalf) / this.terrain!.info.extent_m, (z + extentHalf) / this.terrain!.info.extent_m);
-      }
+      pos.setXYZ(i, x, this.heightAt(x, z) - (r * r) / (2 * 1737400) * 40, z); // exaggerated curvature at the edges
     }
     geo.computeVertexNormals();
-    const mat = realTex
-      ? new THREE.MeshStandardMaterial({ map: realTex, roughness: 1, metalness: 0 })
-      : new THREE.MeshStandardMaterial({ map: (() => { const t = tex.clone(); t.needsUpdate = true; t.repeat.set(repeat, repeat); return t; })(), color: 0xc8c6c0, roughness: 1, metalness: 0 });
+    if (sink) {
+      // Tuck the far mesh under the near one, easing back to the true height before the near mesh ends.
+      const edge = NEAR_SIZE / 2 - 4;
+      for (let i = 0; i < pos.count; i++) {
+        const d = Math.max(Math.abs(pos.getX(i) - this.nearC.x), Math.abs(pos.getZ(i) - this.nearC.y));
+        pos.setY(i, pos.getY(i) - sink * (1 - smooth(edge - 36, edge, d)));
+      }
+    }
+    const map = tex.clone(); map.needsUpdate = true; map.repeat.set(repeat, repeat);
+    const mat = new THREE.MeshStandardMaterial({ map, color: GROUND_COLOR, roughness: 1, metalness: 0 });
+    this.shadeGround(mat, this.terrain?.texture ?? undefined, this.terrain?.info.extent_m ?? 0, !sink);
+    if (sink) { mat.polygonOffset = true; mat.polygonOffsetFactor = 1; mat.polygonOffsetUnits = 1; }
     return new THREE.Mesh(geo, mat);
+  }
+
+  /**
+   * Shading both ground meshes share, so nothing differs across their seam: the orthophoto's brightness
+   * (relative to its own mean, the 1x1 mip) by world position, and cast shadows that fade out with distance
+   * from the landing area (only the near mesh casts them, so beyond it they would leave a brightness step).
+   * The near mesh also dissolves into the far one toward its border, which hides whatever shading still differs.
+   */
+  private shadeGround(mat: THREE.MeshStandardMaterial, ortho: THREE.Texture | undefined, extent: number, dissolve: boolean) {
+    const focus = this.nearC;
+    mat.customProgramCacheKey = () => `ground-${dissolve ? 'near' : 'far'}-${ortho ? 'ortho' : 'plain'}`;
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uFocus = { value: focus };
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vGroundXZ;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundXZ = (modelMatrix * vec4(position, 1.0)).xz;');
+      const lights = THREE.ShaderChunk.lights_fragment_begin.replace('directionalLightShadow.shadowIntensity', 'directionalLightShadow.shadowIntensity * shadowFade');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vGroundXZ;\nuniform vec2 uFocus;' + (ortho ? '\nuniform sampler2D uOrtho;\nuniform float uOrthoExtent;' : ''))
+        .replace('#include <clipping_planes_fragment>', dissolve ? `#include <clipping_planes_fragment>
+        vec2 qEdge = abs( vGroundXZ - uFocus );
+        if ( smoothstep( ${NEAR_DISSOLVE_FROM.toFixed(1)}, ${NEAR_DISSOLVE_TO.toFixed(1)}, max( qEdge.x, qEdge.y ) ) > fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) ) ) discard;` : '#include <clipping_planes_fragment>')
+        .replace('#include <lights_fragment_begin>', `
+        float shadowFade = 1.0 - smoothstep( ${SHADOW_FADE_FROM.toFixed(1)}, ${SHADOW_FADE_TO.toFixed(1)}, distance( vGroundXZ, uFocus ) );
+        ${lights}`);
+      if (!ortho) return;
+      shader.uniforms.uOrtho = { value: ortho };
+      shader.uniforms.uOrthoExtent = { value: extent };
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+        float oLum = texture2D(uOrtho, vGroundXZ / uOrthoExtent + 0.5).r;
+        float oMean = max(textureLod(uOrtho, vec2(0.5), 16.0).r, 1e-3);
+        float oFade = smoothstep(${ORTHO_FADE_FROM.toFixed(1)}, ${ORTHO_FADE_TO.toFixed(1)}, distance(vGroundXZ, uFocus));
+        diffuseColor.rgb *= mix(1.0, clamp(1.0 + ${ORTHO_GAIN.toFixed(2)} * (oLum / oMean - 1.0), 0.4, 1.8), oFade);`);
+    };
   }
 
   private horizonRing(tex: THREE.Texture) {
@@ -288,9 +331,10 @@ export class SurfaceWorld {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    g.setIndex(idx); g.computeVertexNormals();
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(Array.from({ length: pos.length }, (_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    g.setIndex(idx);
     const t = tex.clone(); t.needsUpdate = true;
-    return new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: t, color: 0x9a988f, roughness: 1, side: THREE.DoubleSide }));
+    return new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: t, color: GROUND_COLOR, roughness: 1, side: THREE.DoubleSide }));
   }
 
   private buildLander() {
