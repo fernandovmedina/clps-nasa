@@ -24,6 +24,7 @@ function fakeApp(hud: PhaseHud, phase: PhaseName = 'launch'): Fake {
     run: { get mode() { return state.mode; } },
     audio: { get muted() { return state.muted; }, setMuted: (v: boolean) => { state.muted = v; } },
     room: { get status() { return state.room; }, send: vi.fn() },
+    pip: { live: false, host: null },
     data: null,
     selected: null,
     setPaused: vi.fn((v: boolean) => { state.mode = v ? 'paused' : 'running'; }),

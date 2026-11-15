@@ -5,6 +5,7 @@ import { Particles } from '../engine/particles';
 import { glowTexture } from '../engine/textures';
 import { clamp01, disposeTree, rand, smooth } from '../engine/util';
 import { ensureSelection } from './pov';
+import { InspectorFeed } from './inspector-pip';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
 import { earthRangeKmAt } from '../mission/global-track';
 import { fmtInt, fmtPercent, fmtSigned, signalDelayS, type HudReadout, type PhaseHud } from '../engine/hud';
@@ -61,11 +62,13 @@ export class TransmitPhase implements Phase {
   private sent = 0;
   private chirpBin = -1;
   private uiT = 0;
+  private feed: InspectorFeed;
 
   constructor(private app: LunarApp) {
     const m = ensureSelection(app);
     this.world = surfaceFor(app, m);
     this.scene = this.world.scene;
+    this.feed = new InspectorFeed(app, this.scene, m.site.id);
     const w = this.world, lz = w.lz;
     w.lander.visible = true;
     w.lander.position.copy(lz);
@@ -138,6 +141,8 @@ export class TransmitPhase implements Phase {
     this.app.rig.add(this.hud.mesh);
     this.hud.place(-0.84, 1.36, -1.45);
     this.app.setView(this.eyeBase, this.lookAt(), { snap: true, rate: 2 });
+    this.app.room.setListener((msg) => { this.app.applyMarkerEvent(msg); this.feed.handleRoom(msg, this.app.time); });
+    this.feed.sync();
   }
 
   private lookAt() {
@@ -145,6 +150,8 @@ export class TransmitPhase implements Phase {
   }
 
   exit() {
+    this.app.room.setListener(null);
+    this.feed.dispose();
     this.hud.dispose();
     this.scene.remove(this.fx); disposeTree(this.fx);
     this.world.hideAstronaut();
@@ -152,6 +159,11 @@ export class TransmitPhase implements Phase {
   }
 
   update(dt: number, time: number) {
+    this.advance(dt, time);
+    this.feed.update(time);
+  }
+
+  private advance(dt: number, time: number) {
     this.t += dt;
     const t = this.t, w = this.world, app = this.app;
     w.update(dt, time);

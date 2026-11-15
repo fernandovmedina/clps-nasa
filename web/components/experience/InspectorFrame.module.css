@@ -1,0 +1,19 @@
+/* Placed in the right column of the layer grid, below the telemetry panel and above the controls. */
+.frame { grid-column: 2 / 4; grid-row: 2; align-self: end; justify-self: end; z-index: 1; pointer-events: none;
+  width: 400px; border-radius: 6px; border: 0.5px solid rgba(250, 249, 245, 0.3); overflow: hidden; }
+.frame header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 10px;
+  background: rgba(20, 20, 19, 0.86); font-size: 11px; font-weight: 600; color: #C2C0B6; white-space: nowrap; }
+.frame header > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.state { color: #B0AEA5; }
+.frame[data-live] .state { color: #8FCB9B; }
+.view { aspect-ratio: 16 / 9; background: rgba(13, 20, 32, 0.55); }
+.frame[data-live] .view { background: transparent; }
+
+@media (max-height: 860px) and (min-width: 1024px) { .frame { width: 320px; } }
+@media (max-height: 760px) and (min-width: 1024px) { .frame { width: 240px; } .frame header { font-size: 10px; padding: 4px 8px; } }
+
+@media (max-width: 1023.98px) {
+  .frame { grid-column: 1; grid-row: 3; width: min(176px, 46vw); }
+  .frame header { font-size: 9px; padding: 3px 6px; gap: 6px; }
+  .frame header > span:first-child { display: none; }
+}

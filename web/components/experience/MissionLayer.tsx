@@ -9,6 +9,7 @@ import Controls from './Controls';
 import FollowMissionDialog from './FollowMissionDialog';
 import FollowPill from './FollowPill';
 import { CheckIcon, SoundIcon } from './icons';
+import InspectorFrame, { showsInspector } from './InspectorFrame';
 import LaunchPlanner from './LaunchPlanner';
 import { announce, describeMission } from './mission';
 import MissionBlock from './MissionBlock';
@@ -40,13 +41,14 @@ const IDLE: HudSnapshot = {
   hud: null,
   mission: describeMission({ data: null, selected: null }, ''),
   roomOpen: false,
+  pipLive: false,
 };
 
 /** DOM control layer over the 3D scene: phases, mission, the phase's own data and the run controls. */
 export default function MissionLayer({ app, vr, onEnterVR, room, capcom, planning = false, onPlanning, openFollowOnMount = false }: Props) {
   const { snap, refresh } = useHudSnapshot(app);
   const view = snap ?? IDLE;
-  const { phase, mode, muted, hud, mission, roomOpen } = view;
+  const { phase, mode, muted, hud, mission, roomOpen, pipLive } = view;
   const stopped = mode === 'stopped';
   const paused = mode === 'paused';
   const current = PHASE_ORDER.indexOf(phase);
@@ -152,6 +154,8 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
           <SidePanel side={hud.side} frozen={paused} onAct={act} />
         </section>
       )}
+
+      {showsInspector(phase, follow, stopped) && <InspectorFrame app={app} live={pipLive} />}
 
       <div className={styles.bottom}>
         {waitingMonitor && hud ? (
