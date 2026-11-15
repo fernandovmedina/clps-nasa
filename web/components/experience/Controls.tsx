@@ -16,7 +16,7 @@ export default function Controls({ mode, hud, pauseRef, onTogglePause, onStop, o
   const primary = hud?.primary;
   return (
     <div className={styles.controls} role="group" aria-label="Controles de la misión">
-      <button ref={pauseRef} type="button" className={styles.btn} data-variant={paused ? 'primary' : undefined} onClick={onTogglePause}>
+      <button ref={pauseRef} type="button" className={styles.btn} data-variant={paused ? 'primary' : undefined} disabled={hud?.waiting === true} onClick={onTogglePause}>
         {paused ? <PlayIcon /> : <PauseIcon />}{paused ? 'Reanudar' : 'Pausar'}
       </button>
       <button type="button" className={styles.btn} onClick={onStop}><StopIcon />Detener</button>

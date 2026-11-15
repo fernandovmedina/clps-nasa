@@ -1,5 +1,5 @@
 import type { LunarApp } from './app';
-import { Panel, UI } from './panel';
+import { Panel, UI, roundRect } from './panel';
 
 const W = 640, H = 200;
 const WIDTH_M = 0.5;
@@ -18,7 +18,14 @@ export function createRunPanel(app: LunarApp) {
       return;
     }
     const paused = app.run.paused;
-    p.button(g, 'pause', 24, 52, 280, 96, paused ? 'Reanudar' : 'Pausar', () => app.setPaused(!paused), paused ? 'primary' : 'ghost');
+    if (!paused && app.awaitingStart) {
+      roundRect(g, 24, 52, 280, 96, 48); g.fillStyle = 'rgba(250,249,245,.03)'; g.fill();
+      g.strokeStyle = UI.line; g.lineWidth = 2; g.stroke();
+      g.font = `600 36px ${UI.font}`; g.fillStyle = 'rgba(250,249,245,.3)'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('Pausar', 164, 101); g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    } else {
+      p.button(g, 'pause', 24, 52, 280, 96, paused ? 'Reanudar' : 'Pausar', () => app.setPaused(!paused), paused ? 'primary' : 'ghost');
+    }
     p.button(g, 'stop', 336, 52, 280, 96, 'Detener', () => app.stop(), 'ghost');
   });
   const a = (DEPRESSION_DEG * Math.PI) / 180;

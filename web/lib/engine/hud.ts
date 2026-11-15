@@ -67,6 +67,8 @@ export interface PhaseHud {
   side: HudSide;
   secondary?: HudAction[];
   primary?: HudAction;
+  /** The phase has not begun yet (the launch waits for its start button): there is nothing to pause. */
+  waiting?: boolean;
 }
 
 export type RunMode = 'running' | 'paused' | 'stopped';
