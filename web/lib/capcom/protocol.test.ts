@@ -64,6 +64,6 @@ describe('protocol', () => {
       expect(CAPCOM_SYSTEM_PROMPT).toContain(name);
     }
     expect(CAPCOM_SYSTEM_PROMPT).toMatch(/SIEMPRE/);
-    expect(CAPCOM_SYSTEM_PROMPT).toMatch(/una a tres frases/);
+    expect(CAPCOM_SYSTEM_PROMPT).toMatch(/máximo tres frases/);
   });
 });
