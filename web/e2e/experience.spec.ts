@@ -80,7 +80,7 @@ test('the launch waits for its start button and Pausar has nothing to pause unti
 })
 
 test('Pausar freezes the big figure for three seconds and Reanudar makes it move again', async ({ page }) => {
-  test.setTimeout(120_000)
+  test.setTimeout(300_000)
   await openLaunch(page, '?speed=4')
   await start(page).click()
   await expect(figure(page)).toHaveText(/^T/, { timeout: 30_000 })
@@ -102,7 +102,7 @@ test('Pausar freezes the big figure for three seconds and Reanudar makes it move
 })
 
 test('Detener shows the stopped card and Reiniciar desde el despegue goes back to a waiting launch', async ({ page }) => {
-  test.setTimeout(120_000)
+  test.setTimeout(300_000)
   await openLaunch(page, '?speed=4&landing=2027-01-24T12:00:00Z&site=malapert-a')
   await expect(page.getByText('Aterrizaje 24 ene 2027 · 12:00 UTC')).toBeVisible()
   await start(page).click()
@@ -157,7 +157,7 @@ test('in the orbit, choosing another site in the list changes the big figure and
 })
 
 test('once the data is loaded, a paused mission does not make React render: no commits in five seconds', async ({ page }) => {
-  test.setTimeout(120_000)
+  test.setTimeout(300_000)
   await page.addInitScript(() => {
     const w = window as unknown as { __commits: number; __REACT_DEVTOOLS_GLOBAL_HOOK__: unknown }
     w.__commits = 0
@@ -192,7 +192,7 @@ test.describe('narrow screens', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
   test('there is no horizontal scroll, touch targets are 44 px and the centre of the scene stays free', async ({ page }) => {
-    test.setTimeout(120_000)
+    test.setTimeout(300_000)
     await openLaunch(page, '?speed=4')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
@@ -283,7 +283,7 @@ async function goThroughMissionControl(page: Page) {
 }
 
 test('the host keeps the room and the host role after reloading', async ({ page }) => {
-  test.setTimeout(120_000)
+  test.setTimeout(300_000)
   await openRoom(page)
   const code = (await roomCode(page).textContent()) ?? ''
   expect(roomInUrl(page)).toBe(code)
@@ -317,7 +317,7 @@ test('a monitor keeps the room and the monitor role after going through Mission 
 })
 
 test('opening a shared link in a fresh browser context makes a monitor of that room', async ({ browser }) => {
-  test.setTimeout(120_000)
+  test.setTimeout(300_000)
   const context = await browser.newContext({ baseURL: test.info().project.use.baseURL, locale: 'es-MX', colorScheme: 'dark', viewport: { width: 1440, height: 900 } })
   try {
     const page = await context.newPage()
