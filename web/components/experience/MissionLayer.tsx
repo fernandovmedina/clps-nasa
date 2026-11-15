@@ -16,7 +16,7 @@ interface Props {
   app: LunarApp | null;
   vr: 'checking' | 'yes' | 'no';
   onEnterVR: () => void;
-  room: { code: string; isHost: boolean; onJoin: (code: string) => void };
+  room: { code: string; isHost: boolean; onJoin: (code: string) => boolean };
 }
 
 const NO_VR = 'VR no disponible aquí · ábrelo en el navegador del Quest (HTTPS)';

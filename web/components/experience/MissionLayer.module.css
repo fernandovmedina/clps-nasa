@@ -54,7 +54,7 @@
 .chip:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ---- left rail ---- */
-.rail { grid-area: rail; align-self: start; pointer-events: auto; display: flex; flex-direction: column; gap: 12px;
+.rail { grid-area: rail; align-self: start; position: relative; z-index: 2; pointer-events: auto; display: flex; flex-direction: column; gap: 12px;
   padding: 14px 16px; border-radius: 12px; background: var(--card); border: 0.5px solid var(--hair); backdrop-filter: blur(8px); }
 .phases { display: flex; flex-direction: column; gap: 10px; }
 .phases li { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--dim); }
@@ -80,6 +80,8 @@
 .roomRow { display: flex; flex-wrap: wrap; gap: 8px; }
 .roomInput { flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 8px; border: 0.5px solid var(--edge);
   background: rgba(0, 0, 0, 0.35); color: var(--ink); text-transform: uppercase; font: 600 13px 'Inter Variable', system-ui, sans-serif; }
+.roomInput[aria-invalid='true'] { border-color: var(--bad); }
+.roomError { color: var(--bad); font-weight: 600; }
 
 /* ---- right column ---- */
 .side { grid-area: side; align-self: start; pointer-events: auto; padding: 12px 14px; border-radius: 12px; background: var(--card);

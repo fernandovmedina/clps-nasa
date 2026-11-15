@@ -57,9 +57,12 @@ export class RoomClient {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
   }
 
-  /** Leaves the current room and joins another one, reconnecting right away (no 2s backoff). */
-  setRoom(newRoom: string) {
-    if (!ROOM_NAME_RE.test(newRoom) || newRoom === this.room) return;
+  /**
+   * Leaves the current room and joins another one, reconnecting right away (no 2s backoff).
+   * Returns false, changing nothing, if the code is invalid or already the current room.
+   */
+  setRoom(newRoom: string): boolean {
+    if (!ROOM_NAME_RE.test(newRoom) || newRoom === this.room) return false;
     this.room = newRoom;
     this.onRoomChange?.(newRoom);
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
@@ -72,6 +75,7 @@ export class RoomClient {
       this.ws = null;
     }
     this.connect();
+    return true;
   }
 
   close() {
