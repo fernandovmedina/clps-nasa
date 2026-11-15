@@ -38,6 +38,8 @@ export interface AppOptions {
   startPhase?: PhaseName;
   /** Dev only: speeds up the simulation clock (?speed=4). */
   timeScale?: number;
+  /** Dev only: shows the VR interface (3D panels, mouse as pointer) outside a headset session (?vr=preview). */
+  vrPreview?: boolean;
   /** Shared room for WebSocket sync (CLAUDE.md sec. 7); same room = synced. */
   room?: string;
   onRoomStatus?: (s: RoomStatus) => void;
@@ -334,7 +336,7 @@ export class LunarApp {
     this.time += dt;
     const p = this.phase;
     if (!p) return;
-    const vrUi = this.isXR;
+    const vrUi = this.isXR || this.opts.vrPreview === true;
     const genericPanels = vrUi && !p.ownsRunControls;
     showPanels(vrUi);
     this.runPanel.mesh.visible = genericPanels;
