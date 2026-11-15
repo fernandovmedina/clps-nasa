@@ -115,7 +115,7 @@ export function CapcomCaption({ controller }: { controller: CapcomController }) 
           {snap.answer && <p className={styles.answer} data-testid="capcom-answer"><span>CAPCOM</span>{snap.answer}</p>}
         </section>
       )}
-      <div className={styles.sr} role="status" aria-live="polite" aria-atomic="true" data-testid="capcom-live">
+      <div className={styles.sr} aria-live="polite" aria-atomic="true" data-testid="capcom-live">
         {snap.answerFinal ? snap.answer : ''}
       </div>
     </>
