@@ -15,6 +15,7 @@ import { loadLaunchTower } from './launch-tower';
 import { MEAN_MOON_DISTANCE_KM, earthMoonDistanceKm } from './launch-telemetry';
 
 const UP = new THREE.Vector3(0, 1, 0);
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
 const EARTH_R = 3000;
 const EARTH_C = new THREE.Vector3(0, -EARTH_R, 0);
 const MOON_R = 150;
@@ -68,6 +69,16 @@ export class LaunchPhase implements Phase {
   private tele = { alt: '0.0 km', vel: '0.00 km/s', dist: '384,400 km' };
   private moonKm = MEAN_MOON_DISTANCE_KM; private moonTarget = MEAN_MOON_DISTANCE_KM;
   private uiT = 0; private countLabel = '';
+
+  /** update() scratch - reused every frame instead of allocating a dozen Vector3/Quaternion
+   *  per frame (the main source of per-frame GC pressure during the launch animation). */
+  private _pos = new THREE.Vector3(); private _tan = new THREE.Vector3();
+  private _vel = new THREE.Vector3(); private _back = new THREE.Vector3();
+  private _camPos = new THREE.Vector3(); private _side = new THREE.Vector3();
+  private _chase = new THREE.Vector3(); private _chaseLook = new THREE.Vector3();
+  private _toMoon = new THREE.Vector3(); private _tmp = new THREE.Vector3();
+  private _eye = new THREE.Vector3(); private _look = new THREE.Vector3();
+  private _q = new THREE.Quaternion(); private _qi = new THREE.Quaternion(); private _qroll = new THREE.Quaternion();
 
   private rocket: THREE.Group; private nozzles: THREE.Vector3[]; private closed = false;
   private curve: THREE.CatmullRomCurve3; private curveLen: number; private travelUnits: number;
@@ -276,23 +287,23 @@ export class LaunchPhase implements Phase {
       if (this.s > 0.96) thrust *= lerp(1, 0.25, smooth(0.96, 1, this.s));
     }
     const s = this.s;
-    const pos = this.curve.getPointAt(s), tan = this.curve.getTangentAt(s);
+    const pos = this.curve.getPointAt(s, this._pos), tan = this.curve.getTangentAt(s, this._tan);
     this.rocket.position.copy(pos);
     if (!app.isXR && !this.reduceMotion && t > T_IGN && t < T_LIFT + 2.5) {
       const k = 0.07 * thrust * (1 - smooth(T_LIFT + 1, T_LIFT + 2.5, t));
       this.rocket.position.x += rand(-k, k); this.rocket.position.z += rand(-k, k);
     }
-    const q = new THREE.Quaternion().setFromUnitVectors(UP, tan);
-    const qi = new THREE.Quaternion().slerp(q, smooth(0, 0.03, s));
+    const q = this._q.setFromUnitVectors(UP, tan);
+    const qi = this._qi.identity().slerp(q, smooth(0, 0.03, s));
     this.roll += dt * 0.35 * smooth(0.04, 0.15, s);
-    this.rocket.quaternion.copy(qi).multiply(new THREE.Quaternion().setFromAxisAngle(UP, this.roll));
+    this.rocket.quaternion.copy(qi).multiply(this._qroll.setFromAxisAngle(UP, this.roll));
     this.rocket.updateMatrixWorld();
 
     const alt = pos.y;
-    const vel = tan.clone().multiplyScalar(this.speed * this.curveLen);
-    const back = tan.clone().negate();
+    const vel = this._vel.copy(tan).multiplyScalar(this.speed * this.curveLen);
+    const back = this._back.copy(tan).negate();
 
-    const camPos = new THREE.Vector3().setFromMatrixPosition(app.camera.matrixWorld);
+    const camPos = this._camPos.setFromMatrixPosition(app.camera.matrixWorld);
     this.exhaust.update({ dt, t, ignited: t > T_IGN, thrust, alt, scale: app.pointScale(), rocket: this.rocket, nozzles: this.nozzles, back, vel });
 
     // sky → space
@@ -312,20 +323,20 @@ export class LaunchPhase implements Phase {
     this.atmo.material.uniforms.opacity.value = smooth(80, 700, alt) * 0.9;
 
     // viewer: pad camera → chase camera → moon framing
-    const side = new THREE.Vector3().crossVectors(tan, new THREE.Vector3(0, 0, 1));
+    const side = this._side.crossVectors(tan, Z_AXIS);
     if (side.lengthSq() < 1e-4) side.set(1, 0, 0);
     side.normalize().applyAxisAngle(tan, t * 0.1 * smooth(0.25, 0.45, s));
-    const chase = pos.clone().addScaledVector(side, 38).addScaledVector(tan, -30);
-    const chaseLook = pos.clone().addScaledVector(tan, 12);
+    const chase = this._chase.copy(pos).addScaledVector(side, 38).addScaledVector(tan, -30);
+    const chaseLook = this._chaseLook.copy(pos).addScaledVector(tan, 12);
     const m = smooth(0.72, 1, s);
     if (m > 0) {
-      const toMoon = MOON_C.clone().sub(pos).normalize();
-      chase.lerp(pos.clone().addScaledVector(toMoon, -75).addScaledVector(side, 45).addScaledVector(UP, -20), m);
-      chaseLook.lerp(pos.clone().lerp(MOON_C, 0.4), m);
+      const toMoon = this._toMoon.copy(MOON_C).sub(pos).normalize();
+      chase.lerp(this._tmp.copy(pos).addScaledVector(toMoon, -75).addScaledVector(side, 45).addScaledVector(UP, -20), m);
+      chaseLook.lerp(this._tmp.copy(pos).lerp(MOON_C, 0.4), m);
     }
     const w = smooth(0.004, 0.05, s);
-    const eye = this.padCam.clone().lerp(chase, w);
-    const look = pos.clone().addScaledVector(UP, 9).lerp(chaseLook, w);
+    const eye = this._eye.copy(this.padCam).lerp(chase, w);
+    const look = this._look.copy(pos).addScaledVector(UP, 9).lerp(chaseLook, w);
     if (!app.isXR && !this.reduceMotion && t > T_IGN) {
       const tremor = 0.3 * thrust * (1 - smooth(T_LIFT + 1, T_LIFT + 2.5, t));
       look.x += tremor * Math.sin(t * 47); look.y += tremor * Math.sin(t * 61 + 1); look.z += tremor * Math.sin(t * 53 + 2);
