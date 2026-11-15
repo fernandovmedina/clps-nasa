@@ -122,6 +122,10 @@
 .sky .meter[data-kind='sun'] > div { background: var(--warn); }
 .sky .meter[data-kind='earth'] > div { background: var(--earth); }
 .small { font-size: 13px; color: var(--soft); }
+.marks { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 0.5px solid var(--hair); }
+.marks > span { font-size: 12px; color: var(--dim); }
+.marks > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.marks .chip { flex: 1 1 auto; }
 .extras { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 0.5px solid var(--hair); }
 .extras div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .extras dt { font-size: 13px; color: var(--dim); }

@@ -104,6 +104,14 @@ describe('collectActions', () => {
     expect([...collectActions(hud).keys()].sort()).toEqual(['back', 'delay-7', 'go', 'site-a']);
   });
 
+  it('also finds the risk-marking buttons of the site view', () => {
+    const sky: PhaseHud = {
+      figure: { value: 'Iluminado', caption: '' },
+      side: { kind: 'sky', blocks: [], marks: { label: 'Marcar riesgo', options: [{ id: 'mark-rock', label: 'Roca', run: noop }, { id: 'mark-slope', label: 'Pendiente' }] } },
+    };
+    expect([...collectActions(sky).keys()]).toEqual(['mark-rock']);
+  });
+
   it('serializes without the functions, so the painted data is what gets compared', () => {
     const text = JSON.stringify(hud);
     expect(text).toContain('"id":"go"');

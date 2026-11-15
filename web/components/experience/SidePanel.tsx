@@ -67,6 +67,16 @@ export default function SidePanel({ side, frozen, onAct }: Props) {
           <p className={styles.small}>{b.shareLabel}</p>
         </section>
       ))}
+      {side.marks && (
+        <div className={styles.marks} role="group" aria-label={side.marks.label}>
+          <span>{side.marks.label}</span>
+          <div>
+            {side.marks.options.map((o) => (
+              <button key={o.id} type="button" className={styles.chip} disabled={frozen || o.disabled} onClick={() => onAct(o.id)}>{o.label}</button>
+            ))}
+          </div>
+        </div>
+      )}
       {side.extras && (
         <dl className={styles.extras}>
           {side.extras.map((f) => (<div key={f.label}><dt>{f.label}</dt><dd>{f.value}</dd></div>))}

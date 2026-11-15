@@ -51,7 +51,7 @@ export interface HudToggle {
 export type HudSide =
   | { kind: 'readouts'; items: HudReadout[]; note?: string }
   | { kind: 'ranking'; title: string; rows: HudRankRow[] }
-  | { kind: 'sky'; blocks: HudSky[]; extras?: HudFact[] };
+  | { kind: 'sky'; blocks: HudSky[]; extras?: HudFact[]; marks?: { label: string; options: HudAction[] } };
 
 /**
  * What a phase shows in the DOM control layer. Plain data plus the actions
@@ -184,5 +184,6 @@ export function collectActions(hud: PhaseHud): Map<string, () => void> {
   for (const a of hud.secondary ?? []) add(a.id, a.run);
   for (const o of hud.toggles?.options ?? []) add(o.id, o.run);
   if (hud.side.kind === 'ranking') for (const r of hud.side.rows) add(r.id, r.run);
+  if (hud.side.kind === 'sky') for (const o of hud.side.marks?.options ?? []) add(o.id, o.run);
   return out;
 }

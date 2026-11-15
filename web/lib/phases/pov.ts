@@ -299,6 +299,10 @@ export class PovPhase implements Phase {
           { label: 'Temperatura estimada', value: `${fmtSigned(m.tempC, 0)} °C` },
           { label: 'Rugosidad de la zona', value: `${this.world.roughness.toFixed(2)} m` },
         ],
+        marks: this.app.isHost ? {
+          label: 'Marcar riesgo donde miras (anillo verde)',
+          options: MARKER_KINDS.map(([kind, text]) => ({ id: `mark-${kind}`, label: text.replace(/^\S+\s+/, ''), disabled: !this.aimPoint, run: () => this.placeMarker(kind) })),
+        } : undefined,
       },
       secondary: [{ id: 'back', label: 'Elegir otro sitio', run: () => this.app.goTo('orbit', 0.7, 1.0) }],
       primary: { id: 'confirm', label: 'Iniciar descenso', run: () => this.app.goTo('landing', 0.8, 1.0) },
