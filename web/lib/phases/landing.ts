@@ -3,7 +3,7 @@ import type { LunarApp, Phase } from '../engine/app';
 import type { LoopControl } from '../engine/audio';
 import { Particles } from '../engine/particles';
 import { cockpitTexture, glowTexture } from '../engine/textures';
-import { clamp01, disposeTree, rand, smooth } from '../engine/util';
+import { clamp01, damp, disposeTree, rand, smooth } from '../engine/util';
 import { ensureSelection } from './pov';
 import { CabinConsole } from './landing-console';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
@@ -12,6 +12,9 @@ import { fmtInt, fmtLatLon, fmtPercent, type PhaseHud } from '../engine/hud';
 const T_BRAKE = 17;     // end of the powered approach
 const T_TOUCH = 25.5;   // touchdown
 const DECK = 3.0;       // cockpit floor height above the ground
+// Matches the feel of the old 0.2-per-frame smoothing at 60 fps, but frame-rate independent
+// (the 90 Hz Quest previously read speeds more sluggish than desktop with the per-frame constant).
+const VS_HS_DAMP_RATE = -Math.log(0.8) * 60;
 
 // Kept closer than the nearest terrain (the ground is never less than ~4.6 m from the eye), so the
 // cabin always occludes the world and the exterior only shows through the keyed window.
@@ -128,8 +131,9 @@ export class LandingPhase implements Phase {
     const ground = this.world.heightAt(eye.x, eye.z);
     this.alt = Math.max(0, eye.y - app.eyeHeight - DECK - ground);
     if (dt > 0) {
-      this.vs = this.vs + ((eye.y - this.last.y) / dt - this.vs) * 0.2;
-      this.hs = this.hs + (Math.hypot(eye.x - this.last.x, eye.z - this.last.z) / dt - this.hs) * 0.2;
+      const k = damp(VS_HS_DAMP_RATE, dt);
+      this.vs = this.vs + ((eye.y - this.last.y) / dt - this.vs) * k;
+      this.hs = this.hs + (Math.hypot(eye.x - this.last.x, eye.z - this.last.z) / dt - this.hs) * k;
     }
     this.last.copy(eye);
     this.fuel = Math.max(9, 100 - t * 3.4);

@@ -39,6 +39,14 @@ export class RoomClient {
   private listener: Listener | null = null;
   private onStatus: ((s: RoomStatus) => void) | null = null;
   private onRoomChange: ((room: string) => void) | null = null;
+  /**
+   * Last full snapshot received in reply to 'hello'. The reply can arrive
+   * before any phase is listening (the app starts in 'launch', which never
+   * calls setListener), so it's buffered here and replayed to whichever
+   * phase listens next - otherwise a monitor joining late would never see
+   * markers/site/time that existed before it connected.
+   */
+  private lastState: RoomState | null = null;
   status: RoomStatus = 'connecting';
 
   constructor(room: string, onStatus?: (s: RoomStatus) => void, onRoomChange?: (room: string) => void) {
@@ -51,6 +59,7 @@ export class RoomClient {
   /** Only one phase listens at a time - whichever is currently entered. */
   setListener(fn: Listener | null) {
     this.listener = fn;
+    if (fn && this.lastState) fn(this.lastState);
   }
 
   send(msg: ClientMessage) {
@@ -64,6 +73,7 @@ export class RoomClient {
   setRoom(newRoom: string): boolean {
     if (!ROOM_NAME_RE.test(newRoom) || newRoom === this.room) return false;
     this.room = newRoom;
+    this.lastState = null; // stale snapshot from the old room; the new room will reply to our next 'hello'
     this.onRoomChange?.(newRoom);
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = null; }
@@ -115,6 +125,7 @@ export class RoomClient {
       if (!data || typeof data !== 'object' || !('type' in data)) return;
       const type = (data as { type: unknown }).type;
       if (type === 'pong') return; // keepalive only, nothing for the listener to do
+      if (type === 'state') this.lastState = data as RoomState;
       this.listener?.(data as RoomEvent);
     };
     ws.onclose = () => {

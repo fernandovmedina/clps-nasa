@@ -33,8 +33,9 @@ export function splitRuns(samples: EphemerisSample[], body: 'sun' | 'earth'): Pa
 export function horizonCurve(horizonDeg: number[], stepDeg: number): Point[] {
   const n = horizonDeg.length
   const out: Point[] = []
+  const half = Math.floor(n / 2)
   for (let j = 0; j <= n; j++) {
-    out.push([-180 + j * stepDeg, horizonDeg[(j + n / 2) % n] ?? 0])
+    out.push([-180 + j * stepDeg, horizonDeg[(j + half) % n] ?? 0])
   }
   return out
 }
