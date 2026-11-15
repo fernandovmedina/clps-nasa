@@ -54,7 +54,7 @@
 .chip:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ---- left rail ---- */
-.rail { grid-area: rail; align-self: start; pointer-events: auto; display: flex; flex-direction: column; gap: 12px;
+.rail { grid-area: rail; align-self: start; position: relative; z-index: 2; pointer-events: auto; display: flex; flex-direction: column; gap: 12px;
   padding: 14px 16px; border-radius: 12px; background: var(--card); border: 0.5px solid var(--hair); backdrop-filter: blur(8px); }
 .phases { display: flex; flex-direction: column; gap: 10px; }
 .phases li { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--dim); }

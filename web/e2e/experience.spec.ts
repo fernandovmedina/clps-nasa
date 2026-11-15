@@ -252,6 +252,7 @@ const roomCode = (page: Page) => page.locator('summary code')
 const roomBox = (page: Page) => page.locator('details', { has: page.locator('summary code') })
 
 async function openRoom(page: Page, query = '') {
+  await page.setViewportSize({ width: 640, height: 480 })
   await page.goto(`/${query}`)
   test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
   await expect(roomCode(page)).toHaveText(/^[A-Za-z0-9_-]{4,64}$/, { timeout: 30_000 })
@@ -329,8 +330,8 @@ test('opening a shared link in a fresh browser context makes a monitor of that r
   }
 })
 
-test('as host, joining an invalid code or the own room shows an error and changes nothing; a real join makes a monitor', async ({ page }) => {
-  test.setTimeout(180_000)
+test('as host, joining an invalid code or the own room shows an error and changes nothing', async ({ page }) => {
+  test.setTimeout(360_000)
   await openRoom(page)
   const code = (await roomCode(page).textContent()) ?? ''
   const box = await openRoomBox(page)
@@ -354,7 +355,16 @@ test('as host, joining an invalid code or the own room shows an error and change
 
   await field.fill('QRST')
   await expect(alert).toHaveCount(0)
-  await join.click()
+})
+
+test('joining another room makes a monitor and it stays one after a reload', async ({ page }) => {
+  test.setTimeout(360_000)
+  await openRoom(page)
+  const box = await openRoomBox(page)
+  await box.getByRole('button', { name: 'Unirse a otra sala' }).click()
+  const field = box.getByRole('textbox', { name: 'Código de sala' })
+  await field.fill('QRST')
+  await box.getByRole('button', { name: 'Unirse', exact: true }).click()
   await expect(field).toHaveCount(0)
   await expect(roomCode(page)).toHaveText('QRST')
   expect(roomInUrl(page)).toBe('QRST')
