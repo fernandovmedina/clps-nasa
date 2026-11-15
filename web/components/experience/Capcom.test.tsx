@@ -136,7 +136,7 @@ describe('MissionLayer with CAPCOM', () => {
     data: null,
     selected: null,
   };
-  const room = { code: 'ABCD', isHost: true, onJoin: vi.fn() };
+  const room = { code: 'ABCD', isHost: true, onJoin: vi.fn(), onLeave: vi.fn() };
 
   it('shows the button in the header only when a controller is given', () => {
     const { controller } = fakeController();
