@@ -166,6 +166,7 @@ export class OrbitPhase implements Phase {
   }
 
   private handleRoomEvent(msg: RoomEvent) {
+    this.app.applyMarkerEvent(msg);
     switch (msg.type) {
       case 'state':
         this.applyRemoteTime(msg.t);
@@ -187,7 +188,7 @@ export class OrbitPhase implements Phase {
         }
         return;
       default:
-        return; // hello/ping never relayed; marker_* has no UI yet
+        return; // hello/ping never relayed; marker_* already applied above (applyMarkerEvent) - no UI to update in this phase
     }
   }
 
