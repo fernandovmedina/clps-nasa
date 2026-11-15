@@ -160,7 +160,8 @@ test('in the orbit, choosing another site in the list changes the big figure and
 
   const ranking = page.getByRole('list', { name: 'Ranking de sitios' })
   const rows = ranking.getByRole('button')
-  await expect(rows).toHaveCount(10)
+  // 10 sitios reales + el caso de demostración "NO CAER" (sites.ts).
+  await expect(rows).toHaveCount(11)
   const pressed = await rows.evaluateAll((all) => all.findIndex((b) => b.getAttribute('aria-pressed') === 'true'))
   const target = rows.nth(pressed === 0 ? 1 : 0)
   const name = (await target.locator('span').nth(1).textContent()) ?? ''
