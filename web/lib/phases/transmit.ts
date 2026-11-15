@@ -6,6 +6,8 @@ import { glowTexture } from '../engine/textures';
 import { clamp01, disposeTree, rand, smooth } from '../engine/util';
 import { ensureSelection } from './pov';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
+import { earthRangeKmAt } from '../mission/global-track';
+import { fmtInt, fmtPercent, fmtSigned, signalDelayS, type HudReadout, type PhaseHud } from '../engine/hud';
 
 const TX_SECONDS = 14;
 const LIGHT_TIME_S = 384400 / 299792.458;
@@ -230,5 +232,38 @@ export class TransmitPhase implements Phase {
     });
     p.button(g, 'again', 48, 760, 440, 96, 'Repetir misión', () => this.app.goTo('launch', 1.0, 1.2), 'ghost');
     p.button(g, 'other', 536, 760, 440, 96, 'Otro sitio', () => this.app.goTo('orbit', 0.8, 1.0));
+  }
+
+  controlHud(): PhaseHud {
+    const m = this.world.m, w = this.world;
+    const done = this.sent >= 1;
+    const data = this.app.data;
+    const rangeKm = data ? earthRangeKmAt(data.global, data.landingDate) : null;
+    const items: HudReadout[] = [
+      { label: 'Enlace', value: this.relay ? 'Relevo orbital' : 'Directo con la Tierra' },
+      { label: 'Elevación de la Tierra', value: `${fmtSigned(m.earth.elevation, 2)}° · ${w.earthVisible ? 'visible' : 'bajo el horizonte'}` },
+    ];
+    if (rangeKm !== null) {
+      items.push(
+        { label: 'Distancia Tierra–Luna', value: `${fmtInt(rangeKm)} km` },
+        { label: 'Retardo de la señal', value: `${signalDelayS(rangeKm).toFixed(2)} s` },
+      );
+    }
+    items.push(
+      { label: 'Paquetes enviados', value: `${fmtInt(this.sent * 4096)} / 4 096`, size: 'md' },
+      { label: 'Energía solar', value: w.sunVisible > 0.15 ? `${m.powerPct} % · Sol a ${m.sun.elevation.toFixed(1)}°` : 'En sombra · baterías', size: 'md' },
+      { label: 'Ventana restante', value: m.earth.aboveHorizon > 0 ? `${Math.round(m.hoursToEarthset)} h de comunicación` : '—', size: 'md' },
+    );
+    return {
+      figure: { value: fmtPercent(this.sent * 100), caption: 'de la telemetría enviada', badge: { label: 'Alunizaje exitoso', tone: 'ok' } },
+      progress: { value: this.sent, label: 'Telemetría enviada' },
+      detail: done ? 'Telemetría recibida en la Tierra' : this.relay ? 'Transmitiendo vía satélite de relevo…' : 'Transmitiendo directo a la Tierra…',
+      side: { kind: 'readouts', items, note: rangeKm !== null ? 'El retardo sale de la distancia real a la fecha de aterrizaje y la velocidad de la luz.' : undefined },
+      secondary: [
+        { id: 'again', label: 'Repetir misión', run: () => this.app.goTo('launch', 1.0, 1.2) },
+        { id: 'other', label: 'Otro sitio', run: () => this.app.goTo('orbit', 0.8, 1.0) },
+      ],
+      primary: { id: 'report', label: 'Ver reporte en Mission Control', href: '/mission-control/' },
+    };
   }
 }

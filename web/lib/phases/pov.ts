@@ -6,6 +6,7 @@ import type { RoomEvent } from '../sync/room-client';
 import { defaultMission } from './orbit';
 import { SpyView } from './spy-view';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
+import { STATUS_LABELS, fmtPercent, fmtSigned, type PhaseHud } from '../engine/hud';
 
 const CAM_SEND_INTERVAL_S = 1 / 10; // 10 Hz - tiny payload (7 numbers), see core/src/room.ts cam_update
 
@@ -170,5 +171,44 @@ export class PovPhase implements Phase {
     g.fillText('marca la zona donde alunizarás.', 48, 306);
     p.button(g, 'confirm', 48, 380, 928, 110, 'Confirmar alunizaje', () => this.app.goTo('landing', 0.8, 1.0));
     p.button(g, 'back', 48, 520, 928, 96, 'Elegir otro sitio', () => this.app.goTo('orbit', 0.7, 1.0), 'ghost');
+  }
+
+  controlHud(): PhaseHud {
+    const m = this.m;
+    const lit = m.sun.aboveHorizon > -0.27;
+    const earthUp = m.earth.aboveHorizon > 0;
+    const night = `La noche más larga de la misión dura ${fmtHours(m.longestDarkH)}.`;
+    const sun = lit
+      ? `El Sol está ${fmtSigned(m.sun.aboveHorizon, 2)}° sobre el horizonte local y se pone en ${fmtHours(m.hoursToSunset)}. ${night}`
+      : `El Sol está ${Math.abs(m.sun.aboveHorizon).toFixed(2)}° bajo el horizonte local. ${night}`;
+    return {
+      figure: { value: lit ? 'Iluminado' : 'En sombra', caption: '' },
+      detail: sun,
+      facts: [
+        { label: 'Noche más larga', value: fmtHours(m.longestDarkH) },
+        { label: 'Puntaje', value: `${Math.round(m.score)} de 100 · ${STATUS_LABELS[m.status]}` },
+        { label: 'Potencia solar', value: fmtPercent(m.powerPct) },
+        { label: 'Temperatura estimada', value: `${m.tempC.toFixed(0)} °C` },
+        { label: 'Rugosidad de la zona', value: `${this.world.roughness.toFixed(2)} m` },
+        { label: 'Ventana de comunicación', value: earthUp ? `${fmtHours(m.hoursToEarthset)} restantes` : 'requiere relevo' },
+      ],
+      side: {
+        kind: 'sky',
+        blocks: [
+          {
+            kind: 'sun', label: 'Sol · energía', value: `${fmtSigned(m.sun.elevation, 2)}°`,
+            detail: `${lit ? 'sobre' : 'bajo'} el horizonte local · azimut ${m.sun.azimuth.toFixed(0)}°`,
+            share: m.illumPct / 100, shareLabel: `Sol visible el ${Math.round(m.illumPct)} % de los 14 días`,
+          },
+          {
+            kind: 'earth', label: 'Tierra · comunicación', value: `${fmtSigned(m.earth.elevation, 2)}°`,
+            detail: earthUp ? 'visible · enlace directo' : 'oculta · requiere relevo',
+            share: m.earthPct / 100, shareLabel: `Tierra visible el ${Math.round(m.earthPct)} % de los 14 días`,
+          },
+        ],
+      },
+      secondary: [{ id: 'back', label: 'Elegir otro sitio', run: () => this.app.goTo('orbit', 0.7, 1.0) }],
+      primary: { id: 'confirm', label: 'Iniciar descenso', run: () => this.app.goTo('landing', 0.8, 1.0) },
+    };
   }
 }

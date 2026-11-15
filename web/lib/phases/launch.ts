@@ -8,6 +8,7 @@ import { createMoon } from '../engine/moon';
 import { clamp01, damp, lerp, rand, smooth } from '../engine/util';
 import { clearSurface } from './surface-world';
 import { disposeObject, loadRocketModel } from './rocket-model';
+import { countdownFigure, fmtPercent, groupThousands, type PhaseHud } from '../engine/hud';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const EARTH_R = 3000;
@@ -339,5 +340,23 @@ export class LaunchPhase implements Phase {
       this.arrivalT += dt;
       if (this.arrivalT > 0.8) { this.leaving = true; app.goTo('orbit', 0.9, 1.2); }
     }
+  }
+
+  controlHud(): PhaseHud {
+    const pct = fmtPercent(this.shownPct * 100);
+    const count = countdownFigure(this.countLabel || (this.t < 0.4 ? 'T-3' : ''));
+    return {
+      figure: count ?? { value: pct, caption: 'de los datos de la misión cargados' },
+      progress: { value: this.shownPct, label: 'Carga de datos', text: count ? pct : undefined },
+      detail: this.status,
+      side: {
+        kind: 'readouts',
+        items: [
+          { label: 'Altitud', value: groupThousands(this.tele.alt) },
+          { label: 'Velocidad', value: this.tele.vel },
+          { label: 'Distancia a la Luna', value: groupThousands(this.tele.dist) },
+        ],
+      },
+    };
   }
 }

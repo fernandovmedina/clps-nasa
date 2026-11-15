@@ -38,3 +38,10 @@ export function globalDirAt(global: GlobalFile, date: Date, body: 'sun' | 'earth
     : lerpLonDeg(global.sub_earth_lon[i]!, global.sub_earth_lon[j]!, f);
   return latLonToVec3(lat, lon, 1, out);
 }
+
+/** Real Earth–Moon distance (km) at `date`, interpolated from the hourly JPL Horizons series. */
+export function earthRangeKmAt(global: GlobalFile, date: Date): number {
+  const { i, f } = sampleIndex(global, date);
+  const j = Math.min(i + 1, global.count - 1);
+  return lerp(global.earth_range_km[i]!, global.earth_range_km[j]!, f);
+}
