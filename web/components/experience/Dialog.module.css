@@ -11,6 +11,7 @@
 .card[data-level='follow'] { z-index: 9; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 32px));
   max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); }
 
+.form { display: flex; flex-direction: column; gap: 16px; }
 .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
 .title { font-size: 24px; font-weight: 650; line-height: 1.2; letter-spacing: -0.01em; }
 .lede { font-size: 14px; color: var(--soft); }

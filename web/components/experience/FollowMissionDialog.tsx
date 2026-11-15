@@ -17,7 +17,7 @@ const FOCUSABLE = 'input:not(:disabled), button:not(:disabled)';
 export default function FollowMissionDialog({ code, onJoin, onClose }: Props) {
   const titleId = useId();
   const errorId = useId();
-  const root = useRef<HTMLFormElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -59,46 +59,46 @@ export default function FollowMissionDialog({ code, onJoin, onClose }: Props) {
   return (
     <>
       <div className={dialog.veil} data-level="follow" aria-hidden="true" />
-      <form
+      <div
         ref={root}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         className={dialog.card}
         data-level="follow"
-        noValidate
-        onSubmit={submit}
         onKeyDown={trapTab}
       >
-        <div className={dialog.head}>
-          <p className={dialog.eyebrow}>Mission Control</p>
-          <h2 id={titleId} className={dialog.title}>Seguir una misión</h2>
-          <p className={dialog.lede}>Escribe el código que te dio quien va a despegar. Verás su misión en vivo: el despegue, la órbita, el alunizaje y la transmisión.</p>
-        </div>
+        <form className={dialog.form} noValidate onSubmit={submit}>
+          <div className={dialog.head}>
+            <p className={dialog.eyebrow}>Mission Control</p>
+            <h2 id={titleId} className={dialog.title}>Seguir una misión</h2>
+            <p className={dialog.lede}>Escribe el código que te dio quien va a despegar. Verás su misión en vivo: el despegue, la órbita, el alunizaje y la transmisión.</p>
+          </div>
 
-        <label className={dialog.field}>
-          <span>Código de la misión</span>
-          <input
-            ref={field}
-            className={dialog.input}
-            data-size="lg"
-            value={value}
-            autoComplete="off"
-            autoCapitalize="characters"
-            spellCheck={false}
-            maxLength={64}
-            aria-invalid={error ? true : undefined}
-            aria-describedby={error ? errorId : undefined}
-            onChange={(e) => { setValue(e.target.value); setError(null); }}
-          />
-        </label>
-        {error && <p id={errorId} role="alert" className={dialog.error}>{error}</p>}
+          <label className={dialog.field}>
+            <span>Código de la misión</span>
+            <input
+              ref={field}
+              className={dialog.input}
+              data-size="lg"
+              value={value}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={64}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? errorId : undefined}
+              onChange={(e) => { setValue(e.target.value); setError(null); }}
+            />
+          </label>
+          {error && <p id={errorId} role="alert" className={dialog.error}>{error}</p>}
 
-        <div className={dialog.actions}>
-          <button type="button" className={layer.btn} onClick={onClose}>Cancelar</button>
-          <button type="submit" className={layer.btn} data-variant="primary">Conectar</button>
-        </div>
-      </form>
+          <div className={dialog.actions}>
+            <button type="button" className={layer.btn} onClick={onClose}>Cancelar</button>
+            <button type="submit" className={layer.btn} data-variant="primary">Conectar</button>
+          </div>
+        </form>
+      </div>
     </>
   );
 }
