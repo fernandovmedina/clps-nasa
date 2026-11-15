@@ -141,7 +141,7 @@ export const es = {
 
   report: 'Reporte',
   recommendedScenario: 'Escenario recomendado',
-  recommendedReason: 'Mayor puntaje ({score}); empates: más horas de ambos, luego la fecha más temprana.',
+  recommendedReason: 'Mejor estado y mayor puntaje ({score}); empates: más horas de ambos, luego la fecha más temprana.',
   compareTable: 'Comparación de escenarios',
   colScenario: 'Escenario',
   colSite: 'Sitio',

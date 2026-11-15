@@ -64,11 +64,20 @@ export function bothHours(entry: ReportEntry): number {
   return entry.response.fractions.both * entry.missionHours
 }
 
+/** A not-viable scenario never beats a marginal one, whatever its score (same rule as compareScenarios). */
+const STATUS_TIER = { viable: 0, marginal: 1, not_viable: 2 } as const
+
 export function pickRecommended(entries: ReportEntry[]): ReportEntry | null {
   let best: ReportEntry | null = null
   for (const entry of entries) {
     if (best === null) {
       best = entry
+      continue
+    }
+    const ta = STATUS_TIER[entry.response.status]
+    const tb = STATUS_TIER[best.response.status]
+    if (ta !== tb) {
+      if (ta < tb) best = entry
       continue
     }
     const a = entry.response.score

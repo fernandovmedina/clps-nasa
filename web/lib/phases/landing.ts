@@ -16,6 +16,12 @@ const DECK = 3.0;       // cockpit floor height above the ground
 // (the 90 Hz Quest previously read speeds more sluggish than desktop with the per-frame constant).
 const VS_HS_DAMP_RATE = -Math.log(0.8) * 60;
 
+// Demo case "NO CAER" (sites.ts, site.crash): the engine fails mid-descent, the capsule
+// free-falls under real lunar gravity and explodes on impact, then we return to orbit.
+const T_FAIL = 12;              // engine failure (≈ 75 m above the ground)
+const MOON_G = 1.62;            // m/s²
+const T_AFTER_IMPACT = 6.5;     // seconds of explosion before going back to orbit
+
 // Kept closer than the nearest terrain (the ground is never less than ~4.6 m from the eye), so the
 // cabin always occludes the world and the exterior only shows through the keyed window.
 const COCKPIT_RADIUS = 3;
@@ -75,6 +81,13 @@ export class LandingPhase implements Phase {
   private last = new THREE.Vector3(); private vs = 0; private hs = 0;
   private thruster: LoopControl | null = null;
   private alt = 0; private fuel = 100; private touched = false; private leaving = false;
+  // crash demo state (only used when the selected site has `crash: true`)
+  private readonly crash: boolean;
+  private failPos: THREE.Vector3 | null = null; private failVel = new THREE.Vector3();
+  private impactAt = -1; private impactSpeed = 0; private impactPoint = new THREE.Vector3(); private impactEye = new THREE.Vector3();
+  private fire: Particles | null = null; private smoke: Particles | null = null;
+  private blast = new THREE.PointLight(0xffa040, 0, 400, 1.2);
+  private alarm: THREE.Mesh | null = null;
 
   constructor(private app: LunarApp) {
     const m = ensureSelection(app);
@@ -93,6 +106,19 @@ export class LandingPhase implements Phase {
     this.dust = new Particles(2400, glow, false);
     this.plume = new Particles(900, glow, true);
     this.scene.add(this.dust.points, this.plume.points, this.engine);
+
+    this.crash = !!m.site.crash;
+    if (this.crash) {
+      this.fire = new Particles(2500, glow, true);
+      this.smoke = new Particles(1200, glow, false);
+      this.scene.add(this.smoke.points, this.fire.points, this.blast);
+      // red alarm wash around the head (works in VR, where there is no screen overlay)
+      this.alarm = new THREE.Mesh(
+        new THREE.SphereGeometry(0.3, 16, 12),
+        new THREE.MeshBasicMaterial({ color: 0xff2a1a, side: THREE.BackSide, transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending }),
+      );
+      this.alarm.renderOrder = 999;
+    }
   }
 
   enter() {
@@ -103,6 +129,7 @@ export class LandingPhase implements Phase {
     this.cabinConsole.mount(rig);
     this.app.setView(this.pos(0), this.world.lz, { snap: true, rate: 6 });
     this.thruster = this.app.audio.loop('landing_thruster');
+    if (this.alarm) this.app.camera.add(this.alarm);
   }
 
   exit() {
@@ -111,6 +138,11 @@ export class LandingPhase implements Phase {
     this.cabinConsole.dispose();
     this.scene.remove(this.dust.points, this.plume.points, this.engine);
     this.dust.points.geometry.dispose(); this.plume.points.geometry.dispose();
+    if (this.crash) {
+      this.scene.remove(this.fire!.points, this.smoke!.points, this.blast);
+      this.fire!.points.geometry.dispose(); this.smoke!.points.geometry.dispose();
+      this.alarm?.removeFromParent(); this.alarm?.geometry.dispose();
+    }
   }
 
   private pos(t: number) {
@@ -123,9 +155,122 @@ export class LandingPhase implements Phase {
     return this.P1.clone().lerp(this.P2, u);
   }
 
+  /** Crash demo: ballistic fall from the failure point under lunar gravity. */
+  private crashPos(t: number) {
+    if (!this.failPos) {
+      this.failPos = this.pos(T_FAIL);
+      this.failVel.copy(this.failPos).sub(this.pos(T_FAIL - 0.05)).divideScalar(0.05);
+    }
+    const tau = t - T_FAIL;
+    return this.failPos.clone().addScaledVector(this.failVel, tau).add(new THREE.Vector3(0, -0.5 * MOON_G * tau * tau, 0));
+  }
+
+  private updateCrash(dt: number, t: number) {
+    const app = this.app;
+    const exploded = this.impactAt >= 0;
+    let eye: THREE.Vector3;
+    if (!exploded) {
+      eye = this.crashPos(t);
+      const groundEye = this.world.heightAt(eye.x, eye.z) + DECK + app.eyeHeight;
+      if (eye.y <= groundEye) {
+        eye.y = groundEye;
+        this.impactSpeed = Math.abs(this.failVel.y - MOON_G * (t - T_FAIL));
+        this.impactAt = t;
+        this.impactEye.copy(eye);
+        this.impactPoint.set(eye.x, this.world.heightAt(eye.x, eye.z), eye.z);
+        this.explode();
+      }
+    } else {
+      // pull back from the wreck to watch the fireball (smooth, no rotation tricks for VR)
+      const k = smooth(0, 1.2, t - this.impactAt);
+      eye = this.impactEye.clone().addScaledVector(this.world.earthHoriz, -150 * k).add(new THREE.Vector3(0, 45 * k, 0));
+    }
+
+    const ground = this.world.heightAt(eye.x, eye.z);
+    this.alt = Math.max(0, eye.y - app.eyeHeight - DECK - ground);
+    if (dt > 0 && !exploded) {
+      const k = damp(VS_HS_DAMP_RATE, dt);
+      this.vs = this.vs + ((eye.y - this.last.y) / dt - this.vs) * k;
+      this.hs = this.hs + (Math.hypot(eye.x - this.last.x, eye.z - this.last.z) / dt - this.hs) * k;
+    }
+    this.last.copy(eye);
+
+    const since = exploded ? t - this.impactAt : 0;
+    if (!app.isXR && exploded && since < 1.2) { // desktop-only shake, never in VR
+      const a = 0.6 * (1 - since / 1.2);
+      eye.x += rand(-a, a); eye.y += rand(-a, a); eye.z += rand(-a, a);
+    }
+    const look = exploded ? this.impactPoint.clone().add(new THREE.Vector3(0, 6, 0)) : this.world.lz.clone();
+    app.setView(eye, look, { rate: exploded ? 3 : 6 });
+
+    // alarm: pulsing red while falling, white flash at impact
+    if (this.alarm) {
+      const mat = this.alarm.material as THREE.MeshBasicMaterial;
+      if (!exploded) { mat.color.set(0xff2a1a); mat.opacity = 0.12 + 0.12 * Math.sin(t * 14); }
+      else { mat.color.set(0xffe2b0); mat.opacity = Math.max(0, 0.9 - since * 1.5); }
+    }
+    this.thruster?.set('throttle', 0);
+    this.engine.intensity = Math.max(0, this.engine.intensity - dt * 3000);
+
+    if (exploded) {
+      this.blast.position.copy(this.impactPoint).add(new THREE.Vector3(0, 8, 0));
+      this.blast.intensity = Math.max(0, 60000 * Math.exp(-since * 2.2));
+      // the fire keeps burning for a moment
+      if (since < 3.5) {
+        for (let i = 0, n = Math.floor(320 * dt * (1 - since / 3.5) + Math.random()); i < n; i++) this.emitFire(0.45);
+      }
+    }
+    const scale = app.pointScale();
+    this.fire!.update(dt, scale); this.smoke!.update(dt, scale); this.plume.update(dt, scale); this.dust.update(dt, scale);
+
+    if (exploded && !this.leaving && since > T_AFTER_IMPACT) { this.leaving = true; app.goTo('orbit', 1.2, 1.2); }
+  }
+
+  private emitFire(power: number) {
+    const p = this.impactPoint;
+    const a = rand(0, Math.PI * 2), up = rand(0.15, 1), sp = rand(15, 70) * power;
+    const h = Math.sqrt(1 - up * up);
+    this.fire!.emit({
+      x: p.x + rand(-2, 2), y: p.y + rand(0, 3), z: p.z + rand(-2, 2),
+      vx: Math.cos(a) * h * sp, vy: up * sp, vz: Math.sin(a) * h * sp,
+      life: rand(1.2, 3.2), drag: 1.2, lift: -MOON_G, s0: rand(6, 12), s1: rand(22, 40), a: 0.85,
+      c0: [1, 0.95, 0.75], c1: [0.9, 0.2, 0.05],
+    });
+  }
+
+  private explode() {
+    const app = this.app, p = this.impactPoint;
+    this.cockpit.group.visible = false; // the cabin is gone
+    this.world.lzMarker.visible = false;
+    this.cabinConsole.dispose();
+    app.audio.play('touchdown_thud'); app.audio.play('dust_hiss'); app.audio.play('error_tone');
+    for (let i = 0; i < 900; i++) this.emitFire(1);
+    for (let i = 0; i < 500; i++) {
+      const a = rand(0, Math.PI * 2), sp = rand(4, 30), g = rand(0.18, 0.35);
+      this.smoke!.emit({
+        x: p.x + rand(-3, 3), y: p.y + rand(0, 4), z: p.z + rand(-3, 3),
+        vx: Math.cos(a) * sp, vy: rand(4, 22), vz: Math.sin(a) * sp,
+        life: rand(3, 6), drag: 0.5, lift: -0.4, s0: rand(6, 10), s1: rand(30, 50), a: 0.55,
+        c0: [g + 0.25, g + 0.15, g + 0.1], c1: [g, g, g],
+      });
+    }
+    // regolith thrown out by the impact
+    for (let i = 0; i < 700; i++) {
+      const a = rand(0, Math.PI * 2), sp = rand(20, 80), g = rand(0.5, 0.7);
+      this.dust.emit({ x: p.x, y: p.y + 0.5, z: p.z, vx: Math.cos(a) * sp, vy: rand(3, 25), vz: Math.sin(a) * sp,
+        life: rand(2, 4), drag: 0.3, lift: -MOON_G, s0: 1.5, s1: rand(6, 12), a: 0.6, c0: [g, g, g * 0.97], c1: [g * 0.8, g * 0.8, g * 0.78] });
+    }
+  }
+
   update(dt: number, time: number) {
     this.t += dt;
     const t = this.t, app = this.app;
+    if (this.crash && t >= T_FAIL) {
+      this.world.update(dt, time);
+      if (!this.failPos) { app.audio.play('error_tone'); this.thruster?.set('throttle', 0); }
+      this.updateCrash(dt, t);
+      return;
+    }
     this.world.update(dt, time);
     const eye = this.pos(t);
     const ground = this.world.heightAt(eye.x, eye.z);
@@ -175,10 +320,11 @@ export class LandingPhase implements Phase {
     if (this.touched && !this.leaving && t > T_TOUCH + 2.8) { this.leaving = true; app.goTo('transmit', 1.0, 1.4); }
   }
 
-  updateUi() { this.cabinConsole.update(); }
+  updateUi() { if (this.impactAt < 0) this.cabinConsole.update(); }
 
   controlHud(): PhaseHud {
     const site = this.world.m.site;
+    if (this.crash && this.t >= T_FAIL) return this.crashHud(site.lat, site.lon);
     const status = this.touched ? 'Luz de contacto · motor apagado' : this.t < T_BRAKE ? 'Descenso motorizado · aproximación' : 'Descenso terminal · vertical';
     const toTouch = Math.max(0, T_TOUCH - this.t);
     const progress = clamp01(this.t / T_TOUCH);
@@ -194,6 +340,28 @@ export class LandingPhase implements Phase {
           { label: 'Combustible', value: fmtPercent(this.fuel), meter: { value: this.fuel / 100, label: `Combustible al ${Math.round(this.fuel)} %` } },
           { label: 'Luz de contacto', value: this.touched ? 'Encendida' : 'Apagada' },
           { label: 'Zona de alunizaje', value: fmtLatLon(site.lat, site.lon), size: 'md' },
+        ],
+      },
+    };
+  }
+
+  private crashHud(lat: number, lon: number): PhaseHud {
+    const exploded = this.impactAt >= 0;
+    return {
+      figure: exploded
+        ? { value: 'IMPACTO', caption: 'misión perdida' }
+        : { value: `${this.alt < 100 ? this.alt.toFixed(1) : fmtInt(this.alt)} m`, caption: 'caída libre · motor apagado' },
+      detail: exploded
+        ? `Impacto a ${this.impactSpeed.toFixed(1)} m/s · regresando a órbita`
+        : 'FALLA DEL MOTOR · caída libre con gravedad lunar (1.62 m/s²)',
+      side: {
+        kind: 'readouts',
+        items: [
+          { label: 'Velocidad de descenso', value: `${(exploded ? this.impactSpeed : Math.abs(this.vs)).toFixed(1)} m/s` },
+          { label: 'Motor principal', value: 'Falla' },
+          { label: 'Combustible', value: fmtPercent(this.fuel) },
+          { label: 'Luz de contacto', value: exploded ? 'Impacto' : 'Apagada' },
+          { label: 'Zona de alunizaje', value: fmtLatLon(lat, lon), size: 'md' },
         ],
       },
     };

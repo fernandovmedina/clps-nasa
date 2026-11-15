@@ -143,7 +143,7 @@ export const en: Dict = {
 
   report: 'Report',
   recommendedScenario: 'Recommended scenario',
-  recommendedReason: 'Highest score ({score}); ties: more hours with both, then the earliest date.',
+  recommendedReason: 'Best status and highest score ({score}); ties: more hours with both, then the earliest date.',
   compareTable: 'Scenario comparison',
   colScenario: 'Scenario',
   colSite: 'Site',

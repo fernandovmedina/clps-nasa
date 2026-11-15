@@ -7,6 +7,7 @@ import {
   totalHours,
   type Body,
   type EvalPoint,
+  type Span,
 } from './visibility'
 import { seriesEndMs } from './track'
 import { DAY_MS, HOUR_MS, formatIso, isIsoDate, publishedAzimuth, round } from './time'
@@ -18,6 +19,57 @@ import type {
   Site,
   Track,
 } from './types'
+
+/** Apparent angular radius of the Sun seen from the Moon (deg). */
+export const SUN_RADIUS_DEG = 0.2666
+
+/**
+ * Score weights (sum = 1). Documented in CLAUDE.md sec. 7.
+ *  - energy:     mean fraction of the solar disk above the local horizon (power)
+ *  - comms:      fraction of the mission with the Earth above the local horizon (DTE link)
+ *  - ops:        fraction with Sun AND Earth at the same time (powered + talking to Earth)
+ *  - continuity: 1 - longest continuous time without Sun / mission length (survive the night)
+ */
+export const SCORE_WEIGHTS = { energy: 0.3, comms: 0.25, ops: 0.3, continuity: 0.15 } as const
+
+/**
+ * Fraction (0..1) of a disk of angular radius `radiusDeg` that is above a locally
+ * flat horizon when its centre is `marginDeg` above it (circular-segment area).
+ */
+export function visibleDiskFraction(marginDeg: number, radiusDeg: number): number {
+  if (marginDeg >= radiusDeg) return 1
+  if (marginDeg <= -radiusDeg) return 0
+  const h = marginDeg / radiusDeg
+  const below = (Math.acos(h) - h * Math.sqrt(1 - h * h)) / Math.PI
+  return 1 - below
+}
+
+/** Time-weighted mean of the visible solar-disk fraction over the evaluated points. */
+function meanSunDisk(points: EvalPoint[]): number {
+  if (points.length < 2) return points.length ? visibleDiskFraction(points[0]!.margin, SUN_RADIUS_DEG) : 0
+  let area = 0
+  for (let k = 1; k < points.length; k++) {
+    const p = points[k - 1]!
+    const q = points[k]!
+    const fp = visibleDiskFraction(p.margin, SUN_RADIUS_DEG)
+    const fq = visibleDiskFraction(q.margin, SUN_RADIUS_DEG)
+    area += ((fp + fq) / 2) * (q.t - p.t)
+  }
+  const span = points[points.length - 1]!.t - points[0]!.t
+  return span > 0 ? area / span : 0
+}
+
+/** Longest stretch (ms) inside [from, to] not covered by any span. */
+function longestGapMs(spans: Span[], from: number, to: number): number {
+  let cursor = from
+  let longest = 0
+  for (const [a, b] of spans) {
+    if (a > cursor) longest = Math.max(longest, Math.min(a, to) - cursor)
+    cursor = Math.max(cursor, b)
+  }
+  if (to > cursor) longest = Math.max(longest, to - cursor)
+  return longest
+}
 
 function summarize(
   track: Track,
@@ -49,13 +101,28 @@ function summarize(
     next_set: nextSet ? formatIso(nextSet.t) : null,
     next_rise: nextRise ? formatIso(nextRise.t) : null,
   }
-  return { summary, spans }
+  return { summary, spans, points }
 }
 
-function classify(score: number, sun: number, earth: number, both: number): ScenarioStatus {
-  if (score < 40 || sun < 0.1 || earth < 0.1) return 'not_viable'
+function classify(score: number, energy: number, earth: number, both: number): ScenarioStatus {
+  if (score < 40 || energy < 0.1 || earth < 0.1) return 'not_viable'
   if (score >= 70 && both >= 0.5) return 'viable'
   return 'marginal'
+}
+
+const STATUS_TIER: Record<ScenarioStatus, number> = { viable: 0, marginal: 1, not_viable: 2 }
+
+/**
+ * Ranking order: status tier first (a not-viable site never outranks a marginal one),
+ * then score, then time with Sun and Earth together, then energy.
+ */
+export function compareScenarios(a: ScenarioResponse, b: ScenarioResponse): number {
+  return (
+    STATUS_TIER[a.status] - STATUS_TIER[b.status] ||
+    b.score - a.score ||
+    b.metrics.ops - a.metrics.ops ||
+    b.metrics.energy - a.metrics.energy
+  )
 }
 
 export function computeScenario(input: {
@@ -91,8 +158,22 @@ export function computeScenario(input: {
     earth: fraction(totalHours(earth.spans)),
     both: fraction(totalHours(both)),
   }
-  // 100 * (0.5 * sun + 0.5 * earth) with both fractions in integer thousandths, rounded half up
-  const score = Math.floor((Math.round(fractions.sun * 1000) + Math.round(fractions.earth * 1000) + 10) / 20)
+  const longestDarkMs = missionHours > 0 ? longestGapMs(sun.spans, landingMs, missionEndMs) : 0
+  const metrics = {
+    energy: round(meanSunDisk(sun.points), 3),
+    comms: fractions.earth,
+    ops: fractions.both,
+    continuity: missionHours > 0 ? round(1 - longestDarkMs / (missionEndMs - landingMs), 3) : 0,
+    longest_dark_h: round(longestDarkMs / HOUR_MS, 1),
+  }
+  const w = SCORE_WEIGHTS
+  // weighted sum in integer thousandths, rounded half up
+  const thousandths =
+    w.energy * Math.round(metrics.energy * 1000) +
+    w.comms * Math.round(metrics.comms * 1000) +
+    w.ops * Math.round(metrics.ops * 1000) +
+    w.continuity * Math.round(metrics.continuity * 1000)
+  const score = Math.floor((Math.round(thousandths) + 5) / 10)
 
   return {
     site_id: site.id,
@@ -110,7 +191,8 @@ export function computeScenario(input: {
       both: toIntervals(both),
     },
     fractions,
+    metrics,
     score,
-    status: classify(score, fractions.sun, fractions.earth, fractions.both),
+    status: classify(score, metrics.energy, fractions.earth, fractions.both),
   }
 }

@@ -108,7 +108,7 @@ Un cuerpo es visible si su elevación supera `horizon_deg[az]`. Sin atmósfera *
 
 **Efemérides.** Azimut y elevación topocéntricos del Sol y la Tierra cada hora, con JPL Horizons (`coord@301`). La libración de la Tierra ya viene incluida.
 
-**Métricas.** Ventanas de Sol, de Tierra y de ambos; tiempo al siguiente ocaso; horas de energía y de comunicación en la misión; puntaje de viabilidad (50% energía, 50% comunicación).
+**Métricas.** Ventanas de Sol, de Tierra y de ambos; tiempo al siguiente ocaso; horas de energía y de comunicación en la misión; puntaje de viabilidad = 30 % energía (fracción del disco solar sobre el horizonte real) + 25 % comunicación con la Tierra + 30 % tiempo con Sol y Tierra a la vez + 15 % continuidad (noche más larga). El ranking ordena primero por estado y luego por puntaje.
 
 ## 🛰️ Datos de NASA que usamos
 
