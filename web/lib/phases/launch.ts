@@ -160,6 +160,9 @@ export class LaunchPhase implements Phase {
       g.shadowColor = 'rgba(217,119,87,.7)'; g.shadowBlur = 40; g.fillStyle = UI.text;
       g.fillText(this.countLabel, 512, 134);
     });
+    // Without this, pointer/controller rays never hit the HUD panel - the
+    // "Comenzar despegue" button renders but nothing can ever click it.
+    this.targets.push(this.hud.mesh);
   }
 
   enter() {
