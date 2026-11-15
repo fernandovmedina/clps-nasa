@@ -84,6 +84,36 @@ jobs:
         if: hashFiles('web/package.json') != ''
         run: pnpm --filter @touchdown/worker deploy:dry-run
 
+  e2e:
+    name: End-to-end tests (${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web
+        if: hashFiles('web/playwright.config.ts') != ''
+        run: pnpm --filter @touchdown/web build
+
       - name: Install Playwright Chromium
         if: hashFiles('web/playwright.config.ts') != ''
         run: pnpm --filter @touchdown/web exec playwright install --with-deps chromium
@@ -91,12 +121,12 @@ jobs:
       - name: Run end-to-end tests
         id: e2e
         if: hashFiles('web/playwright.config.ts') != ''
-        run: pnpm --filter @touchdown/web e2e
+        run: pnpm --filter @touchdown/web exec playwright test --fully-parallel --shard=${{ matrix.shard }}/3
 
       - name: Upload Playwright report
         if: failure() && steps.e2e.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: web/playwright-report
           retention-days: 7
