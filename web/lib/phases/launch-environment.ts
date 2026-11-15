@@ -1,12 +1,19 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { tryLoad } from '../engine/textures';
 import { lerp, seeded, smooth } from '../engine/util';
 import { disposeObject } from './rocket-model';
 
-const PAD_R = 45;
+const PAD_R = 50;
 const PAD_TOP = 0.6;
 const GROUND_R = 1500;
 const TILE = 40;
+const GROUND_TILE = 320;
+const PAD_TILE = 14;
+const HORIZON_R = 9000;
+const HORIZON_TOP = Math.tan((13 * Math.PI) / 180);
+const HORIZON_BOTTOM = Math.tan((3 * Math.PI) / 180);
+const TEXTURE_DIR = '/textures/launch/';
 const ROAD_W = 9;
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -59,6 +66,20 @@ function groundTexture() {
   return texture(c, true);
 }
 
+function paintPadWear(g: CanvasRenderingContext2D, S: number, k: number, rnd: () => number) {
+  const mid = S / 2, tw = 4.6 * k;
+  g.fillStyle = '#292826'; g.fillRect(0, mid - tw, S, tw * 2);
+  g.strokeStyle = 'rgba(176,172,162,.8)'; g.lineWidth = 5;
+  g.strokeRect(-4, mid - tw, S + 8, tw * 2);
+  const scorch = g.createRadialGradient(mid, mid, 0, mid, mid, 30 * k);
+  scorch.addColorStop(0, 'rgba(22,20,18,.62)'); scorch.addColorStop(0.55, 'rgba(30,28,26,.3)'); scorch.addColorStop(1, 'rgba(30,28,26,0)');
+  g.fillStyle = scorch; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 26; i++) {
+    const a = rnd() * Math.PI * 2, d = (6 + rnd() * 26) * k;
+    wrapBlob(g, S, mid + Math.cos(a) * d, mid + Math.sin(a) * d, (1.5 + rnd() * 5) * k, 'rgba(26,24,22,.28)');
+  }
+}
+
 function padTexture() {
   const S = 1024, k = S / (2 * PAD_R), rnd = seeded('launch-pad');
   const [c, g] = canvas(S, S);
@@ -75,17 +96,8 @@ function padTexture() {
     g.beginPath(); g.moveTo(p, 0); g.lineTo(p, S); g.stroke();
     g.beginPath(); g.moveTo(0, p); g.lineTo(S, p); g.stroke();
   }
-  const mid = S / 2, tw = 4.6 * k;
-  g.fillStyle = '#292826'; g.fillRect(0, mid - tw, S, tw * 2);
-  g.strokeStyle = 'rgba(176,172,162,.8)'; g.lineWidth = 5;
-  g.strokeRect(-4, mid - tw, S + 8, tw * 2);
-  const scorch = g.createRadialGradient(mid, mid, 0, mid, mid, 30 * k);
-  scorch.addColorStop(0, 'rgba(22,20,18,.62)'); scorch.addColorStop(0.55, 'rgba(30,28,26,.3)'); scorch.addColorStop(1, 'rgba(30,28,26,0)');
-  g.fillStyle = scorch; g.fillRect(0, 0, S, S);
-  for (let i = 0; i < 26; i++) {
-    const a = rnd() * Math.PI * 2, d = (6 + rnd() * 26) * k;
-    wrapBlob(g, S, mid + Math.cos(a) * d, mid + Math.sin(a) * d, (1.5 + rnd() * 5) * k, 'rgba(26,24,22,.28)');
-  }
+  paintPadWear(g, S, k, rnd);
+  const mid = S / 2;
   g.lineWidth = 0.3 * k; g.strokeStyle = 'rgba(236,234,228,.7)';
   g.beginPath(); g.arc(mid, mid, 41 * k, 0, Math.PI * 2); g.stroke();
   g.lineWidth = 0.3 * k; g.strokeStyle = 'rgba(222,176,52,.75)'; g.setLineDash([2 * k, 2 * k]);
@@ -96,6 +108,14 @@ function padTexture() {
     const a = Math.PI / 4 + (i * Math.PI) / 2;
     g.beginPath(); g.moveTo(mid + Math.cos(a) * 14 * k, mid + Math.sin(a) * 14 * k); g.lineTo(mid + Math.cos(a) * 20 * k, mid + Math.sin(a) * 20 * k); g.stroke();
   }
+  return texture(c);
+}
+
+/** Flame trench, scorch and soot over a transparent background, laid on top of the tiled concrete photo. */
+function padWearTexture() {
+  const S = 1024, k = S / (2 * PAD_R), rnd = seeded('launch-pad-wear'), [c, g] = canvas(S, S);
+  for (let i = 0; i < 70; i++) wrapBlob(g, S, rnd() * S, rnd() * S, (2.5 + rnd() * 6) * k, rnd() < 0.7 ? `rgba(34,30,26,${0.08 + rnd() * 0.12})` : `rgba(214,210,200,${0.05 + rnd() * 0.07})`);
+  paintPadWear(g, S, k, rnd);
   return texture(c);
 }
 
@@ -147,6 +167,11 @@ function groundGeometry(R: number) {
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.setIndex(idx);
   return g;
+}
+
+/** Lets distant ground dissolve into the sky haze instead of ending in a visible rim. */
+function fadeWithDistance(shader: { fragmentShader: string }) {
+  shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n  gl_FragColor.a *= 1.0 - smoothstep(fogFar * 0.4, fogFar * 1.0, vFogDepth);');
 }
 
 function roadGeometry(R: number, angleDeg: number, from: number, to: number) {
@@ -241,14 +266,16 @@ const SKY_VERT = /* glsl */ `
   varying vec3 vDir;
   void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const SKY_FRAG = /* glsl */ `
-  uniform vec3 zenith; uniform vec3 horizon; uniform vec3 space; uniform vec3 sunDir;
+  uniform vec3 zenith; uniform vec3 horizon; uniform vec3 haze; uniform vec3 space; uniform vec3 sunDir;
   uniform float day; uniform float ridge;
   varying vec3 vDir;
   void main(){
     vec3 d = normalize(vDir);
     vec3 hor = mix(space, horizon, day);
     vec3 zen = mix(space, zenith, day * day);
-    vec3 col = mix(hor, zen, pow(max(d.y, 0.0), 0.42));
+    vec3 mid = mix(space, haze, day);
+    float h = max(d.y, 0.0);
+    vec3 col = mix(mix(hor, mid, clamp(h / 0.225, 0.0, 1.0)), zen, pow(clamp((h - 0.225) / 0.775, 0.0, 1.0), 0.55));
     float s = max(dot(d, sunDir), 0.0);
     col += vec3(1.0, 0.62, 0.34) * (pow(s, 5.0) * 0.2 + pow(s, 48.0) * 0.5) * day;
     col += vec3(1.0, 0.95, 0.85) * smoothstep(0.9998, 0.99995, s) * 6.0 * day;
@@ -268,18 +295,27 @@ export class LaunchEnvironment {
   readonly horizon = new THREE.Color();
   private sky: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
   private fading: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>[] = [];
-  private horizonDay = new THREE.Color(0xcfe2f3);
+  private horizonDay = new THREE.Color().setRGB(146 / 255, 157 / 255, 170 / 255, THREE.SRGBColorSpace);
+  private hazeDay = new THREE.Color().setRGB(128 / 255, 164 / 255, 195 / 255, THREE.SRGBColorSpace);
   private space = new THREE.Color(0x000004);
   private textures: THREE.Texture[] = [];
   private tower: THREE.InstancedMesh;
   private loadedTower: THREE.Object3D | null = null;
+  private groundMesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
+  private padMesh: THREE.Mesh<THREE.CircleGeometry, THREE.MeshStandardMaterial>;
+  private horizonRig = new THREE.Group();
+  private horizonBand: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial> | null = null;
+  private horizonDip0 = 0;
+  private closed = false;
 
-  constructor(earthR: number, sunDir: THREE.Vector3) {
+  /** `axisYaw` turns the horizon photo so its mirror axes fall to the sides of the first view. */
+  constructor(private earthR: number, sunDir: THREE.Vector3, anisotropy: number, private axisYaw: number) {
     const g = this.group;
+    this.horizonDip0 = Math.acos(earthR / (earthR + 9));
     this.horizon.copy(this.horizonDay);
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(100000, 32, 16), new THREE.ShaderMaterial({
       uniforms: {
-        zenith: { value: new THREE.Color(0x2a6fd0) }, horizon: { value: this.horizonDay }, space: { value: this.space },
+        zenith: { value: new THREE.Color(0x2a6fd0) }, horizon: { value: this.horizonDay }, haze: { value: this.hazeDay }, space: { value: this.space },
         sunDir: { value: sunDir }, day: { value: 1 }, ridge: { value: 1 },
       },
       vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, side: THREE.BackSide, depthTest: false, depthWrite: false, fog: false,
@@ -291,16 +327,22 @@ export class LaunchEnvironment {
       map: this.track(groundTexture()), vertexColors: true, roughness: 1, metalness: 0, transparent: true,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4,
     }));
+    ground.material.onBeforeCompile = fadeWithDistance;
+    ground.material.customProgramCacheKey = () => 'launch-ground-fade';
     ground.receiveShadow = true;
     const roads = new THREE.Mesh(mergeGeometries([roadGeometry(earthR, 202, PAD_R + 1, 1000), roadGeometry(earthR, 340, PAD_R + 1, 800)])!, new THREE.MeshStandardMaterial({
       map: this.track(roadTexture()), roughness: 0.95, metalness: 0, transparent: true,
       polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6,
     }));
+    roads.material.onBeforeCompile = fadeWithDistance;
+    roads.material.customProgramCacheKey = () => 'launch-road-fade';
     roads.receiveShadow = true;
+    this.groundMesh = ground;
     this.fading.push(ground, roads);
     g.add(ground, roads);
 
     const pad = new THREE.Mesh(new THREE.CircleGeometry(PAD_R, 96), new THREE.MeshStandardMaterial({ map: this.track(padTexture()), roughness: 0.92, metalness: 0 }));
+    this.padMesh = pad;
     pad.rotation.x = -Math.PI / 2; pad.position.y = PAD_TOP; pad.receiveShadow = true;
     const skirt = new THREE.Mesh(new THREE.CylinderGeometry(PAD_R, PAD_R + 3, 0.9, 96, 1, true), new THREE.MeshStandardMaterial({ color: 0x8b8880, roughness: 0.95, metalness: 0 }));
     skirt.position.y = 0.15; skirt.receiveShadow = true;
@@ -322,7 +364,64 @@ export class LaunchEnvironment {
     sc.left = -SHADOW_HALF; sc.right = SHADOW_HALF; sc.top = SHADOW_HALF; sc.bottom = -SHADOW_HALF; sc.near = 120; sc.far = 400;
     sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.06;
     this.sun = sun;
-    g.add(sun, sun.target);
+    g.add(sun, sun.target, this.horizonRig);
+    this.loadPhotos(anisotropy);
+  }
+
+  private loadPhotos(anisotropy: number) {
+    const load = (name: string, apply: (t: THREE.Texture) => void) => tryLoad(`${TEXTURE_DIR}${name}.webp`).then((t) => {
+      if (!t) return;
+      if (this.closed) { t.dispose(); return; }
+      t.anisotropy = anisotropy;
+      apply(this.track(t));
+    });
+    load('horizon-360', (t) => this.setHorizon(t));
+    load('ground-scrub', (t) => this.setGround(t));
+    load('pad-concrete', (t) => this.setPad(t));
+  }
+
+  private setHorizon(t: THREE.Texture) {
+    const geometry = new THREE.CylinderGeometry(HORIZON_R, HORIZON_R, HORIZON_R * (HORIZON_TOP + HORIZON_BOTTOM), 128, 1, true);
+    const band = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ map: t, side: THREE.BackSide, transparent: true, depthWrite: false, fog: false }));
+    band.position.y = (HORIZON_R * (HORIZON_TOP - HORIZON_BOTTOM)) / 2; band.rotation.y = this.axisYaw;
+    band.renderOrder = -9; band.frustumCulled = false;
+    this.horizonRig.add(band);
+    this.horizonBand = band;
+  }
+
+  private setGround(t: THREE.Texture) {
+    const mat = this.groundMesh.material;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.setScalar(TILE / GROUND_TILE);
+    mat.map?.dispose(); mat.map = t;
+    mat.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+        vec4 sampledDiffuseColor = texture2D(map, vMapUv);
+        sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, texture2D(map, vMapUv.yx * 2.9 + vec2(0.37, 0.61)).rgb, 0.5);
+        diffuseColor *= sampledDiffuseColor;`);
+      fadeWithDistance(shader);
+    };
+    mat.customProgramCacheKey = () => 'launch-ground-photo';
+    mat.needsUpdate = true;
+  }
+
+  private setPad(t: THREE.Texture) {
+    const mat = this.padMesh.material, repeat = (2 * PAD_R) / PAD_TILE, wear = this.track(padWearTexture());
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.setScalar(repeat);
+    mat.map?.dispose(); mat.map = t;
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.wearMap = { value: wear }; shader.uniforms.tiles = { value: repeat };
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform sampler2D wearMap; uniform float tiles;')
+        .replace('#include <map_fragment>', `
+          vec4 sampledDiffuseColor = texture2D(map, vMapUv);
+          vec2 slab = floor(vMapUv);
+          sampledDiffuseColor.rgb *= 0.84 + 0.32 * fract(sin(dot(slab, vec2(12.9898, 78.233))) * 43758.5453);
+          vec4 wear = texture2D(wearMap, vMapUv / tiles);
+          sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, wear.rgb, wear.a);
+          diffuseColor *= sampledDiffuseColor;`);
+    };
+    mat.customProgramCacheKey = () => 'launch-pad-photo';
+    mat.needsUpdate = true;
   }
 
   private track<T extends THREE.Texture>(t: T) { this.textures.push(t); return t; }
@@ -339,14 +438,22 @@ export class LaunchEnvironment {
     this.sky.position.copy(cam);
     const u = this.sky.material.uniforms;
     u.day!.value = 1 - sky;
-    u.ridge!.value = 1 - smooth(4, 90, alt);
+    u.ridge!.value = this.horizonBand ? 0 : 1 - smooth(4, 90, alt);
     this.horizon.copy(this.space).lerp(this.horizonDay, 1 - sky);
     const fade = 1 - smooth(250, 900, alt);
     for (const m of this.fading) { m.material.opacity = fade; m.visible = fade > 0.01; }
     this.sun.castShadow = !xr;
+
+    const band = this.horizonBand;
+    if (band) {
+      const dip = Math.acos(this.earthR / (this.earthR + Math.max(cam.y, 0)));
+      this.horizonRig.position.set(cam.x, cam.y - HORIZON_R * Math.tan(Math.min(dip - this.horizonDip0, 0.7)), cam.z);
+      band.material.opacity = 1 - sky; band.visible = sky < 0.99;
+    }
   }
 
   dispose() {
+    this.closed = true;
     this.group.removeFromParent();
     if (this.loadedTower) disposeObject(this.loadedTower);
     this.group.traverse((o) => {

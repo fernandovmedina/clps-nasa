@@ -87,9 +87,9 @@ export class LaunchPhase implements Phase {
     app.flags.clear(); app.selected = null; app.ranking = []; app.data = null;
     this.motion?.addEventListener('change', this.onMotion);
     const sc = this.scene;
-    this.env = new LaunchEnvironment(EARTH_R, this.sunDir);
+    this.env = new LaunchEnvironment(EARTH_R, this.sunDir, app.renderer.capabilities.getMaxAnisotropy(), Math.atan2(-this.padCam.x, -this.padCam.z) + Math.PI / 2);
     sc.background = this.env.horizon;
-    sc.fog = new THREE.Fog(this.env.horizon.clone(), 30, 260);
+    sc.fog = new THREE.Fog(this.env.horizon.clone(), 25, 200);
     sc.add(this.hemi, this.env.group, this.flameLight);
 
     const earth = new THREE.Mesh(new THREE.SphereGeometry(EARTH_R, 256, 128), new THREE.MeshStandardMaterial({
@@ -293,7 +293,7 @@ export class LaunchPhase implements Phase {
     else if (!grounded && this.crackle) { this.crackle.stop(); this.crackle = null; }
     this.env.update(camPos, alt, sky, app.isXR);
     const fog = this.scene.fog as THREE.Fog;
-    fog.color.copy(this.env.horizon); fog.near = lerp(30, 40000, sky); fog.far = lerp(260, 60000, sky);
+    fog.color.copy(this.env.horizon); fog.near = lerp(25, 40000, sky); fog.far = lerp(200, 60000, sky);
     this.hemi.intensity = lerp(HEMI_DAY, 0.12, sky);
     (this.stars.material as THREE.PointsMaterial).opacity = smooth(250, 1200, alt);
     this.atmo.material.uniforms.opacity.value = smooth(80, 700, alt) * 0.9;
