@@ -8,6 +8,7 @@ import { createMoon } from '../engine/moon';
 import { clamp01, damp, lerp, rand, smooth } from '../engine/util';
 import { clearSurface } from './surface-world';
 import { disposeObject, loadRocketModel } from './rocket-model';
+import { MEAN_MOON_DISTANCE_KM, earthMoonDistanceKm } from './launch-telemetry';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const EARTH_R = 3000;
@@ -16,6 +17,10 @@ const MOON_R = 150;
 const MOON_C = new THREE.Vector3(900, 2700, -1400);
 const T_IGN = 2.6;
 const T_LIFT = 3.3;
+const HUD_DIST = 1.45;
+const HUD_W = 1.15;
+const HUD_H = (HUD_W * 360) / 1400;
+const COUNT_W = (HUD_W * 480) / 1400;
 
 /* ---------------- models ---------------- */
 function buildRocket() {
@@ -78,6 +83,7 @@ export class LaunchPhase implements Phase {
   private progress = 0; private shownPct = 0; private done = false; private leaving = false;
   private status = 'Inicializando sistemas de vuelo';
   private tele = { alt: '0.0 km', vel: '0.00 km/s', dist: '384,400 km' };
+  private moonKm = MEAN_MOON_DISTANCE_KM; private moonTarget = MEAN_MOON_DISTANCE_KM;
   private uiT = 0; private countLabel = '';
 
   private rocket: THREE.Group; private nozzles: THREE.Vector3[]; private closed = false;
@@ -90,7 +96,7 @@ export class LaunchPhase implements Phase {
   private atmo: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
   private bg = new THREE.Color(0x86b6e6); private day = new THREE.Color(0x86b6e6); private space = new THREE.Color(0x000004);
   private padCam = new THREE.Vector3(34, 9, 46);
-  private hud: Panel; private count: Panel;
+  private hud: Panel; private count: Panel; private dock = new THREE.Group();
   private rumble: LoopControl | null = null; private wind: LoopControl | null = null; private crackle: LoopControl | null = null;
 
   constructor(private app: LunarApp) {
@@ -149,38 +155,63 @@ export class LaunchPhase implements Phase {
     this.travelUnits = MOON_C.distanceTo(EARTH_C) - EARTH_R - MOON_R;
 
     // HUD (in-world, so it also shows in the headset)
-    this.hud = new Panel(1400, 360, 1.15, (p, g) => this.drawHud(p, g));
-    this.count = new Panel(1024, 256, 2.2, (_p, g) => {
-      if (!this.countLabel) return;
-      g.font = `800 150px ${UI.mono}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.shadowColor = 'rgba(255,170,80,.7)'; g.shadowBlur = 40; g.fillStyle = '#fff';
-      g.fillText(this.countLabel, 512, 134);
-    });
+    this.hud = new Panel(1400, 360, HUD_W, (p, g) => this.drawHud(p, g));
+    this.count = new Panel(480, 360, COUNT_W, (p, g) => this.drawCount(p, g));
+    this.count.mesh.visible = false;
+    this.dock.add(this.hud.mesh, this.count.mesh);
   }
 
   enter() {
     const rig = this.app.rig;
-    rig.add(this.hud.mesh, this.count.mesh);
-    this.hud.place(0, 1.02, -1.45);
-    this.count.place(0, 2.05, -3.2);
+    rig.add(this.dock);
+    this.dock.position.set(0, 1.06, -HUD_DIST);
+    this.dock.quaternion.setFromRotationMatrix(new THREE.Matrix4().lookAt(new THREE.Vector3(0, 1.6, 0), this.dock.position, UP));
     this.app.setView(this.padCam, new THREE.Vector3(0, 12, 0), { snap: true, rate: 3 });
     this.rumble = this.app.audio.loop('engine_rumble');
     this.wind = this.app.audio.loop('wind_maxq');
 
     this.app.opts.loadData((p, msg) => { this.progress = Math.max(this.progress, clamp01(p)); this.status = msg; this.hud.invalidate(); })
-      .then((d) => { this.app.data = d; this.done = true; this.status = 'Datos listos · Rumbo al polo sur lunar'; })
+      .then((d) => {
+        this.app.data = d; this.done = true; this.status = 'Datos listos · Rumbo al polo sur lunar';
+        this.moonTarget = earthMoonDistanceKm(d.global, d.landingDate) ?? this.moonTarget;
+      })
       .catch((e) => { console.error(e); this.status = 'Error al cargar datos — reintenta'; });
   }
 
   exit() {
     this.closed = true; disposeObject(this.rocket);
-    this.hud.dispose(); this.count.dispose();
+    this.hud.dispose(); this.count.dispose(); this.dock.removeFromParent();
     this.rumble?.stop(); this.wind?.stop(); this.crackle?.stop();
+  }
+
+  private drawCount(p: Panel, g: CanvasRenderingContext2D) {
+    const label = this.countLabel;
+    if (!label) return;
+    p.frame(g);
+    const tick = label.startsWith('T-');
+    let size = tick ? 150 : 84;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    do { g.font = `800 ${size}px ${UI.font}`; size -= 4; } while (g.measureText(label).width > p.pxW - 64 && size > 32);
+    g.fillStyle = tick ? UI.text : UI.accent;
+    g.fillText(label, p.pxW / 2, p.pxH / 2 + 4);
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+  }
+
+  /** Countdown docked beside the telemetry (stacked above it on narrow screens), scaled to stay inside the view. */
+  private layoutDock() {
+    const app = this.app, stacked = !app.isXR && app.camera.aspect < 1.2;
+    this.count.mesh.position.set(stacked ? 0 : (HUD_W + COUNT_W) / 2 + 0.03, stacked ? HUD_H + 0.03 : 0, 0);
+    let k = 1;
+    if (!app.isXR) {
+      const reach = stacked ? HUD_W / 2 : HUD_W / 2 + 0.03 + COUNT_W;
+      k = Math.min(1, (HUD_DIST * Math.tan(Math.PI / 6) * app.camera.aspect * 0.94) / reach);
+    }
+    this.dock.scale.setScalar(k);
   }
 
   private drawHud(p: Panel, g: CanvasRenderingContext2D) {
     p.frame(g);
-    g.fillStyle = '#ff5a36'; g.beginPath(); g.arc(56, 62, 9, 0, 7); g.fill();
+    g.fillStyle = UI.accent; g.beginPath(); g.arc(56, 62, 9, 0, 7); g.fill();
     g.font = `600 26px ${UI.mono}`; g.fillStyle = UI.dim;
     g.fillText('MISSION CONTROL  /  LUNAR SOUTH POLE · SITE PLANNER', 80, 72);
     const cols: [string, string][] = [['ALTITUD', this.tele.alt], ['VELOCIDAD', this.tele.vel], ['DIST. A LA LUNA', this.tele.dist]];
@@ -209,7 +240,7 @@ export class LaunchPhase implements Phase {
     else if (t >= T_LIFT && t < T_LIFT + 1.6) label = 'DESPEGUE';
     if (label !== this.countLabel && label.startsWith('T-')) app.audio.play('countdown_tick');
     if (label !== this.countLabel && label === 'IGNICIÓN') app.audio.play('ignition');
-    if (label !== this.countLabel) { this.countLabel = label; this.count.invalidate(); }
+    if (label !== this.countLabel) { this.countLabel = label; this.count.mesh.visible = label !== ''; this.count.invalidate(); }
 
     // motion along the trajectory, gated by real loading progress
     let thrust = t > T_IGN ? smooth(T_IGN, T_LIFT, t) : 0;
@@ -324,14 +355,18 @@ export class LaunchPhase implements Phase {
     // telemetry (10 Hz)
     this.uiT += dt;
     if (this.uiT > 0.1) {
+      const tick = this.uiT;
       this.uiT = 0;
       const u = Math.max(0, pos.distanceTo(EARTH_C) - EARTH_R - 3.8);
       const km = s >= 0.999 ? 384300 : 384400 * Math.pow(clamp01(u / this.travelUnits), 2.2);
       const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
       const v = t < T_LIFT ? 0 : lerp(lerp(0, 10.9, smooth(0, 0.25, s)), 1.7, smooth(0.6, 1, s)) * (0.75 + 0.25 * Math.min(1, this.speed / 0.04));
-      this.tele = { alt: km < 1000 ? `${km.toFixed(1)} km` : `${fmt(km)} km`, vel: `${v.toFixed(2)} km/s`, dist: `${fmt(Math.max(100, 384400 - km))} km` };
+      this.moonKm = Math.abs(this.moonTarget - this.moonKm) < 0.5 ? this.moonTarget : lerp(this.moonKm, this.moonTarget, damp(2.5, tick));
+      const left = Math.max(100, this.moonKm * (1 - clamp01(km / 384300)));
+      this.tele = { alt: km < 1000 ? `${km.toFixed(1)} km` : `${fmt(km)} km`, vel: `${v.toFixed(2)} km/s`, dist: `${fmt(left)} km` };
       this.hud.invalidate();
     }
+    this.layoutDock();
     this.hud.update(); this.count.update();
 
     // arrival → orbit insertion
