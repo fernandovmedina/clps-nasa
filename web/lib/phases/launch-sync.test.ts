@@ -85,6 +85,49 @@ describe('LaunchSync: the crew', () => {
     expect(room.state.playing).toBe(false);
   });
 
+  it('tells the room again that it is playing when a snapshot says otherwise after it began', () => {
+    const room = new FakeRoom();
+    const crew = new Client(room, true);
+    crew.sync.start('crew');
+    room.state = { ...room.state, playing: false };
+    crew.sent = [];
+
+    crew.hello();
+    expect(crew.sent).toEqual([
+      { type: 'hello' },
+      { type: 'set_time', t: '2027-01-10T00:00:00.000Z', playing: true },
+    ]);
+    expect(room.state.playing).toBe(true);
+
+    crew.hello();
+    expect(crew.sent.filter((m) => m.type === 'set_time')).toHaveLength(1);
+    expect(crew.begun).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends playing once per snapshot that lacks it, and nothing when the room already plays', () => {
+    const room = new FakeRoom();
+    const crew = new Client(room, true);
+    crew.sync.start('crew');
+    crew.sent = [];
+
+    crew.deliver({ ...room.state, playing: false });
+    crew.deliver({ ...room.state, playing: false });
+    expect(crew.sent).toHaveLength(2);
+
+    crew.sent = [];
+    crew.deliver({ ...room.state, playing: true });
+    expect(crew.sent).toEqual([]);
+  });
+
+  it('does not answer relayed set_time messages after it began', () => {
+    const room = new FakeRoom();
+    const crew = new Client(room, true);
+    crew.sync.start('crew');
+    crew.sent = [];
+    crew.deliver({ type: 'set_time', t: '2027-03-01T00:00:00Z', playing: false });
+    expect(crew.sent).toEqual([]);
+  });
+
   it('ignores what other clients say about time and never begins from the room', () => {
     const room = new FakeRoom();
     const crew = new Client(room, true);
@@ -148,6 +191,16 @@ describe('LaunchSync: the monitor', () => {
     monitor.deliver({ type: 'set_time', t: '2027-03-01T00:00:00Z', playing: true });
     expect(monitor.applied).toEqual([]);
     expect(monitor.begun).toHaveBeenCalledTimes(1);
+  });
+
+  it('never sends anything for a snapshot that says it is not playing, begun or not', () => {
+    const room = new FakeRoom();
+    const monitor = new Client(room, false);
+    monitor.deliver({ ...room.state, playing: false });
+    monitor.sync.start('room');
+    monitor.deliver({ ...room.state, playing: false });
+    monitor.deliver({ ...room.state, playing: false });
+    expect(monitor.sent).toEqual([]);
   });
 
   it('does not echo to the room when it begins by itself', () => {
