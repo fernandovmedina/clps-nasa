@@ -193,10 +193,13 @@
   .mission h2 { display: none; }
   .room { position: static; }
   .roomBody { left: 12px; right: 12px; width: auto; }
-  .status { width: 100%; padding: 12px 14px; gap: 8px; max-height: 38dvh; overflow-y: auto; }
+  .status { width: 100%; padding: 12px 14px; gap: 8px; max-height: 36dvh; overflow-y: auto; }
   .figure { font-size: clamp(44px, 14vw, 64px); }
   .facts { flex-wrap: nowrap; overflow-x: auto; gap: 16px; padding-bottom: 2px; }
   .facts div { flex: none; }
+  .toggles { flex-wrap: nowrap; overflow-x: auto; }
+  .toggles > span, .toggles .chip { flex: none; }
+  .status .detail { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .side { width: 100%; padding: 8px 12px; max-height: none; overflow: visible; }
   .readouts { flex-direction: row; gap: 16px; overflow-x: auto; text-align: left; }
   .readout { flex: none; }
