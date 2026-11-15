@@ -84,6 +84,7 @@ describe('mission tools', () => {
   it('analisis_del_sitio analyses the chosen site by default and any site by name or id', async () => {
     const chosen = await call(source(), 'analisis_del_sitio');
     expect(chosen).toMatchObject({ sitio: 'Malapert A (IM-1 Odysseus)', puntaje_de_100: 61, estado: 'Marginal', es_el_sitio_elegido: true });
+    expect(chosen.resumen).toBe('Malapert A (IM-1 Odysseus): puntaje 61 de 100, estado Marginal. Sol visible el 62 % de la misión y Tierra visible el 40 %.');
     expect(chosen.sol).toMatchObject({ elevacion_grados: 1.83, azimut_grados: 123, visible_porcentaje_de_la_mision: 62, horas_de_sol_en_la_mision: 210 });
     expect(chosen.sol.proximo_atardecer).toBe('120.4 h después del aterrizaje');
     expect(chosen.tierra.proxima_puesta_de_la_tierra).toBe('no se oculta en los 14 días evaluados');

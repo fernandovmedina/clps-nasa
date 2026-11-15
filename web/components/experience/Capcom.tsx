@@ -93,7 +93,7 @@ export function CapcomButton({ controller }: { controller: CapcomController }) {
         onContextMenu={(e) => e.preventDefault()}
       >
         <MicIcon />
-        {unavailable ? <>CAPCOM <span className={styles.long}>no disponible</span></> : <><span className={styles.long}>Hablar con </span>CAPCOM</>}
+        <span>{unavailable ? <>CAPCOM <span className={styles.long}>no disponible</span></> : <><span className={styles.long}>Hablar con </span>CAPCOM</>}</span>
       </button>
       <span id="capcom-hint" className={styles.sr}>
         Mantén pulsado para hablar. Con el teclado, mantén pulsada la tecla {CAPCOM_KEY.toUpperCase()}, o Espacio con el foco en el botón.

@@ -102,6 +102,7 @@ function siteReading(m: SiteMetrics) {
   const sunUp = m.sun.aboveHorizon > -SUN_HALF_DISK;
   const earthUp = m.earth.aboveHorizon > 0;
   return {
+    resumen: `${m.site.name}: puntaje ${Math.round(m.score)} de 100, estado ${STATUS_LABELS[m.status]}. Sol visible el ${Math.round(m.illumPct)} % de la misión y Tierra visible el ${Math.round(m.earthPct)} %.`,
     sitio: m.site.name,
     id: m.site.id,
     puesto_en_el_ranking: m.rank,
