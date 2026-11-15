@@ -13,8 +13,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    name: Verify
+    uses: ./.github/workflows/ci.yml
+
   deploy:
     name: Deploy to Cloudflare Workers
+    needs: verify
     if: github.ref == 'refs/heads/main' && vars.CLOUDFLARE_DEPLOY == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
