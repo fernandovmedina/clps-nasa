@@ -156,7 +156,7 @@ test('in the orbit, choosing another site in the list changes the big figure and
   expect(stopped.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => v.id)).toEqual([])
 })
 
-test('a paused mission does not make React render: no commits in five seconds', async ({ page }) => {
+test('once the data is loaded, a paused mission does not make React render: no commits in five seconds', async ({ page }) => {
   test.setTimeout(120_000)
   await page.addInitScript(() => {
     const w = window as unknown as { __commits: number; __REACT_DEVTOOLS_GLOBAL_HOOK__: unknown }
@@ -173,6 +173,7 @@ test('a paused mission does not make React render: no commits in five seconds', 
     }
   })
   await openLaunch(page, '?speed=4')
+  await expect(page.getByText('Aterrizaje 10 ene 2027 · 00:00 UTC')).toBeVisible({ timeout: 90_000 })
   await start(page).click()
   await expect(figure(page)).toHaveText(/^T/, { timeout: 30_000 })
   await page.getByRole('button', { name: 'Pausar' }).click()
