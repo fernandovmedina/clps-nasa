@@ -402,3 +402,19 @@ test('joining another room makes a monitor and it stays one after a reload', asy
   await expect(roomCode(page)).toHaveText('QRST', { timeout: 30_000 })
   await expectRole(page, 'monitor')
 })
+
+test('CAPCOM: the talk button is in the header with its accessible name, hint and keyboard shortcut', async ({ page }) => {
+  await openLaunch(page, '?speed=4')
+  const talk = page.getByRole('button', { name: 'Hablar con CAPCOM' })
+  await expect(talk).toBeVisible()
+  await expect(talk).toBeEnabled()
+  await expect(talk).toHaveAttribute('aria-keyshortcuts', 'V')
+  await expect(talk).toHaveAccessibleDescription(/Mantén pulsado para hablar.*tecla V/)
+  await expect(page.getByTestId('capcom-caption')).toHaveCount(0)
+})
+
+test('?capcom=0 hides CAPCOM completely', async ({ page }) => {
+  await openLaunch(page, '?speed=4&capcom=0')
+  await expect(page.getByRole('button', { name: /CAPCOM/ })).toHaveCount(0)
+  await expect(page.getByTestId('capcom-live')).toHaveCount(0)
+})

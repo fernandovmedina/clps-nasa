@@ -113,3 +113,53 @@ describe('AudioEngine pause and resume', () => {
     audio.dispose();
   });
 });
+
+describe('AudioEngine ducking', () => {
+  function recordingContext() {
+    const targets: number[] = [];
+    const masters: Array<{ value: number }> = [];
+    const param = (record: boolean) => ({
+      value: 0,
+      setTargetAtTime: (v: number) => { if (record) targets.push(v); },
+      setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, cancelScheduledValues() {},
+    });
+    let gains = 0;
+    const createGain = () => {
+      const gain = param(gains++ === 0);
+      masters.push(gain);
+      return { gain, connect() {}, disconnect() {} };
+    };
+    const createDynamicsCompressor = () => ({ threshold: param(false), ratio: param(false), attack: param(false), release: param(false), connect() {}, disconnect() {} });
+    const ctx = {
+      sampleRate: 8000, currentTime: 0, state: 'running', destination: {},
+      createGain, createDynamicsCompressor,
+      createBuffer: (_c: number, length: number) => { const data = new Float32Array(length); return { getChannelData: () => data }; },
+    } as unknown as BaseAudioContext;
+    return { ctx, targets, gain: masters[0] ?? { value: 0 }, masters };
+  }
+
+  it('lowers the master gain while ducked and restores it afterwards', () => {
+    const { ctx, targets, masters } = recordingContext();
+    const audio = new AudioEngine({ context: ctx });
+    const normal = masters[0]!.value;
+    expect(normal).toBeGreaterThan(0);
+    audio.setDucked(true);
+    expect(audio.ducked).toBe(true);
+    expect(targets.at(-1)).toBeCloseTo(normal * 0.2);
+    audio.setDucked(false);
+    expect(targets.at(-1)).toBeCloseTo(normal);
+  });
+
+  it('does nothing when the state does not change and never overrides mute', () => {
+    const { ctx, targets } = recordingContext();
+    const audio = new AudioEngine({ context: ctx });
+    audio.setDucked(false);
+    expect(targets).toHaveLength(0);
+    audio.setMuted(true);
+    audio.setDucked(true);
+    expect(targets.at(-1)).toBe(0);
+    audio.setDucked(false);
+    expect(targets.at(-1)).toBe(0);
+    expect(audio.muted).toBe(true);
+  });
+});

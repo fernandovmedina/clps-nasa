@@ -32,6 +32,8 @@ const NOISE_TARGET_RMS = 0.4;
 const SMOOTH_S = 0.1;
 const TAIL_S = 0.05;
 const NOOP_LOOP: LoopControl = { set() {}, stop() {} };
+const DUCK_GAIN = 0.2;
+const DUCK_SMOOTH_S = 0.12;
 
 const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0);
 const isNoise = (s: Layer['source']): s is NoiseKind => s === 'white' || s === 'pink' || s === 'brown';
@@ -276,6 +278,7 @@ export class AudioEngine {
   private paused = false;
   private bound = false;
   private _muted = false;
+  private _ducked = false;
 
   constructor(opts: AudioEngineOptions = {}) {
     this.injected = !!opts.context;
@@ -294,6 +297,15 @@ export class AudioEngine {
   }
 
   get muted() { return this._muted; }
+
+  get ducked() { return this._ducked; }
+
+  /** Lowers the whole mix under a voice (CAPCOM speaking) without touching the mute preference. */
+  setDucked(value: boolean) {
+    if (this._ducked === value) return;
+    this._ducked = value;
+    this.applyMute(DUCK_SMOOTH_S);
+  }
 
   setMuted(value: boolean) {
     this._muted = value;
@@ -359,7 +371,7 @@ export class AudioEngine {
 
   private setup(ctx: BaseAudioContext) {
     const master = ctx.createGain();
-    master.gain.value = this._muted ? 0 : RECIPE.master.gain;
+    master.gain.value = this.targetGain();
     const c = RECIPE.master.compressor;
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = c.threshold;
@@ -390,10 +402,14 @@ export class AudioEngine {
     return this.ctx;
   }
 
-  private applyMute() {
+  private targetGain() {
+    return this._muted ? 0 : RECIPE.master.gain * (this._ducked ? DUCK_GAIN : 1);
+  }
+
+  private applyMute(smooth = 0.03) {
     const ctx = this.ctx, master = this.master;
     if (!ctx || !master) return;
-    try { master.gain.setTargetAtTime(this._muted ? 0 : RECIPE.master.gain, ctx.currentTime, 0.03); } catch { /* closed */ }
+    try { master.gain.setTargetAtTime(this.targetGain(), ctx.currentTime, smooth); } catch { /* closed */ }
   }
 
   private unbind() {

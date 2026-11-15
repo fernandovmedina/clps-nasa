@@ -9,6 +9,9 @@ import { LandingPhase } from '@/lib/phases/landing';
 import { TransmitPhase } from '@/lib/phases/transmit';
 import { PHASE_ORDER } from '@/lib/engine/hud';
 import { loadMissionData } from '@/lib/mission/sites';
+import { CapcomController } from '@/lib/capcom/controller';
+import { installCapcomDebug } from '@/lib/capcom/debug';
+import { mountCapcomVrPanel } from '@/lib/capcom/vr-panel';
 import { readSavedRoom, resolveInitialRoom, saveRoom, type RoomSession } from '@/lib/sync/room-session';
 import MissionLayer from './experience/MissionLayer';
 import styles from './LunarExperience.module.css';
@@ -43,7 +46,9 @@ function startRoom(params: URLSearchParams): RoomSession {
 export default function LunarExperience() {
   const mount = useRef<HTMLDivElement>(null);
   const appRef = useRef<LunarApp | null>(null);
+  const capcomRef = useRef<CapcomController | null>(null);
   const [app, setApp] = useState<LunarApp | null>(null);
+  const [capcom, setCapcom] = useState<CapcomController | null>(null);
   const [xr, setXr] = useState<'checking' | 'yes' | 'no'>('checking');
   const [inVR, setInVR] = useState(false);
   const [preview, setPreview] = useState(false);
@@ -90,6 +95,10 @@ export default function LunarExperience() {
       .catch((e) => setError(String(e)));
     appRef.current = app;
     setApp(app);
+    const voice = params.get('capcom') === '0' ? null : new CapcomController(app, installCapcomDebug(params, app));
+    capcomRef.current = voice;
+    setCapcom(voice);
+    const unmountVrPanel = voice ? mountCapcomVrPanel(app, voice) : null;
 
     const onStart = () => setInVR(true);
     const onEnd = () => setInVR(false);
@@ -103,6 +112,10 @@ export default function LunarExperience() {
       cancelled = true;
       app.renderer.xr.removeEventListener('sessionstart', onStart);
       app.renderer.xr.removeEventListener('sessionend', onEnd);
+      unmountVrPanel?.();
+      capcomRef.current?.dispose();
+      capcomRef.current = null;
+      setCapcom(null);
       app.dispose();
       appRef.current = null;
       setApp(null);
@@ -114,6 +127,8 @@ export default function LunarExperience() {
   }, [roomCode, isHost]);
 
   const enterVR = async () => {
+    // The microphone cannot be requested inside a VR session: ask for it here, while the page is still on screen.
+    try { await capcomRef.current?.prepareForVR(); } catch { /* VR works without CAPCOM */ }
     try { await appRef.current?.enterVR(); } catch (e) { setError(`No se pudo iniciar VR: ${String(e)}`); }
   };
 
@@ -128,7 +143,7 @@ export default function LunarExperience() {
   return (
     <div className={styles.root}>
       <div ref={mount} className={styles.canvas} />
-      {!inVR && !preview && <MissionLayer app={app} vr={xr} onEnterVR={enterVR} room={{ code: roomCode, isHost, onJoin: joinRoom }} />}
+      {!inVR && !preview && <MissionLayer app={app} vr={xr} onEnterVR={enterVR} capcom={capcom} room={{ code: roomCode, isHost, onJoin: joinRoom }} />}
       {error && <div role="alert" className={styles.error}>{error}</div>}
     </div>
   );
