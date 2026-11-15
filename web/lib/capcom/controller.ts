@@ -283,13 +283,15 @@ export class CapcomController {
       if (this.disposed) { off(); void session.close(); return; }
       this.session = session;
       this.sessionOff = off;
-      session.setMuted(!this.snap.talking);
       this.startedAt = this.deps.now();
       this.lastActivity = this.startedAt;
       this.ready = true;
       this.connecting = false;
+      // What was said while connecting goes out as real audio even if the button is already up; only then does it go silent.
+      session.setMuted(false);
       for (const frame of this.pending) session.sendAudio(frame);
       this.pending = [];
+      session.setMuted(!this.snap.talking);
       this.checkTimer ??= setInterval(() => this.check(), CHECK_MS);
       this.publish();
     } catch (error) {

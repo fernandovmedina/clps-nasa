@@ -9,13 +9,15 @@ class FakeSession implements SessionLike {
   state: SessionLike['state'] = 'closed';
   muted: boolean[] = [];
   sent: Int16Array[] = [];
+  private silenced = false;
   closed = 0;
   private listener: ((e: CapcomEvent) => void) | null = null;
   constructor(private startError: Error | null = null, private gate: Promise<void> | null = null) {}
   subscribe(listener: (e: CapcomEvent) => void) { this.listener = listener; return () => { this.listener = null; }; }
   start = vi.fn(async () => { await this.gate; if (this.startError) throw this.startError; this.state = 'listening'; });
-  sendAudio = (frame: Int16Array) => { this.sent.push(frame); };
-  setMuted = (muted: boolean) => { this.muted.push(muted); };
+  /** Like the real session: while muted, the microphone is replaced by silence. */
+  sendAudio = (frame: Int16Array) => { this.sent.push(this.silenced ? new Int16Array(frame.length) : frame); };
+  setMuted = (muted: boolean) => { this.silenced = muted; this.muted.push(muted); };
   close = vi.fn(async () => { this.closed++; this.state = 'closed'; });
   emit(event: CapcomEvent) { this.listener?.(event); }
 }
@@ -87,6 +89,24 @@ describe('CapcomController', () => {
     t.frames.push(pcm(3));
     expect(t.session().sent.map((f) => f[0])).toEqual([1, 2, 3]);
     expect(t.session().muted.at(-1)).toBe(false);
+  });
+
+  it('keeps the question as real audio when the button is released before the session connects', async () => {
+    const t = setup({ hold: true });
+    t.controller.press();
+    await flush();
+    t.frames.push(pcm(11));
+    t.frames.push(pcm(12));
+    t.frames.push(pcm(13));
+    t.controller.release();
+    t.frames.push(pcm(99));
+    t.open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.snap().state).toBe('listening');
+    expect(t.session().sent.map((f) => Array.from(f))).toEqual([[11], [12], [13]]);
+    expect(t.session().muted.at(-1)).toBe(true);
+    t.frames.push(pcm(5));
+    expect(Array.from(t.session().sent.at(-1)!)).toEqual([0]);
   });
 
   it('sends silence instead of the microphone while the control is not held, and never cuts the stream', async () => {
