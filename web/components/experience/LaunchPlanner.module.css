@@ -25,7 +25,7 @@
 
 .codeBox { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px 16px; border-radius: 12px; border: 1px dashed var(--accent); }
 .codeBox h3 { font-size: 12px; font-weight: 600; color: var(--soft); }
-.code { font-size: 32px; font-weight: 700; line-height: 1.1; letter-spacing: 0.08em; color: var(--accent); }
+.codeBox .code { font-size: 32px; font-weight: 700; line-height: 1.1; letter-spacing: 0.08em; color: var(--accent); }
 .codeBox p { font-size: 13px; color: var(--soft); }
 .codeBox em { font-style: normal; color: var(--ink); font-weight: 600; }
 
@@ -34,7 +34,7 @@
 
 @media (max-width: 1023.98px) {
   .figures { grid-template-columns: 1fr; }
-  .code { font-size: 28px; }
+  .codeBox .code { font-size: 28px; }
   .footer { flex-direction: column-reverse; align-items: stretch; }
   .footer a { justify-content: center; }
 }

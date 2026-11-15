@@ -27,7 +27,7 @@
 
 .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 
-@media (max-width: 1180px) {
+@media (max-width: 1360px) {
   .card[data-level='planner'] { top: 88px; max-height: calc(100vh - 104px); max-height: calc(100dvh - 104px); }
 }
 @media (max-width: 1023.98px) {

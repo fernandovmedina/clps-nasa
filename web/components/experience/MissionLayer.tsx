@@ -91,7 +91,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
   const [following, setFollowing] = useState(false);
   const prelaunch = phase === 'launch' && hud?.waiting === true && !stopped;
   const planner = planning && !follow && app !== null;
-  const closePlanner = useCallback(() => onPlanning?.(false), [onPlanning]);
+  const closePlanner = useCallback(() => { onPlanning?.(false); refresh(); }, [onPlanning, refresh]);
   const closeFollowing = useCallback(() => setFollowing(false), []);
   const waitingMonitor = follow && prelaunch;
   const controlsHud = planner && hud?.primary ? { ...hud, primary: { ...hud.primary, disabled: true } } : hud;

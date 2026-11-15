@@ -15,7 +15,7 @@
   position: absolute; inset: 0; z-index: 1; pointer-events: none; color: var(--ink);
   font-family: 'Inter Variable', system-ui, sans-serif; font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums;
   display: grid; gap: 16px 20px; padding: 20px;
-  grid-template-columns: 240px minmax(0, 1fr) 272px;
+  grid-template-columns: 256px minmax(0, 1fr) 272px;
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas: 'header header header' 'rail . side' 'bottom bottom bottom';
 }
