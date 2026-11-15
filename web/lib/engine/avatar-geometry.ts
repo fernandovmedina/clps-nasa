@@ -134,6 +134,11 @@ export function stretchForearm(geo: THREE.BufferGeometry, base: Float32Array, ex
   geo.computeBoundingSphere();
 }
 
+/** Bellows ball that closes the cut between two HD arm pieces at an elbow or a wrist: a sphere of the given radius around the joint. */
+export function buildJointBall(radius: number) {
+  return revolve(sphereProfile(radius, 8), { segments: 16, color: SUIT_COLORS.bellows, layer: 'bellows' });
+}
+
 const FINGERS = [
   { y: 0.039, w: 0.023, len: 0.07 },
   { y: 0.013, w: 0.024, len: 0.078 },

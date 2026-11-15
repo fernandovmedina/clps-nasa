@@ -36,7 +36,13 @@ export class LaunchSync {
 
   handle(msg: RoomEvent): void {
     this.host.applyMarkerEvent(msg);
-    if (this.begun) return;
+    if (this.begun) {
+      // The room answered a (re)connect with a snapshot that does not know we launched: the start went to a dead socket.
+      if (msg.type === 'state' && msg.playing !== true && this.host.isHost) {
+        this.host.send({ type: 'set_time', t: this.host.landing().toISOString(), playing: true });
+      }
+      return;
+    }
     if (msg.type !== 'state' && msg.type !== 'set_time') return;
 
     if (this.host.isHost) {

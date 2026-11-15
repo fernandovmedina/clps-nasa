@@ -156,7 +156,14 @@ export default function LunarExperience() {
    */
   const chooseRole = (next: GuideRole) => {
     if (next === 'vr') {
-      if (appRef.current) appRef.current.isHost = true;
+      const current = appRef.current;
+      if (current) {
+        const wasHost = current.isHost;
+        current.isHost = true;
+        // A monitor's launch already listens to the room behind this dialog and may have started from a stale
+        // playing:true; starting over lets the new launch replay the snapshot as the host and announce playing:false.
+        if (!wasHost && current.phase) current.restart();
+      }
       setIsHost(true);
       if (xr === 'yes') {
         setPlanning(false);

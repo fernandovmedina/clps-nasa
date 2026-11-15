@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { LunarApp } from './app';
-import { buildForearm, buildGlove, buildTorso, buildUpperArm, GLOVE_FROM_GRIP, stretchForearm, WRIST_BACK } from './avatar-geometry';
+import { buildForearm, buildGlove, buildJointBall, buildTorso, buildUpperArm, GLOVE_FROM_GRIP, stretchForearm, WRIST_BACK } from './avatar-geometry';
+import { loadHdArms, type HdArms } from './avatar-hd';
 import { createSuitMaterials } from './avatar-material';
 import { damp } from './util';
 
@@ -20,6 +21,22 @@ const TORSO_DROP = 0.42;      // chest center, below the eyes
 // the head is pointing rather than snapping - otherwise a quick head turn spins the whole body.
 const TORSO_YAW_DAMP = 7;
 
+// The HD arm pieces keep the length of the procedural ones and are a little slimmer than modeled; two balls close the cuts at elbow and wrist.
+const HD_GIRTH = 0.88;
+const ELBOW_BALL = 0.08;
+const WRIST_BALL = 0.056;
+const HD_ENV = 0.35;
+
+interface HdPose {
+  upper: THREE.Mesh;
+  fore: THREE.Mesh;
+  glove: THREE.Mesh;
+  elbow: THREE.Mesh;
+  wrist: THREE.Mesh;
+  upperLength: number;
+  foreLength: number;
+}
+
 interface Arm {
   side: 1 | -1; // -1 = left, +1 = right
   upper: THREE.Mesh;
@@ -27,6 +44,8 @@ interface Arm {
   glove: THREE.Mesh;
   foreBase: Float32Array;
   foreExtra: number;
+  /** Once the HD model has loaded: the pieces that take the place of `upper`, `fore` and `glove`, which keep driving the pose. */
+  hd: HdPose | null;
 }
 
 /**
@@ -155,8 +174,11 @@ export class Avatar {
   private placed = false;
   private arms: Arm[];
   private suit: ReturnType<typeof createSuitMaterials>;
+  private hd: HdArms | null = null;
+  private loading = false;
+  private disposed = false;
 
-  constructor(private app: LunarApp) {
+  constructor(private app: LunarApp, private loadArms: () => Promise<HdArms | null> = loadHdArms) {
     this.suit = createSuitMaterials(app.renderer);
     const { cloth, metal, patch } = this.suit;
     this.torso = new THREE.Mesh(buildTorso(CHEST_PLATE_LOCAL), [cloth, metal, patch]);
@@ -169,15 +191,62 @@ export class Avatar {
       const fore = new THREE.Mesh(foreGeo, [cloth, metal]);
       const glove = new THREE.Mesh(buildGlove(side), cloth);
       this.group.add(upper, fore, glove);
-      return { side, upper, fore, glove, foreBase: foreGeo.attributes.position.array.slice() as Float32Array, foreExtra: 0 };
+      return { side, upper, fore, glove, foreBase: foreGeo.attributes.position.array.slice() as Float32Array, foreExtra: 0, hd: null };
     });
     this.group.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = o.receiveShadow = true; });
+  }
+
+  /** The HD arms are fetched on the first frame of a session, so a visit that never enters VR does not pay for them. */
+  private startLoading() {
+    if (this.loading) return;
+    this.loading = true;
+    this.loadArms().then((hd) => {
+      if (!hd) return;
+      if (this.disposed) { hd.dispose(); return; }
+      this.useHd(hd);
+    }, () => {});
+  }
+
+  /** Swaps the procedural arms and gloves for the HD ones; the procedural meshes stay as the source of the pose. */
+  private useHd(hd: HdArms) {
+    this.hd = hd;
+    const elbowBall = buildJointBall(ELBOW_BALL), wristBall = buildJointBall(WRIST_BALL);
+    for (const arm of this.arms) {
+      const set = arm.side === 1 ? hd.right : hd.left;
+      for (const m of new Set([set.upper.material, set.fore.material, set.hand.material])) {
+        m.envMap = this.suit.environment; m.envMapIntensity = HD_ENV;
+        m.needsUpdate = true;
+      }
+      const piece = (geometry: THREE.BufferGeometry, material: THREE.Material) => {
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = mesh.receiveShadow = true; mesh.visible = false;
+        this.group.add(mesh);
+        return mesh;
+      };
+      arm.hd = {
+        upper: piece(set.upper.geometry, set.upper.material), fore: piece(set.fore.geometry, set.fore.material), glove: piece(set.hand.geometry, set.hand.material),
+        elbow: piece(elbowBall, this.suit.cloth), wrist: piece(wristBall, this.suit.cloth),
+        upperLength: set.upper.length, foreLength: set.fore.length,
+      };
+    }
+  }
+
+  private poseHd(arm: Arm, elbow: THREE.Vector3, wrist: THREE.Vector3, reach: number) {
+    const hd = arm.hd!;
+    hd.upper.position.copy(arm.upper.position); hd.upper.quaternion.copy(arm.upper.quaternion);
+    hd.upper.scale.set(HD_GIRTH, UPPER_LEN / hd.upperLength, HD_GIRTH);
+    hd.fore.position.copy(arm.fore.position); hd.fore.quaternion.copy(arm.fore.quaternion);
+    hd.fore.scale.set(HD_GIRTH, reach / hd.foreLength, HD_GIRTH);
+    hd.glove.position.copy(arm.glove.position); hd.glove.quaternion.copy(arm.glove.quaternion);
+    hd.elbow.position.copy(elbow);
+    hd.wrist.position.copy(wrist);
   }
 
   update(dt: number) {
     const app = this.app;
     this.group.visible = app.isXR;
     if (!app.isXR) { this.placed = false; return; }
+    this.startLoading();
 
     const cam = headPose(app);
     // Body-facing: head forward projected onto the horizontal plane, so pitching your head
@@ -201,7 +270,11 @@ export class Avatar {
       controllers.map((c) => c.userData.handedness as string | undefined),
       controllers.map((c, i) => !!c.userData.connected && app.input.grips[i].visible),
     );
-    for (const arm of this.arms) arm.upper.visible = arm.fore.visible = arm.glove.visible = sides.includes(arm.side);
+    for (const arm of this.arms) {
+      const shown = sides.includes(arm.side);
+      arm.upper.visible = arm.fore.visible = arm.glove.visible = shown && !arm.hd;
+      if (arm.hd) arm.hd.upper.visible = arm.hd.fore.visible = arm.hd.glove.visible = arm.hd.elbow.visible = arm.hd.wrist.visible = shown;
+    }
     controllers.forEach((_, i) => {
       const side = sides[i];
       if (!side) return;
@@ -219,11 +292,14 @@ export class Avatar {
         arm.foreExtra = extra;
         stretchForearm(arm.fore.geometry, arm.foreBase, extra);
       }
+      if (arm.hd) this.poseHd(arm, _elbow, wrist, FORE_LEN + extra);
     });
   }
 
   dispose() {
+    this.disposed = true;
     this.group.traverse((o) => (o as THREE.Mesh).geometry?.dispose?.());
+    this.hd?.dispose();
     this.suit.dispose();
   }
 }
