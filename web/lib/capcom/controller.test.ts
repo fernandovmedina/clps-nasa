@@ -9,13 +9,15 @@ class FakeSession implements SessionLike {
   state: SessionLike['state'] = 'closed';
   muted: boolean[] = [];
   sent: Int16Array[] = [];
+  private silenced = false;
   closed = 0;
   private listener: ((e: CapcomEvent) => void) | null = null;
   constructor(private startError: Error | null = null, private gate: Promise<void> | null = null) {}
   subscribe(listener: (e: CapcomEvent) => void) { this.listener = listener; return () => { this.listener = null; }; }
   start = vi.fn(async () => { await this.gate; if (this.startError) throw this.startError; this.state = 'listening'; });
-  sendAudio = (frame: Int16Array) => { this.sent.push(frame); };
-  setMuted = (muted: boolean) => { this.muted.push(muted); };
+  /** Like the real session: while muted, the microphone is replaced by silence. */
+  sendAudio = (frame: Int16Array) => { this.sent.push(this.silenced ? new Int16Array(frame.length) : frame); };
+  setMuted = (muted: boolean) => { this.silenced = muted; this.muted.push(muted); };
   close = vi.fn(async () => { this.closed++; this.state = 'closed'; });
   emit(event: CapcomEvent) { this.listener?.(event); }
 }
@@ -87,6 +89,24 @@ describe('CapcomController', () => {
     t.frames.push(pcm(3));
     expect(t.session().sent.map((f) => f[0])).toEqual([1, 2, 3]);
     expect(t.session().muted.at(-1)).toBe(false);
+  });
+
+  it('keeps the question as real audio when the button is released before the session connects', async () => {
+    const t = setup({ hold: true });
+    t.controller.press();
+    await flush();
+    t.frames.push(pcm(11));
+    t.frames.push(pcm(12));
+    t.frames.push(pcm(13));
+    t.controller.release();
+    t.frames.push(pcm(99));
+    t.open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.snap().state).toBe('listening');
+    expect(t.session().sent.map((f) => Array.from(f))).toEqual([[11], [12], [13]]);
+    expect(t.session().muted.at(-1)).toBe(true);
+    t.frames.push(pcm(5));
+    expect(Array.from(t.session().sent.at(-1)!)).toEqual([0]);
   });
 
   it('sends silence instead of the microphone while the control is not held, and never cuts the stream', async () => {
@@ -202,14 +222,76 @@ describe('CapcomController', () => {
     expect(t.host.narrator.setSuspended).toHaveBeenLastCalledWith(false);
   });
 
-  it('becomes unavailable when the session cannot be opened, and then ignores the button', async () => {
-    const t = setup({ startError: new Error('AccessDenied') });
+  it.each([
+    ['AccessDenied', Object.assign(new Error('not allowed'), { name: 'AccessDenied' })],
+    ['NotAuthorizedException', Object.assign(new Error('x'), { name: 'NotAuthorizedException' })],
+    ['ExpiredToken', Object.assign(new Error('x'), { name: 'ExpiredTokenException' })],
+    ['a 403 response', Object.assign(new Error('forbidden'), { $metadata: { httpStatusCode: 403 } })],
+  ])('becomes unavailable for good when the access is refused (%s), and then ignores the button', async (_label, error) => {
+    const t = setup({ startError: error });
     t.controller.press();
     await vi.advanceTimersByTimeAsync(0);
     expect(t.snap()).toMatchObject({ state: 'unavailable', message: 'CAPCOM no disponible', talking: false });
     t.controller.press();
     expect(t.snap().talking).toBe(false);
     expect(t.loadSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('a network failure while connecting is an error to retry: the button stays usable and the next press connects from scratch', async () => {
+    const t = setup({ startError: new Error('Failed to fetch') });
+    t.controller.press();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.snap()).toMatchObject({ state: 'error', talking: false });
+    expect(t.snap().message).toMatch(/pulsa para reintentar/);
+    expect(t.loadSession).toHaveBeenCalledTimes(1);
+
+    t.options.startError = null;
+    t.controller.press();
+    expect(t.snap()).toMatchObject({ talking: true, message: null });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.loadSession).toHaveBeenCalledTimes(2);
+    expect(t.sessions).toHaveLength(2);
+    expect(t.snap()).toMatchObject({ state: 'listening', message: null });
+  });
+
+  it('does not leave the microphone open after a failed connection, and the retry opens it again', async () => {
+    const t = setup({ startError: new Error('Failed to fetch') });
+    t.controller.press();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.snap().state).toBe('error');
+    expect(t.capture.stop).toHaveBeenCalledTimes(1);
+    t.options.startError = null;
+    t.controller.press();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.startCapture).toHaveBeenCalledTimes(2);
+    expect(t.snap().state).toBe('listening');
+  });
+
+  it('a timeout or a closed socket while connecting is also retryable, any number of times', async () => {
+    const t = setup({ startError: Object.assign(new Error('timeout'), { $metadata: { httpStatusCode: 500, websocketSynthetic500Error: true } }) });
+    for (let i = 0; i < 3; i++) {
+      t.controller.press();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(t.snap().state).toBe('error');
+      t.controller.release();
+    }
+    expect(t.loadSession).toHaveBeenCalledTimes(3);
+  });
+
+  it('the guest access ending while the page is open makes CAPCOM unavailable on the next press, without connecting', async () => {
+    const t = setup();
+    vi.setSystemTime(new Date('2026-11-16T15:00:01Z'));
+    t.controller.press();
+    expect(t.snap()).toMatchObject({ state: 'unavailable', message: 'CAPCOM no disponible', talking: false });
+    expect(t.loadSession).not.toHaveBeenCalled();
+  });
+
+  it('a failed connection after the expiry is unavailable even when the error looks like a network one', async () => {
+    const t = setup({ startError: new Error('Failed to fetch') });
+    t.controller.press();
+    vi.setSystemTime(new Date('2026-11-16T15:00:01Z'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.snap().state).toBe('unavailable');
   });
 
   it('is unavailable from the start once the guest access has expired', () => {
@@ -273,7 +355,7 @@ describe('CapcomController', () => {
     expect(t.sessions[0]!.closed).toBe(0);
   });
 
-  it('a lost connection is an error to retry, and a failed retry makes CAPCOM unavailable', async () => {
+  it('a lost connection is an error to retry; a retry that fails on the network is retryable again, one refused by AWS is not', async () => {
     const t = setup();
     t.controller.press();
     await vi.advanceTimersByTimeAsync(0);
@@ -282,7 +364,13 @@ describe('CapcomController', () => {
     expect(t.snap()).toMatchObject({ state: 'error' });
     expect(t.snap().message).toMatch(/pulsa para reintentar/);
 
-    t.options.startError = new Error('AccessDenied');
+    t.options.startError = new Error('Failed to fetch');
+    t.controller.press();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.snap().state).toBe('error');
+    t.controller.release();
+
+    t.options.startError = Object.assign(new Error('denied'), { name: 'AccessDenied' });
     t.controller.press();
     await vi.advanceTimersByTimeAsync(0);
     expect(t.snap().state).toBe('unavailable');
