@@ -40,7 +40,9 @@ export class PovPhase implements Phase {
     this.world = surfaceFor(app, this.m);
     this.scene = this.world.scene;
     this.eye = new THREE.Vector3(0, this.world.heightAt(0, 0) + app.eyeHeight, 0);
-    this.spy = app.isHost ? null : new SpyView(this.world.scene, this.m.site.id);
+    // Created/destroyed live in syncSpy() (not just here) - isHost can flip mid-phase
+    // if the user switches rooms via "Cambiar" while already standing at the site.
+    this.spy = null;
 
     const start = app.data!.landingDate.getTime();
     for (let h = 0; h <= 14 * 24; h += 2) {
@@ -62,11 +64,8 @@ export class PovPhase implements Phase {
     this.actions.place(0.84, 1.28, -1.45);
     const look = this.world.lz.clone().add(new THREE.Vector3(0, 3, 0));
     this.app.setView(this.eye, look, { snap: true, rate: 3 });
-    if (this.spy) {
-      this.app.rig.add(this.spy.mesh);
-      this.placeSpy(this.spy);
-      this.app.room.setListener((msg: RoomEvent) => this.spy!.handleRoomEvent(msg, this.app.time));
-    }
+    this.app.room.setListener((msg: RoomEvent) => this.handleRoom(msg));
+    this.syncSpy();
   }
 
   exit() {
@@ -81,7 +80,34 @@ export class PovPhase implements Phase {
     spy.mesh.quaternion.setFromRotationMatrix(m);
   }
 
+  /** Creates/destroys the spy-view PiP to track the live role - isHost can change after this phase already entered. */
+  private syncSpy() {
+    if (!this.app.isHost && !this.spy) {
+      this.spy = new SpyView(this.world.scene, this.m.site.id);
+      this.app.rig.add(this.spy.mesh);
+      this.placeSpy(this.spy);
+    } else if (this.app.isHost && this.spy) {
+      this.spy.dispose();
+      this.spy = null;
+    }
+  }
+
+  /**
+   * Monitor-only: cam_update for a site other than the one shown here means the host moved on
+   * to a different site without the monitor following via orbit.ts (which the monitor isn't in
+   * right now) - jump straight to that site instead of being stuck watching a stale/frozen view.
+   */
+  private handleRoom(msg: RoomEvent) {
+    if (msg.type === 'cam_update' && !this.app.isHost && msg.site_id !== this.m.site.id) {
+      const target = this.app.ranking.find((r) => r.site.id === msg.site_id);
+      if (target) { this.app.selected = target; this.app.goTo('pov', 0.5, 0.8); }
+      return;
+    }
+    this.spy?.handleRoomEvent(msg, this.app.time);
+  }
+
   update(dt: number, t: number) {
+    this.syncSpy();
     this.world.update(dt, t);
     this.app.setView(this.eye, this.world.lz.clone().add(new THREE.Vector3(0, 3, 0)), { rate: 3 });
     this.info.update(); this.actions.update();
@@ -98,7 +124,7 @@ export class PovPhase implements Phase {
     }
     if (this.spy) {
       this.spy.update(t, this.app.renderer, [
-        this.info.mesh, this.actions.mesh, this.spy.mesh, this.app.fadeMesh,
+        this.info.mesh, this.actions.mesh, this.spy.mesh, this.app.fadeMesh, this.app.exitPanel.mesh,
         ...this.app.input.controllers, ...this.app.input.grips,
       ]);
     }
