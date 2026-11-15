@@ -11,6 +11,15 @@ export function SoundIcon({ muted }: { muted: boolean }) {
   );
 }
 
+export function MicIcon() {
+  return (
+    <svg {...base} width="18" height="18" strokeWidth="2" aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" />
+    </svg>
+  );
+}
+
 export function CheckIcon() {
   return (
     <svg {...base} width="14" height="14" strokeWidth="3" aria-hidden="true">

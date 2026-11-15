@@ -29,6 +29,7 @@ export class Narrator {
   private synth: SpeechSynthesis | null = typeof window !== 'undefined' ? window.speechSynthesis : null;
   private voice: SpeechSynthesisVoice | null = null;
   private muted = false;
+  private suspended = false;
   /** Bumped on every speak()/setMuted(true)/dispose() so an in-flight clause chain can tell
    *  it's been superseded and stop queuing further chunks instead of talking over the new line. */
   private gen = 0;
@@ -65,9 +66,15 @@ export class Narrator {
     this.muted = muted;
   }
 
+  /** CAPCOM is talking: cancels what the narrator was saying and ignores new lines until it is released. */
+  setSuspended(suspended: boolean) {
+    if (suspended && !this.suspended) { this.gen++; this.synth?.cancel(); }
+    this.suspended = suspended;
+  }
+
   /** Queues `text` as its own clause chain, cancelling whatever the narrator was still saying. */
   speak(text: string) {
-    if (!this.synth || this.muted) return;
+    if (!this.synth || this.muted || this.suspended) return;
     this.gen++;
     const myGen = this.gen;
     this.synth.cancel();
