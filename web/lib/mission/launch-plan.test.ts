@@ -14,6 +14,7 @@ import {
   opensPlanner,
   parseLaunchInputs,
   topSites,
+  SOUTH_POLE_MAX_LAT,
   withLandingParam,
 } from './launch-plan';
 import { evaluateSites } from './scoring';
@@ -149,10 +150,11 @@ describe('currentLanding', () => {
 describe('topSites', () => {
   const sites = realMissionData().sites;
 
-  it('returns three sites in exactly the order the orbit ranking has', () => {
+  it('returns three south-polar sites in exactly the order the orbit ranking has', () => {
     for (const day of ['2027-01-10T00:00:00Z', '2027-02-01T12:00:00Z', '2026-11-20T00:00:00Z', '2027-06-15T18:00:00Z']) {
       const landing = iso(day);
-      const orbit = evaluateSites(sites, landing);
+      const orbit = evaluateSites(sites, landing).filter((m) => m.site.lat <= SOUTH_POLE_MAX_LAT);
+      expect(topSites(sites, landing).every((m) => m.site.lat <= SOUTH_POLE_MAX_LAT)).toBe(true);
       const top = topSites(sites, landing);
       expect(top).toHaveLength(3);
       expect(top.map((m) => m.site.id)).toEqual(orbit.slice(0, 3).map((m) => m.site.id));
