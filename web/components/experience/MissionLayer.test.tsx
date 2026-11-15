@@ -26,6 +26,7 @@ function fakeApp(hud: PhaseHud, phase: PhaseName = 'launch'): Fake {
     room: { get status() { return state.room; }, send: vi.fn() },
     data: null,
     selected: null,
+    ranking: [],
     setPaused: vi.fn((v: boolean) => { state.mode = v ? 'paused' : 'running'; }),
     stop: vi.fn(() => { state.mode = 'stopped'; }),
     restart: vi.fn(() => { state.mode = 'running'; state.phase = 'launch'; ran.push('restart'); }),
