@@ -46,6 +46,7 @@ export default function LunarExperience() {
   const [app, setApp] = useState<LunarApp | null>(null);
   const [xr, setXr] = useState<'checking' | 'yes' | 'no'>('checking');
   const [inVR, setInVR] = useState(false);
+  const [preview, setPreview] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [roomCode, setRoomCode] = useState('');
   const [isHost, setIsHost] = useState(true);
@@ -56,6 +57,8 @@ export default function LunarExperience() {
     let cancelled = false;
     const params = new URLSearchParams(window.location.search);
     const q = params.get('phase') as PhaseName | null;
+    const vrPreview = params.get('vr') === 'preview';
+    setPreview(vrPreview);
     const { room: initialRoom, isHost: initialIsHost } = startRoom(params);
     setRoomCode(initialRoom);
     setIsHost(initialIsHost);
@@ -64,6 +67,7 @@ export default function LunarExperience() {
       loadData: loadMissionData,
       startPhase: q && PHASE_ORDER.includes(q) ? q : undefined,
       timeScale: Number(params.get('speed')) || 1,
+      vrPreview,
       // Same room on two tabs/headsets = synced site + landing date (see orbit.ts).
       room: initialRoom,
       isHost: initialIsHost,
@@ -124,7 +128,7 @@ export default function LunarExperience() {
   return (
     <div className={styles.root}>
       <div ref={mount} className={styles.canvas} />
-      {!inVR && <MissionLayer app={app} vr={xr} onEnterVR={enterVR} room={{ code: roomCode, isHost, onJoin: joinRoom }} />}
+      {!inVR && !preview && <MissionLayer app={app} vr={xr} onEnterVR={enterVR} room={{ code: roomCode, isHost, onJoin: joinRoom }} />}
       {error && <div role="alert" className={styles.error}>{error}</div>}
     </div>
   );

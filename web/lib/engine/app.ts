@@ -23,6 +23,10 @@ export interface Phase {
   exit(): void;
   /** What the DOM control layer shows for this phase (see hud.ts). */
   controlHud?(): PhaseHud;
+  /** The phase draws its own pause / stop / exit controls in VR: the generic run and exit panels stay hidden while it is current. */
+  readonly ownsRunControls?: boolean;
+  /** Every frame, also while paused or stopped, so the phase's own 3D controls keep redrawing. */
+  updateUi?(): void;
 }
 
 export type PhaseName = 'launch' | 'orbit' | 'pov' | 'landing' | 'transmit';
@@ -34,6 +38,8 @@ export interface AppOptions {
   startPhase?: PhaseName;
   /** Dev only: speeds up the simulation clock (?speed=4). */
   timeScale?: number;
+  /** Dev only: shows the VR interface (3D panels, mouse as pointer) outside a headset session (?vr=preview). */
+  vrPreview?: boolean;
   /** Shared room for WebSocket sync (CLAUDE.md sec. 7); same room = synced. */
   room?: string;
   onRoomStatus?: (s: RoomStatus) => void;
@@ -330,10 +336,14 @@ export class LunarApp {
     this.time += dt;
     const p = this.phase;
     if (!p) return;
-    showPanels(this.isXR);
+    const vrUi = this.isXR || this.opts.vrPreview === true;
+    const genericPanels = vrUi && !p.ownsRunControls;
+    showPanels(vrUi);
+    this.runPanel.mesh.visible = genericPanels;
     if (this.run.simulating) p.update(dt, this.time);
+    p.updateUi?.();
 
-    this.exitPanel.mesh.visible = this.isXR;
+    this.exitPanel.mesh.visible = genericPanels;
     this.exitPanel.update();
     this.avatar.update(frame);
     this.narrator.setMuted(this.audio.muted);
@@ -362,7 +372,7 @@ export class LunarApp {
 
     this.rig.updateMatrixWorld(true);
     this.input.update();
-    if (this.isXR) {
+    if (vrUi) {
       this.waitCheck += frame;
       if (this.waitCheck > 0.25) {
         this.waitCheck = 0;

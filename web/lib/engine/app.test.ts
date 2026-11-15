@@ -44,13 +44,13 @@ class FakeSocket {
   close() {}
 }
 
-import { LunarApp, type Phase, type PhaseName } from './app';
+import { LunarApp, type AppOptions, type Phase, type PhaseName } from './app';
 import { Panel } from './panel';
 import type { PhaseHud } from './hud';
 
 interface Probe { updates: { dt: number; t: number }[]; made: number; waiting: boolean; hudPanel: Panel; exited: number }
 
-function register(app: LunarApp, name: PhaseName, probe: Probe) {
+function register(app: LunarApp, name: PhaseName, probe: Probe, extra: Partial<Phase> = {}) {
   app.register(name, () => {
     probe.made++;
     probe.updates = [];
@@ -62,6 +62,7 @@ function register(app: LunarApp, name: PhaseName, probe: Probe) {
       update(dt, t) { probe.updates.push({ dt, t }); },
       exit() { probe.exited++; },
       controlHud: () => ({ figure: { value: name, caption: '' }, side: { kind: 'readouts', items: [] }, waiting: probe.waiting }) as PhaseHud,
+      ...extra,
     };
     return phase;
   });
@@ -69,9 +70,9 @@ function register(app: LunarApp, name: PhaseName, probe: Probe) {
 
 const tick = (ms = 50) => { vi.advanceTimersByTime(ms); frame?.(); };
 
-async function boot() {
+async function boot(opts: Partial<AppOptions> = {}) {
   const probe: Probe = { updates: [], made: 0, waiting: false, hudPanel: new Panel(64, 64, 0.1, () => undefined), exited: 0 };
-  const app = new LunarApp(document.createElement('div'), { loadData: async () => { throw new Error('unused'); } });
+  const app = new LunarApp(document.createElement('div'), { loadData: async () => { throw new Error('unused'); }, ...opts });
   register(app, 'launch', probe);
   register(app, 'orbit', probe);
   await app.start();
@@ -286,5 +287,70 @@ describe('LunarApp panels outside and inside VR', () => {
     expect(app.run.mode).toBe('running');
     click('stop');
     expect(app.run.mode).toBe('stopped');
+  });
+});
+
+describe('LunarApp VR preview and phases that own the run controls', () => {
+  it('shows the VR interface on the desktop only when the preview is on', async () => {
+    xrState.presenting = false;
+    const off = await boot();
+    tick();
+    expect(off.probe.hudPanel.mesh.visible).toBe(false);
+    expect(off.app.runPanel.mesh.visible).toBe(false);
+    expect(off.app.exitPanel.mesh.visible).toBe(false);
+    off.app.dispose();
+
+    const on = await boot({ vrPreview: true });
+    tick();
+    expect(on.app.isXR).toBe(false);
+    expect(on.probe.hudPanel.mesh.visible).toBe(true);
+    expect(on.app.runPanel.mesh.visible).toBe(true);
+    expect(on.app.exitPanel.mesh.visible).toBe(true);
+  });
+
+  it('hides the generic run and exit panels while the phase owns the run controls, and brings them back after', async () => {
+    xrState.presenting = true;
+    const { app, probe } = await boot();
+    register(app, 'orbit', probe, { ownsRunControls: true });
+    tick();
+    expect(app.runPanel.mesh.visible).toBe(true);
+    expect(app.exitPanel.mesh.visible).toBe(true);
+
+    app.setPhase('orbit');
+    tick();
+    expect(probe.hudPanel.mesh.visible).toBe(true);
+    expect(app.runPanel.mesh.visible).toBe(false);
+    expect(app.exitPanel.mesh.visible).toBe(false);
+
+    app.setPhase('launch');
+    tick();
+    expect(app.runPanel.mesh.visible).toBe(true);
+    expect(app.exitPanel.mesh.visible).toBe(true);
+  });
+
+  it('hides them in the preview too, and the console panels keep the pointer', async () => {
+    const { app, probe } = await boot({ vrPreview: true });
+    register(app, 'orbit', probe, { ownsRunControls: true });
+    app.setPhase('orbit');
+    tick();
+    expect(app.runPanel.mesh.visible).toBe(false);
+    expect(app.exitPanel.mesh.visible).toBe(false);
+    expect(probe.hudPanel.mesh.visible).toBe(true);
+  });
+
+  it('calls updateUi every frame, also while paused and stopped', async () => {
+    const updateUi = vi.fn();
+    const { app, probe } = await boot();
+    register(app, 'orbit', probe, { updateUi });
+    app.setPhase('orbit');
+    tick();
+    const running = updateUi.mock.calls.length;
+    expect(running).toBeGreaterThan(0);
+    app.setPaused(true);
+    tick(); tick();
+    expect(updateUi.mock.calls.length).toBe(running + 2);
+    app.stop();
+    tick();
+    expect(updateUi.mock.calls.length).toBe(running + 3);
   });
 });

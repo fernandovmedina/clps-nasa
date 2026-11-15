@@ -67,6 +67,34 @@ test('the team experience mounts its canvas at / without console errors and link
   await expect(page.locator('main')).toHaveAttribute('aria-busy', 'false')
 })
 
+test('?vr=preview shows the VR interface without the DOM control layer and without console errors', async ({ page }) => {
+  const errors: string[] = []
+  page.on('console', (m) => {
+    const text = m.text()
+    const expected = text.startsWith('Failed to load resource') || text.startsWith('WebSocket connection to')
+    if (m.type() === 'error' && !expected) errors.push(text)
+  })
+  page.on('pageerror', (e) => errors.push(e.message))
+
+  await page.goto('/?phase=landing&vr=preview&speed=2')
+  test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+  await expect(page.locator('canvas')).toHaveCount(1)
+  await page.waitForTimeout(3000)
+  await expect(page.locator(LAYER)).toHaveCount(0)
+  await expect(page.getByRole('list', { name: 'Fases de la misión' })).toHaveCount(0)
+  await expect(page.getByRole('alert').filter({ hasText: /\S/ })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('without ?vr=preview the landing keeps the DOM control layer', async ({ page }) => {
+  await page.goto('/?phase=landing&speed=2')
+  test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+  await expect(page.locator('canvas')).toHaveCount(1)
+  await expect(page.locator(LAYER)).toHaveCount(1)
+  await expect(currentStep(page)).toContainText('Alunizaje', { timeout: 30_000 })
+  await expect(page.getByRole('button', { name: 'Pausar' })).toBeEnabled()
+})
+
 test('the launch waits for its start button and Pausar has nothing to pause until then', async ({ page }) => {
   await openLaunch(page, '?speed=4')
   await expect(page.getByRole('button', { name: 'Pausar' })).toBeDisabled()
