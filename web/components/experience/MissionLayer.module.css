@@ -19,8 +19,8 @@
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas: 'header header header' 'rail . side' 'bottom bottom bottom';
 }
-.layer h1, .layer h2, .layer h3, .layer p, .layer dl, .layer dd, .layer ol { margin: 0; padding: 0; }
-.layer ol { list-style: none; }
+.layer :where(h1, h2, h3, p, dl, dd, ol) { margin: 0; padding: 0; }
+.layer :where(ol) { list-style: none; }
 .layer a { color: inherit; }
 
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
