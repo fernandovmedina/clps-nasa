@@ -30,13 +30,13 @@ export function describePanel(snap: CapcomSnapshot): PanelText {
   if (snap.state === 'unavailable') return { status: 'CAPCOM no disponible', tone: 'bad', body: '', hint: '' };
   const needsMic = snap.mic !== 'granted' && !snap.talking && (snap.state === 'disconnected' || snap.state === 'error');
   if (needsMic) return { status: 'Sin micrófono', tone: 'warn', body: NEEDS_MIC_TEXT, hint: 'Permite el micrófono en la página y vuelve a entrar.' };
-  const status = snap.state === 'error' ? snap.message ?? 'Error'
-    : snap.talking ? 'Escuchando…'
+  if (snap.state === 'error') return { status: 'Sin conexión', tone: 'bad', body: snap.message ?? '', hint: 'Mantén A para reintentar' };
+  const status = snap.talking ? 'Escuchando…'
     : snap.state === 'connecting' ? 'Conectando…'
     : snap.state === 'thinking' ? 'Pensando…'
     : snap.state === 'speaking' ? 'Hablando…'
     : snap.state === 'listening' ? 'Listo' : 'En espera';
-  const tone = snap.state === 'error' ? 'bad' : snap.talking || snap.state === 'speaking' ? 'ok' : 'dim';
+  const tone = snap.talking || snap.state === 'speaking' ? 'ok' : 'dim';
   return { status, tone, body: snap.answer || snap.question, hint: 'Mantén A para hablar' };
 }
 

@@ -48,6 +48,12 @@ describe('describePanel', () => {
     expect(describePanel({ ...BASE, state: 'listening' }).status).toBe('Listo');
   });
 
+  it('shows a recoverable error as a message to retry, not as a state label', () => {
+    expect(describePanel({ ...BASE, state: 'error', message: 'No se pudo conectar con CAPCOM · pulsa para reintentar.' })).toEqual({
+      status: 'Sin conexión', tone: 'bad', body: 'No se pudo conectar con CAPCOM · pulsa para reintentar.', hint: 'Mantén A para reintentar',
+    });
+  });
+
   it('says CAPCOM is not available when it is', () => {
     expect(describePanel({ ...BASE, state: 'unavailable', message: 'CAPCOM no disponible' })).toMatchObject({ status: 'CAPCOM no disponible', hint: '' });
   });
