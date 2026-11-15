@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { LunarApp } from '@/lib/engine/app';
+import type { CapcomController } from '@/lib/capcom/controller';
 import { PHASE_LABELS, PHASE_ORDER, collectActions } from '@/lib/engine/hud';
+import { CapcomButton, CapcomCaption } from './Capcom';
 import Controls from './Controls';
 import { CheckIcon, SoundIcon } from './icons';
 import { announce, describeMission } from './mission';
@@ -17,6 +19,8 @@ interface Props {
   vr: 'checking' | 'yes' | 'no';
   onEnterVR: () => void;
   room: { code: string; isHost: boolean; onJoin: (code: string) => boolean };
+  /** Voice assistant; absent when switched off with ?capcom=0. */
+  capcom?: CapcomController | null;
 }
 
 const NO_VR = 'VR no disponible aquí · ábrelo en el navegador del Quest (HTTPS)';
@@ -30,7 +34,7 @@ const IDLE: HudSnapshot = {
 };
 
 /** DOM control layer over the 3D scene: phases, mission, the phase's own data and the run controls. */
-export default function MissionLayer({ app, vr, onEnterVR, room }: Props) {
+export default function MissionLayer({ app, vr, onEnterVR, room, capcom }: Props) {
   const { snap, refresh } = useHudSnapshot(app);
   const view = snap ?? IDLE;
   const { phase, mode, muted, hud, mission } = view;
@@ -81,6 +85,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room }: Props) {
       <header className={styles.header}>
         <h1 className={styles.brand}>TOUCHDOWN<span>La misión, paso a paso</span></h1>
         <div className={styles.headerActions}>
+          {capcom && <CapcomButton controller={capcom} />}
           <button type="button" className={styles.iconBtn} aria-label="Sonido" aria-pressed={soundOn} disabled={stopped} onClick={toggleSound}>
             <SoundIcon muted={!soundOn} />
           </button>
@@ -132,6 +137,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room }: Props) {
 
       <div className={styles.bottom}>
         <StatusPanel phase={phase} mode={mode} hud={hud} frozen={paused} onAct={act} />
+        {capcom && <CapcomCaption controller={capcom} />}
         {!stopped && (
           <Controls mode={mode} hud={hud} pauseRef={pauseButton} onTogglePause={togglePause} onStop={stop} onAct={act} />
         )}
