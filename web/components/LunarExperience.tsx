@@ -20,19 +20,31 @@ function randomRoomCode(len = 4): string {
   return s;
 }
 
+// Written once a tab generates its own room code, so a reload of the SAME tab (the URL now
+// carries ?room=<code> because resolveInitialRoom put it there) is still recognized as "my own
+// room", not misread as "someone handed me a link" - sessionStorage survives reloads but not a
+// fresh tab/window, which is exactly the "my session" boundary we want here.
+const OWN_ROOM_KEY = 'touchdown:own-room';
+
 /**
  * Without a room in the URL, everyone would land in the same default room.
  * Give each new visit its own, and put it in the URL so it's shareable.
  *
  * isHost marks who generated the code themselves (nobody handed it to them) -
  * that's the VR/inspector by convention: their camera gets broadcast in
- * pov.ts. Arriving via a shared link (room already in the URL) means someone
- * else is hosting, so this client is the monitor instead (see AppOptions.isHost).
+ * pov.ts. Arriving via a shared link (room already in the URL, and it isn't
+ * the one this tab generated for itself) means someone else is hosting, so
+ * this client is the monitor instead (see AppOptions.isHost).
  */
 function resolveInitialRoom(params: URLSearchParams): { room: string; isHost: boolean } {
   const fromUrl = params.get('room');
-  if (fromUrl) return { room: fromUrl, isHost: false };
+  if (fromUrl) {
+    let ownRoom: string | null = null;
+    try { ownRoom = window.sessionStorage.getItem(OWN_ROOM_KEY); } catch { /* storage unavailable (private mode, etc.) */ }
+    return { room: fromUrl, isHost: fromUrl === ownRoom };
+  }
   const generated = randomRoomCode();
+  try { window.sessionStorage.setItem(OWN_ROOM_KEY, generated); } catch { /* storage unavailable */ }
   const url = new URL(window.location.href);
   url.searchParams.set('room', generated);
   window.history.replaceState(null, '', url.toString());

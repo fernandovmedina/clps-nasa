@@ -24,7 +24,7 @@ export default function Controls({ mode, hud, pauseRef, onTogglePause, onStop, o
         <button key={a.id} type="button" className={styles.btn} disabled={paused || a.disabled} onClick={() => onAct(a.id)}>{a.label}</button>
       ))}
       {primary && (primary.href ? (
-        <a className={styles.btn} data-variant={paused ? undefined : 'primary'} href={primary.href}>{primary.label}</a>
+        <a className={styles.btn} data-variant={paused ? undefined : 'primary'} href={primary.href} target="_blank" rel="noopener noreferrer">{primary.label}</a>
       ) : (
         <button type="button" className={styles.btn} data-variant={paused ? undefined : 'primary'} disabled={paused || primary.disabled} onClick={() => onAct(primary.id)}>
           {primary.label}
