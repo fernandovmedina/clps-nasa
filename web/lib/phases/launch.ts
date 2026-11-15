@@ -63,6 +63,7 @@ export class LaunchPhase implements Phase {
   private t = 0; private s = 0; private speed = 0; private roll = 0; private arrivalT = 0;
   private progress = 0; private shownPct = 0; private done = false; private leaving = false;
   private started = false;
+  private narratedAtmo = false; private narratedApproach = false;
   private status = 'Inicializando sistemas de vuelo';
   private tele = { alt: '0.0 km', vel: '0.00 km/s', dist: '384,400 km' };
   private moonKm = MEAN_MOON_DISTANCE_KM; private moonTarget = MEAN_MOON_DISTANCE_KM;
@@ -184,6 +185,13 @@ export class LaunchPhase implements Phase {
     this.rumble?.stop(); this.wind?.stop(); this.crackle?.stop();
   }
 
+  /** Shared by the in-world "Comenzar despegue" button and the DOM control HUD's equivalent. */
+  private beginCountdown() {
+    if (this.started) return;
+    this.started = true;
+    this.app.narrator.speak('Secuencia de despegue iniciada. Destino: polo sur lunar.');
+  }
+
   private drawCount(p: Panel, g: CanvasRenderingContext2D) {
     const label = this.countLabel;
     if (!label) return;
@@ -220,7 +228,7 @@ export class LaunchPhase implements Phase {
       if (this.shownPct > 0.002) { roundRect(g, 44, 170, 1200 * this.shownPct, 10, 5); g.fillStyle = UI.accent; g.fill(); }
       g.font = `700 24px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right';
       g.fillText(`${Math.round(this.shownPct * 100)}%`, 1356, 184); g.textAlign = 'left';
-      p.button(g, 'start', 44, 215, 1200, 96, 'Comenzar despegue', () => { this.started = true; });
+      p.button(g, 'start', 44, 215, 1200, 96, 'Comenzar despegue', () => this.beginCountdown());
       return;
     }
     const cols: [string, string][] = [['ALTITUD', this.tele.alt], ['VELOCIDAD', this.tele.vel], ['DIST. A LA LUNA', this.tele.dist]];
@@ -253,6 +261,7 @@ export class LaunchPhase implements Phase {
     else if (t >= T_LIFT && t < T_LIFT + 1.6) label = 'DESPEGUE';
     if (label !== this.countLabel && label.startsWith('T-')) app.audio.play('countdown_tick');
     if (label !== this.countLabel && label === 'IGNICIÓN') app.audio.play('ignition');
+    if (label !== this.countLabel && label === 'DESPEGUE') app.narrator.speak('Despegue confirmado.');
     if (label !== this.countLabel) { this.countLabel = label; this.count.mesh.visible = label !== ''; this.count.invalidate(); }
 
     // motion along the trajectory, gated by real loading progress
@@ -288,6 +297,7 @@ export class LaunchPhase implements Phase {
 
     // sky → space
     const sky = smooth(30, 900, alt);
+    if (!this.narratedAtmo && sky > 0.5) { this.narratedAtmo = true; app.narrator.speak('Hemos salido de la atmósfera. Rumbo a la Luna.'); }
     this.rumble?.set('thrust', thrust);
     this.rumble?.set('atmosphere', 1 - sky);
     this.wind?.set('dynamic_pressure', smooth(60, 300, alt) * (1 - smooth(300, 850, alt)));
@@ -343,6 +353,11 @@ export class LaunchPhase implements Phase {
     this.layoutDock();
     this.hud.update(); this.count.update();
 
+    if (!this.narratedApproach && this.done && s > 0.85) {
+      this.narratedApproach = true;
+      app.narrator.speak('Aproximándonos a la Luna. Preparando inserción orbital.');
+    }
+
     // arrival → orbit insertion
     if (this.done && s >= 0.999 && !this.leaving) {
       this.arrivalT += dt;
@@ -365,7 +380,7 @@ export class LaunchPhase implements Phase {
           { label: 'Distancia a la Luna', value: groupThousands(this.tele.dist) },
         ],
       },
-      primary: this.started ? undefined : { id: 'start', label: 'Comenzar despegue', run: () => { this.started = true; this.hud.invalidate(); } },
+      primary: this.started ? undefined : { id: 'start', label: 'Comenzar despegue', run: () => { this.beginCountdown(); this.hud.invalidate(); } },
       waiting: !this.started,
     };
   }

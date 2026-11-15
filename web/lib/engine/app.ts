@@ -4,6 +4,7 @@ import { AudioEngine } from './audio';
 import { Avatar } from './avatar';
 import { damp, lookQuat } from './util';
 import { loadMoonTextures, type MoonTextures } from './moon';
+import { Narrator } from './narration';
 import { RunState, type PhaseHud } from './hud';
 import { Panel, showPanels } from './panel';
 import { createRunPanel } from './run-panel';
@@ -61,6 +62,7 @@ export class LunarApp {
   readonly input: Input;
   readonly room: RoomClient;
   readonly audio = new AudioEngine();
+  readonly narrator = new Narrator();
   readonly eyeHeight = 1.6;
   /** See AppOptions.isHost - mutable because joining a room at runtime (not just at load) also changes the role. */
   isHost: boolean;
@@ -325,6 +327,7 @@ export class LunarApp {
     this.exitPanel.mesh.visible = this.isXR;
     this.exitPanel.update();
     this.avatar.update(frame);
+    this.narrator.setMuted(this.audio.muted);
 
     const k = this.view.snap ? 1 : damp(this.view.rate, frame);
     this.view.snap = false;
@@ -369,6 +372,7 @@ export class LunarApp {
     this.runPanel.dispose();
     this.exitPanel.dispose();
     this.avatar.dispose();
+    this.narrator.dispose();
     this.audio.dispose();
     this.input.dispose();
     this.room.close();
