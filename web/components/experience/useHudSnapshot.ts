@@ -13,6 +13,8 @@ export interface HudSnapshot {
   mission: MissionInfo;
   /** Only open or not: the socket flips between connecting and closed every two seconds with no server, and nothing paints that. */
   roomOpen: boolean;
+  /** The inspector's capture is fresh (Mission Control's picture-in-picture). */
+  pipLive: boolean;
 }
 
 const POLL_MS = 100;
@@ -36,6 +38,7 @@ export function useHudSnapshot(app: LunarApp | null) {
       hud: paintedHud(mode, app.phase?.controlHud?.() ?? null),
       mission: describeMission(app, window.location.search),
       roomOpen: app.room.status === 'open',
+      pipLive: app.pip.live,
     };
     const key = JSON.stringify(next);
     if (key === last.current) return;

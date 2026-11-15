@@ -6,15 +6,14 @@ import { evaluateSites, fmtHours, skyPosAt, type SiteMetrics } from '../mission/
 import type { RoomEvent } from '../sync/room-client';
 import { MarkerField } from './markers';
 import { defaultMission } from './orbit';
-import { SpyView } from './spy-view';
+import { InspectorFeed } from './inspector-pip';
+import type { SpyView } from './spy-view';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
 import { STATUS_LABELS, fmtPercent, fmtSigned, type PhaseHud } from '../engine/hud';
 
 const MARKER_KINDS: [MarkerKind, string][] = [
   ['rock', '🪨 Roca'], ['slope', '⛰ Pendiente'], ['shadow', '🌑 Sombra'], ['other', '⚠ Otro'],
 ];
-
-const CAM_SEND_INTERVAL_S = 1 / 10; // 10 Hz - tiny payload (7 numbers), see core/src/room.ts cam_update
 
 export function ensureSelection(app: LunarApp): SiteMetrics {
   if (!app.data) app.data = defaultMission();
@@ -33,11 +32,10 @@ export class PovPhase implements Phase {
   private world: SurfaceWorld;
   private m: SiteMetrics;
   private info: Panel; private actions: Panel;
-  /** Only the monitor role watches - the VR/host doesn't need a mirror of itself. */
-  private spy: SpyView | null;
+  /** The host sends its camera; only the monitor role watches - the VR/host doesn't need a mirror of itself. */
+  private feed: InspectorFeed;
   private series: Sample[] = [];
   private eye: THREE.Vector3;
-  private lastCamSentAt = -Infinity;
   private camPos = new THREE.Vector3();
   private camQuat = new THREE.Quaternion();
   private camScale = new THREE.Vector3();
@@ -52,9 +50,15 @@ export class PovPhase implements Phase {
     this.world = surfaceFor(app, this.m);
     this.scene = this.world.scene;
     this.eye = new THREE.Vector3(0, this.world.heightAt(0, 0) + app.eyeHeight, 0);
-    // Created/destroyed live in syncSpy() (not just here) - isHost can flip mid-phase
+    // The spy view is created/destroyed live by the feed (not just here) - isHost can flip mid-phase
     // if the user switches rooms via "Cambiar" while already standing at the site.
-    this.spy = null;
+    this.feed = new InspectorFeed(app, this.world.scene, this.m.site.id, {
+      panel3d: (spy) => this.placeSpy(spy),
+      hidden: () => [
+        this.info.mesh, this.actions.mesh, ...(this.feed.view ? [this.feed.view.mesh] : []), this.app.fadeMesh, this.app.exitPanel.mesh, this.app.runPanel.mesh,
+        ...this.app.input.controllers, ...this.app.input.grips,
+      ],
+    });
 
     const start = app.data!.landingDate.getTime();
     for (let h = 0; h <= 14 * 24; h += 2) {
@@ -88,14 +92,14 @@ export class PovPhase implements Phase {
     const look = this.world.lz.clone().add(new THREE.Vector3(0, 3, 0));
     this.app.setView(this.eye, look, { snap: true, rate: 3 });
     this.app.room.setListener((msg: RoomEvent) => this.handleRoom(msg));
-    this.syncSpy();
+    this.feed.sync();
     this.markerField.sync(this.app.markers);
   }
 
   exit() {
     this.app.room.setListener(null);
     this.world.hideAstronaut();
-    this.info.dispose(); this.actions.dispose(); this.spy?.dispose();
+    this.info.dispose(); this.actions.dispose(); this.feed.dispose();
     this.markerField.dispose();
     this.reticle.removeFromParent();
     this.reticle.geometry.dispose();
@@ -107,18 +111,6 @@ export class PovPhase implements Phase {
     spy.mesh.position.set(0, 1.98, -1.55);
     const m = new THREE.Matrix4().lookAt(new THREE.Vector3(0, 1.6, 0), spy.mesh.position, new THREE.Vector3(0, 1, 0));
     spy.mesh.quaternion.setFromRotationMatrix(m);
-  }
-
-  /** Creates/destroys the spy-view PiP to track the live role - isHost can change after this phase already entered. */
-  private syncSpy() {
-    if (!this.app.isHost && !this.spy) {
-      this.spy = new SpyView(this.world.scene, this.m.site.id);
-      this.app.rig.add(this.spy.mesh);
-      this.placeSpy(this.spy);
-    } else if (this.app.isHost && this.spy) {
-      this.spy.dispose();
-      this.spy = null;
-    }
   }
 
   /**
@@ -136,7 +128,7 @@ export class PovPhase implements Phase {
       if (target) { this.app.selected = target; this.app.goTo('pov', 0.5, 0.8); }
       return;
     }
-    this.spy?.handleRoomEvent(msg, this.app.time);
+    this.feed.handleRoom(msg, this.app.time);
   }
 
   /** Host-only: drops a marker at the current aim point and applies it locally right
@@ -157,7 +149,7 @@ export class PovPhase implements Phase {
   }
 
   update(dt: number, t: number) {
-    this.syncSpy();
+    this.feed.sync();
     this.world.update(dt, t);
     this.app.setView(this.eye, this.world.lz.clone().add(new THREE.Vector3(0, 3, 0)), { rate: 3 });
     this.info.update(); this.actions.update();
@@ -171,22 +163,8 @@ export class PovPhase implements Phase {
       this.aimPoint = hit ? hit.point.clone() : null;
       this.reticle.visible = !!this.aimPoint;
       if (this.aimPoint) this.reticle.position.set(this.aimPoint.x, this.aimPoint.y + 0.06, this.aimPoint.z);
-
-      if (t - this.lastCamSentAt > CAM_SEND_INTERVAL_S) {
-        this.lastCamSentAt = t;
-        this.app.room.send({
-          type: 'cam_update', site_id: this.m.site.id,
-          px: this.camPos.x, py: this.camPos.y, pz: this.camPos.z,
-          qx: this.camQuat.x, qy: this.camQuat.y, qz: this.camQuat.z, qw: this.camQuat.w,
-        });
-      }
     }
-    if (this.spy) {
-      this.spy.update(t, this.app.renderer, [
-        this.info.mesh, this.actions.mesh, this.spy.mesh, this.app.fadeMesh, this.app.exitPanel.mesh, this.app.runPanel.mesh,
-        ...this.app.input.controllers, ...this.app.input.grips,
-      ]);
-    }
+    this.feed.update(t);
   }
 
   private drawInfo(p: Panel, g: CanvasRenderingContext2D) {

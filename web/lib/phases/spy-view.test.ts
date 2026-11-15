@@ -181,4 +181,40 @@ describe('SpyView', () => {
     const s = spy as unknown as { videoMesh: THREE.Mesh; placeholderMat: THREE.Material };
     expect(s.videoMesh.material).toBe(s.placeholderMat);
   });
+
+  it('reports live while the inspector is heard from and goes back to no signal after three seconds', () => {
+    const spy = new SpyView(new THREE.Scene(), SITE);
+    expect(spy.live).toBe(false);
+    spy.update(0, fakeRenderer(), []);
+    expect(spy.live).toBe(false);
+
+    spy.handleRoomEvent(camUpdate(1, 1, 0), 1);
+    spy.update(1.05, fakeRenderer(), []);
+    expect(spy.live).toBe(true);
+    spy.update(3.9, fakeRenderer(), []);
+    expect(spy.live).toBe(true);
+    spy.update(4.1, fakeRenderer(), []);
+    expect(spy.live).toBe(false);
+
+    spy.handleRoomEvent(camUpdate(5, 2, 0), 5);
+    spy.update(5.05, fakeRenderer(), []);
+    expect(spy.live).toBe(true);
+  });
+
+  it('ignores a cam_update of another site, so it never turns live for it', () => {
+    const spy = new SpyView(new THREE.Scene(), SITE);
+    spy.handleRoomEvent({ ...camUpdate(1, 1, 0), site_id: 'other' }, 1);
+    spy.update(1.05, fakeRenderer(), []);
+    expect(spy.live).toBe(false);
+  });
+
+  it('exposes the texture of its capture and takes the size of the box it is drawn in', () => {
+    const wide = new SpyView(new THREE.Scene(), SITE, { w: 640, h: 360 });
+    const target = (wide as unknown as { target: THREE.WebGLRenderTarget }).target;
+    expect(wide.texture).toBe(target.texture);
+    expect([target.width, target.height]).toEqual([640, 360]);
+    const classic = new SpyView(new THREE.Scene(), SITE);
+    const t2 = (classic as unknown as { target: THREE.WebGLRenderTarget }).target;
+    expect([t2.width, t2.height]).toEqual([640, 480]);
+  });
 });
