@@ -288,3 +288,107 @@ describe('RoomClient.close', () => {
     expect(() => client.close()).not.toThrow();
   });
 });
+
+describe('RoomClient snapshot', () => {
+  const T0 = '2027-01-10T00:00:00Z';
+  const T1 = '2027-02-02T12:00:00Z';
+  const MARKER = { type: 'marker_add', id: 'm1', site_id: 'malapert-a', x_m: 12, y_m: -3, kind: 'rock' } as const;
+
+  function joined() {
+    const { client, socket } = connected();
+    socket.receive({ ...STATE_MSG, t: T0 });
+    return { client, socket };
+  }
+
+  function replay(client: RoomClient) {
+    const seen = vi.fn();
+    client.setListener(seen);
+    return seen.mock.calls[0]?.[0];
+  }
+
+  it('replays the time we sent, not the one the room was created with', () => {
+    const { client } = joined();
+
+    client.send({ type: 'set_time', t: T1, playing: true });
+
+    expect(replay(client)).toMatchObject({ type: 'state', t: T1, playing: true, site_id: 'malapert-a', speed: 1 });
+  });
+
+  it.each([
+    ['site', { type: 'set_site', site_id: 'mons-mouton' }, { site_id: 'mons-mouton' }],
+    ['time', { type: 'set_time', t: T1, playing: true, speed: 4 }, { t: T1, playing: true, speed: 4 }],
+    ['marker', MARKER, { markers: [expect.objectContaining({ id: 'm1', kind: 'rock' })] }],
+  ])('replays a relayed %s change', (_name, message, expected) => {
+    const { client, socket } = joined();
+
+    socket.receive(message);
+
+    expect(replay(client)).toMatchObject(expected);
+  });
+
+  it('replays markers added and removed, ours and relayed', () => {
+    const { client, socket } = joined();
+
+    client.send(MARKER);
+    socket.receive({ ...MARKER, id: 'm2' });
+    expect(replay(client).markers.map((m: { id: string }) => m.id)).toEqual(['m1', 'm2']);
+
+    client.send({ type: 'marker_remove', id: 'm1' });
+    socket.receive({ type: 'marker_remove', id: 'm2' });
+    expect(replay(client).markers).toEqual([]);
+  });
+
+  it.each([
+    ['cam_update', { type: 'cam_update', site_id: 'malapert-a', px: 1, py: 2, pz: 3, qx: 0, qy: 0, qz: 0, qw: 1 }],
+    ['ping', { type: 'ping' }],
+    ['hello', { type: 'hello' }],
+  ])('leaves the snapshot alone for %s', (_name, message) => {
+    const { client, socket } = joined();
+    const before = replay(client);
+
+    socket.receive(message);
+    client.send(message as Parameters<RoomClient['send']>[0]);
+
+    expect(replay(client)).toEqual(before);
+  });
+
+  it('does not push anything extra to the current listener when the snapshot moves', () => {
+    const { client, socket } = joined();
+    const listener = vi.fn();
+    client.setListener(listener);
+    listener.mockClear();
+
+    client.send({ type: 'set_time', t: T1 });
+    expect(listener).not.toHaveBeenCalled();
+
+    const relayed = { type: 'set_site', site_id: 'mons-mouton' };
+    socket.receive(relayed);
+    expect(listener).toHaveBeenCalledExactlyOnceWith(relayed);
+  });
+
+  it('has no snapshot to move before the room has answered hello', () => {
+    const { client, socket } = connected();
+
+    client.send({ type: 'set_time', t: T1 });
+    socket.receive({ type: 'set_site', site_id: 'mons-mouton' });
+
+    expect(replay(client)).toBeUndefined();
+  });
+
+  it('keeps our own change in the snapshot even while the socket is down', () => {
+    const { client, socket } = joined();
+    socket.drop();
+
+    client.send({ type: 'set_time', t: T1 });
+
+    expect(socket.sent).not.toContain('set_time');
+    expect(replay(client)).toMatchObject({ t: T1 });
+  });
+
+  it('forgets the snapshot of the old room when it moves to another one', () => {
+    const { client } = joined();
+    client.setRoom('WXYZ');
+
+    expect(replay(client)).toBeUndefined();
+  });
+});

@@ -11,7 +11,7 @@
  * the app keeps working with local-only state, same as if the event's
  * internet dropped - sync is a bonus, never a requirement.
  */
-import type { ClientMessage, RoomState } from '@touchdown/core';
+import { reduceRoom, type ClientMessage, type RoomState } from '@touchdown/core';
 
 const ROOM_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const PING_INTERVAL_MS = 10_000;
@@ -45,7 +45,9 @@ export class RoomClient {
    * before any phase is listening (the app starts in 'launch', which never
    * calls setListener), so it's buffered here and replayed to whichever
    * phase listens next - otherwise a monitor joining late would never see
-   * markers/site/time that existed before it connected.
+   * markers/site/time that existed before it connected. Kept current with every
+   * relayed message and every send of our own (the server never echoes), so a
+   * phase entered later replays the room as it is now, not as it was at hello.
    */
   private lastState: RoomState | null = null;
   private lastMessageAt = 0;
@@ -69,6 +71,7 @@ export class RoomClient {
   }
 
   send(msg: ClientMessage) {
+    if (this.lastState) this.lastState = reduceRoom(this.lastState, msg);
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
   }
 
@@ -138,6 +141,7 @@ export class RoomClient {
       const type = (data as { type: unknown }).type;
       if (type === 'pong') return; // keepalive only, nothing for the listener to do
       if (type === 'state') this.lastState = data as RoomState;
+      else if (this.lastState) this.lastState = reduceRoom(this.lastState, data as ClientMessage);
       this.listener?.(data as RoomEvent);
     };
     ws.onclose = () => {
