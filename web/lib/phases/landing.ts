@@ -12,9 +12,9 @@ const T_BRAKE = 17;     // end of the powered approach
 const T_TOUCH = 25.5;   // touchdown
 const DECK = 3.0;       // cockpit floor height above the ground
 
-// Far enough from the rig that head movement in VR causes negligible parallax against the
-// flat photo (same "distant backdrop" trick as the stars/moon/earth elsewhere in this app).
-const COCKPIT_RADIUS = 60;
+// Kept closer than the nearest terrain (the ground is never less than ~4.6 m from the eye), so the
+// cabin always occludes the world and the exterior only shows through the keyed window.
+const COCKPIT_RADIUS = 3;
 // The source photo's chroma-key window sits almost exactly at image-center (u≈0.499, found
 // by scanning the green pixels), which three.js's SphereGeometry UV mapping places at local
 // −X once the usual scale(-1,1,1) "view from inside" flip is applied. Rotating the sphere
@@ -38,7 +38,9 @@ function buildCockpit(app: LunarApp) {
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <map_fragment>',
       `#include <map_fragment>
-      if (diffuseColor.g - max(diffuseColor.r, diffuseColor.b) > 0.15) discard;`,
+      float key = diffuseColor.g - max(diffuseColor.r, diffuseColor.b);
+      if (key > 0.06) discard;
+      diffuseColor.g -= max(key, 0.0);`,
     );
   };
   const sphere = new THREE.Mesh(geo, material);
