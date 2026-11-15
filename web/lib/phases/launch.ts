@@ -185,9 +185,8 @@ export class LaunchPhase implements Phase {
     this.app.setView(this.padCam, new THREE.Vector3(0, 12, 0), { snap: true, rate: 3 });
     this.rumble = this.app.audio.loop('engine_rumble');
     this.wind = this.app.audio.loop('wind_maxq');
-    // Joining late: the snapshot hello brings back (playing, landing) is what a monitor needs.
+    // The room client replays the snapshot it already received, which is what a monitor joining late needs.
     this.app.room.setListener((msg) => this.sync.handle(msg));
-    this.app.room.send({ type: 'hello' });
 
     this.app.opts.loadData((p, msg) => { this.progress = Math.max(this.progress, clamp01(p)); this.status = msg; this.hud.invalidate(); })
       .then((d) => {
