@@ -249,14 +249,14 @@ export class TransmitPhase implements Phase {
         { label: 'Retardo de la señal', value: `${signalDelayS(rangeKm).toFixed(2)} s` },
       );
     }
-    items.push(
-      { label: 'Paquetes enviados', value: `${fmtInt(this.sent * 4096)} / 4 096`, size: 'md' },
-      { label: 'Energía solar', value: w.sunVisible > 0.15 ? `${m.powerPct} % · Sol a ${m.sun.elevation.toFixed(1)}°` : 'En sombra · baterías', size: 'md' },
-      { label: 'Ventana restante', value: m.earth.aboveHorizon > 0 ? `${Math.round(m.hoursToEarthset)} h de comunicación` : '—', size: 'md' },
-    );
     return {
       figure: { value: fmtPercent(this.sent * 100), caption: 'de la telemetría enviada', badge: { label: 'Alunizaje exitoso', tone: 'ok' } },
       progress: { value: this.sent, label: 'Telemetría enviada' },
+      facts: [
+        { label: 'Paquetes enviados', value: `${fmtInt(this.sent * 4096)} / 4 096` },
+        { label: 'Energía solar', value: w.sunVisible > 0.15 ? `${m.powerPct} % · Sol a ${m.sun.elevation.toFixed(1)}°` : 'En sombra · baterías' },
+        { label: 'Ventana restante', value: m.earth.aboveHorizon > 0 ? `${Math.round(m.hoursToEarthset)} h de comunicación` : '—' },
+      ],
       detail: done ? 'Telemetría recibida en la Tierra' : this.relay ? 'Transmitiendo vía satélite de relevo…' : 'Transmitiendo directo a la Tierra…',
       side: { kind: 'readouts', items, note: rangeKm !== null ? 'El retardo sale de la distancia real a la fecha de aterrizaje y la velocidad de la luz.' : undefined },
       secondary: [

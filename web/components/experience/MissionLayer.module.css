@@ -124,8 +124,8 @@
 .small { font-size: 13px; color: var(--soft); }
 .marks { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 0.5px solid var(--hair); }
 .marks > span { font-size: 12px; color: var(--dim); }
-.marks > div { display: flex; flex-wrap: wrap; gap: 8px; }
-.marks .chip { flex: 1 1 auto; }
+.marks > div { display: flex; gap: 6px; }
+.marks .chip { flex: 1 1 auto; min-width: 0; padding: 0 6px; font-size: 12px; }
 .extras { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 0.5px solid var(--hair); }
 .extras div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .extras dt { font-size: 13px; color: var(--dim); }
@@ -141,7 +141,7 @@
 .figure { font-size: 72px; font-weight: 300; line-height: 1; }
 .captionCol { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .caption { font-size: 15px; color: var(--soft); }
-.pill { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 3px 12px; border-radius: 999px;
+.pill { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; padding: 4px 12px; border-radius: 999px;
   background: #EFE3B5; color: var(--slate); font-size: 13px; font-weight: 600; }
 .pill[data-tone='ok'] { background: #CBE8D1; }
 .pill[data-tone='bad'] { background: #F4CBC3; }
