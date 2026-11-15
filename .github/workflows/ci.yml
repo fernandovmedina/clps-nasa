@@ -85,13 +85,13 @@ jobs:
         run: pnpm --filter @touchdown/worker deploy:dry-run
 
   e2e:
-    name: End-to-end tests (${{ matrix.shard }}/3)
+    name: End-to-end tests (${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -121,7 +121,7 @@ jobs:
       - name: Run end-to-end tests
         id: e2e
         if: hashFiles('web/playwright.config.ts') != ''
-        run: pnpm --filter @touchdown/web exec playwright test --fully-parallel --shard=${{ matrix.shard }}/3
+        run: pnpm --filter @touchdown/web exec playwright test --fully-parallel --shard=${{ matrix.shard }}/6
 
       - name: Upload Playwright report
         if: failure() && steps.e2e.outcome == 'failure'
