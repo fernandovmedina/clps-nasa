@@ -1,3 +1,8 @@
+import {
+  NARRATION_AUDIO_DIR, NARRATION_LINES, NARRATION_MANIFEST_URL,
+  type NarrationId, type NarrationManifest,
+} from './narration-lines';
+
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 interface Clause { text: string; pauseAfterMs: number }
@@ -19,8 +24,11 @@ function splitIntoClauses(text: string): Clause[] {
 }
 
 /**
- * Thin wrapper around the browser's native TTS (SpeechSynthesis) - no backend, no API key,
- * works offline. Scoped to just "speak this line": each phase keeps its own one-shot flags
+ * Mission narrator. Fixed script lines (`say(id)`) play a pre-recorded clip in CAPCOM's own
+ * voice (Nova 2 Sonic `carlos`, see narration-lines.ts), so the launch sounds like the same
+ * person on every device. Anything without a clip - free text via `speak`, a clip that failed
+ * to load, or a clip recorded for a different text - falls back to the browser's native TTS
+ * (SpeechSynthesis) - no backend, no API key, works offline. Scoped to just "speak this line": each phase keeps its own one-shot flags
  * (same idiom already used everywhere in this engine, e.g. launch.ts's `countLabel` checks)
  * to decide *when* to call `speak`, so restarting the mission narrates again from the top.
  * Reused later for the voice-agent Q&A planned for pov.ts - this is the TTS half of that.
@@ -33,8 +41,12 @@ export class Narrator {
   /** Bumped on every speak()/setMuted(true)/dispose() so an in-flight clause chain can tell
    *  it's been superseded and stop queuing further chunks instead of talking over the new line. */
   private gen = 0;
+  /** Pre-recorded clips by id; only ids whose recorded text still matches NARRATION_LINES. */
+  private clips = new Map<NarrationId, HTMLAudioElement>();
+  private playing: HTMLAudioElement | null = null;
 
   constructor() {
+    void this.loadClips();
     if (!this.synth) return;
     this.pickVoice();
     // Chrome/Edge often return an empty voice list on the very first call.
@@ -60,24 +72,64 @@ export class Narrator {
     }
   };
 
+  private async loadClips() {
+    if (typeof window === 'undefined' || typeof fetch !== 'function' || typeof Audio === 'undefined') return;
+    try {
+      const res = await fetch(NARRATION_MANIFEST_URL);
+      if (!res.ok) return;
+      const manifest = (await res.json()) as NarrationManifest;
+      for (const [id, clip] of Object.entries(manifest.clips) as [NarrationId, NonNullable<NarrationManifest['clips'][NarrationId]>][]) {
+        // A clip recorded for an older wording would say the wrong thing - TTS of the current text is better.
+        if (!clip || NARRATION_LINES[id] !== clip.text) continue;
+        const audio = new Audio(`${NARRATION_AUDIO_DIR}/${clip.file}`);
+        audio.preload = 'auto';
+        this.clips.set(id, audio);
+      }
+    } catch { /* no clips: every line uses TTS */ }
+  }
+
+  /** Stops the clip and/or TTS currently playing. */
+  private stopAll() {
+    this.gen++;
+    this.synth?.cancel();
+    if (this.playing) { this.playing.pause(); this.playing = null; }
+  }
+
   /** Stops anything currently queued/playing the instant the user mutes; a later unmute doesn't replay it. */
   setMuted(muted: boolean) {
-    if (muted && !this.muted) { this.gen++; this.synth?.cancel(); }
+    if (muted && !this.muted) this.stopAll();
     this.muted = muted;
   }
 
   /** CAPCOM is talking: cancels what the narrator was saying and ignores new lines until it is released. */
   setSuspended(suspended: boolean) {
-    if (suspended && !this.suspended) { this.gen++; this.synth?.cancel(); }
+    if (suspended && !this.suspended) this.stopAll();
     this.suspended = suspended;
+  }
+
+  /** Says a scripted line in CAPCOM's recorded voice, or with TTS if its clip isn't available. */
+  say(id: NarrationId) {
+    if (this.muted || this.suspended) return;
+    const clip = this.clips.get(id);
+    if (!clip) { this.speak(NARRATION_LINES[id]); return; }
+    this.stopAll();
+    const myGen = this.gen;
+    clip.currentTime = 0;
+    this.playing = clip;
+    clip.onended = () => { if (this.playing === clip) this.playing = null; };
+    clip.play().catch(() => {
+      // Blocked or failed to decode: say it with TTS rather than stay silent.
+      if (this.gen !== myGen) return;
+      this.playing = null;
+      this.speak(NARRATION_LINES[id]);
+    });
   }
 
   /** Queues `text` as its own clause chain, cancelling whatever the narrator was still saying. */
   speak(text: string) {
     if (!this.synth || this.muted || this.suspended) return;
-    this.gen++;
+    this.stopAll();
     const myGen = this.gen;
-    this.synth.cancel();
     void this.speakClauses(splitIntoClauses(text), myGen);
   }
 
@@ -106,8 +158,8 @@ export class Narrator {
   }
 
   dispose() {
-    this.gen++;
-    this.synth?.cancel();
+    this.stopAll();
+    this.clips.clear();
     this.synth?.removeEventListener('voiceschanged', this.pickVoice);
   }
 }

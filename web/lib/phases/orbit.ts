@@ -291,10 +291,7 @@ export class OrbitPhase implements Phase {
     // t at LAP+0.01 to skip the scan lap entirely - no need to re-explain it then.
     if (!this.narratedCriteria && t > 1.5 && t < LAP) {
       this.narratedCriteria = true;
-      this.app.narrator.speak(
-        'Estoy comparando cada sitio por tres cosas: cuánto sol reciben sus paneles solares, '
-        + 'si tienen línea directa con la Tierra para comunicarse, y qué tan inclinado es el terreno para alunizar seguro.',
-      );
+      this.app.narrator.say('siteCriteria');
     }
 
     // reveal + "compute" sites one by one during the scanning lap (worst → best for drama)
