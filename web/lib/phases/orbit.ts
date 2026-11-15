@@ -11,6 +11,7 @@ import type { RoomEvent } from '../sync/room-client';
 import { evaluateSites, fmtHours, type SiteMetrics } from '../mission/scoring';
 import { devFallbackMission, type MissionData } from '../mission/sites';
 import { clearSurface } from './surface-world';
+import { STATUS_LABELS, STATUS_TONES, fmtPercent, fmtSigned, type HudRankRow, type PhaseHud } from '../engine/hud';
 
 const R = 1000;               // moon radius in scene units (1 u ≈ 1.74 km)
 const ORBIT_ALT = 150;
@@ -461,5 +462,56 @@ export class OrbitPhase implements Phase {
     } else {
       g.font = `500 26px ${UI.font}`; g.fillStyle = UI.dim; g.fillText('Esperando el ranking final…', 48, 1210);
     }
+  }
+
+  controlHud(): PhaseHud {
+    const total = this.ranking.length;
+    const done = this.analysisDone;
+    const chosen = this.app.selected;
+    const m = chosen ? this.ranking.find((r) => r.site.id === chosen.site.id) ?? chosen : null;
+    const base = m ? this.baseRanking.find((r) => r.site.id === m.site.id) : undefined;
+    const evaluated = [...this.ranking].sort((a, b) => b.rank - a.rank).slice(0, this.revealed).sort((a, b) => a.rank - b.rank);
+    const rows: HudRankRow[] = evaluated.map((r) => {
+      const was = this.delayDays ? this.baseRanking.find((b) => b.site.id === r.site.id) : undefined;
+      return {
+        id: `site-${r.site.id}`, rank: r.rank, name: r.site.name, score: Math.round(r.score), status: r.status,
+        selected: chosen?.site.id === r.site.id, delta: was ? Math.round(r.score - was.score) : undefined, run: () => this.select(r),
+      };
+    });
+
+    let detail = 'Ranking final · elige un sitio de la lista o un pin de la escena';
+    if (this.rangeWarning) detail = this.rangeWarning;
+    else if (!done) detail = `Calculando óptimo… ${this.revealed}/${total}`;
+    else if (this.delayDays && m && base) detail = `Con +${this.delayDays} d de retraso: antes ${Math.round(base.score)} % → ahora ${Math.round(m.score)} %`;
+
+    const delays = [...DELAY_OPTIONS.map((days) => ({
+      id: `delay-${days}`, label: `+${days} d`, pressed: this.delayDays === days, disabled: days > this.maxDelayDays, run: () => this.applyDelay(days),
+    })), { id: 'delay-reset', label: 'Original', pressed: this.delayDays === 0, run: () => this.applyDelay(0) }];
+
+    return {
+      figure: done && m
+        ? { value: String(Math.round(m.score)), caption: `de 100 · ${m.site.name}`, badge: { label: STATUS_LABELS[m.status], tone: STATUS_TONES[m.status] } }
+        : { value: `${this.revealed} de ${total}`, caption: 'sitios evaluados' },
+      detail,
+      progress: done ? undefined : { value: total ? this.revealed / total : 0, label: 'Evaluación de sitios' },
+      facts: done && m ? [
+        { label: 'Elevación solar', value: `${fmtSigned(m.sun.elevation, 2)}°` },
+        { label: 'Iluminación en 14 d', value: fmtPercent(m.illumPct) },
+        { label: 'Elevación de la Tierra', value: `${fmtSigned(m.earth.elevation, 2)}°` },
+        { label: 'Tierra visible', value: fmtPercent(m.earthPct) },
+      ] : undefined,
+      toggles: done ? { label: 'Simular retraso', options: delays } : undefined,
+      side: { kind: 'ranking', title: 'Sitios candidatos', rows },
+      primary: {
+        id: 'preconfirm', label: 'Preconfirmar punto', disabled: !done || !m,
+        run: () => {
+          if (!m) return;
+          this.app.audio.play('ui_confirm');
+          this.app.selected = m;
+          this.app.room.send({ type: 'set_site', site_id: m.site.id });
+          this.app.goTo('pov', 0.8, 1.2);
+        },
+      },
+    };
   }
 }

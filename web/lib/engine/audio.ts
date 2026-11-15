@@ -273,6 +273,7 @@ export class AudioEngine {
   private failed = false;
   private disposed = false;
   private hiddenSuspend = false;
+  private paused = false;
   private bound = false;
   private _muted = false;
 
@@ -300,13 +301,24 @@ export class AudioEngine {
     this.applyMute();
   }
 
+  /** Silences everything by suspending the context; the mute preference is left untouched. */
+  pause() {
+    this.paused = true;
+    this.live?.suspend().catch(() => {});
+  }
+
+  resume() {
+    this.paused = false;
+    if (!this.hiddenSuspend) this.live?.resume().catch(() => {});
+  }
+
   noiseBuffer(kind: NoiseKind) { return this.noise?.[kind] ?? null; }
 
   play(id: SoundId, delay = 0) {
     try {
       const s = this.sounds.get(id);
       const ctx = this.ctx, master = this.master, noise = this.noise;
-      if (!s || s.kind !== 'oneshot' || this._muted || !ctx || !master || !noise) return;
+      if (!s || s.kind !== 'oneshot' || this._muted || this.paused || !ctx || !master || !noise) return;
       if (!this.injected && ctx.state !== 'running') return;
       const when = ctx.currentTime + delay;
       const dur = s.duration_s ?? 0;
@@ -369,6 +381,7 @@ export class AudioEngine {
     try {
       this.live = new Ctor({ latencyHint: 'interactive' });
       this.setup(this.live);
+      if (this.paused) this.live.suspend().catch(() => {});
     } catch {
       this.failed = true;
       this.live?.close().catch(() => {});
@@ -392,7 +405,7 @@ export class AudioEngine {
 
   private onGesture = () => {
     this.ensure();
-    if (this.live && this.live.state !== 'running') this.live.resume().catch(() => {});
+    if (this.live && !this.paused && this.live.state !== 'running') this.live.resume().catch(() => {});
   };
 
   private onVisibility = () => {
@@ -402,7 +415,7 @@ export class AudioEngine {
       if (live.state === 'running') { this.hiddenSuspend = true; live.suspend().catch(() => {}); }
     } else if (this.hiddenSuspend) {
       this.hiddenSuspend = false;
-      live.resume().catch(() => {});
+      if (!this.paused) live.resume().catch(() => {});
     }
   };
 }

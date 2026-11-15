@@ -108,6 +108,7 @@ export class Input {
 
   private activate(hit: Hit | null) {
     if (!hit) return;
+    if (!this.app.run.simulating && !(hit.panel && this.app.globalTargets.includes(hit.panel.mesh))) return;
     if (hit.panel && hit.uv) hit.panel.pointer(hit.uv, 'click');
     else hit.obj?.userData.onSelect?.();
   }

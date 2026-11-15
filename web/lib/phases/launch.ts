@@ -8,6 +8,7 @@ import { createMoon } from '../engine/moon';
 import { clamp01, damp, disposeTree, lerp, rand, smooth } from '../engine/util';
 import { clearSurface } from './surface-world';
 import { disposeObject, loadRocketModel } from './rocket-model';
+import { countdownFigure, fmtPercent, groupThousands, type PhaseHud } from '../engine/hud';
 import { LaunchEnvironment, rocketShadowProxy } from './launch-environment';
 import { LaunchExhaust } from './launch-exhaust';
 import { loadLaunchTower } from './launch-tower';
@@ -347,5 +348,25 @@ export class LaunchPhase implements Phase {
       this.arrivalT += dt;
       if (this.arrivalT > 0.8) { this.leaving = true; app.goTo('orbit', 0.9, 1.2); }
     }
+  }
+
+  controlHud(): PhaseHud {
+    const pct = fmtPercent(this.shownPct * 100);
+    const count = this.started ? countdownFigure(this.countLabel || (this.t < 0.4 ? 'T-3' : '')) : null;
+    return {
+      figure: count ?? { value: pct, caption: 'de los datos de la misión cargados' },
+      progress: { value: this.shownPct, label: 'Carga de datos', text: count ? pct : undefined },
+      detail: this.status,
+      side: {
+        kind: 'readouts',
+        items: [
+          { label: 'Altitud', value: groupThousands(this.tele.alt) },
+          { label: 'Velocidad', value: this.tele.vel },
+          { label: 'Distancia a la Luna', value: groupThousands(this.tele.dist) },
+        ],
+      },
+      primary: this.started ? undefined : { id: 'start', label: 'Comenzar despegue', run: () => { this.started = true; this.hud.invalidate(); } },
+      waiting: !this.started,
+    };
   }
 }

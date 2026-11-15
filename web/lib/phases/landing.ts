@@ -7,6 +7,7 @@ import { cockpitTexture, glowTexture } from '../engine/textures';
 import { clamp01, disposeTree, rand, smooth } from '../engine/util';
 import { ensureSelection } from './pov';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
+import { fmtInt, fmtLatLon, fmtPercent, type PhaseHud } from '../engine/hud';
 
 const T_BRAKE = 17;     // end of the powered approach
 const T_TOUCH = 25.5;   // touchdown
@@ -193,5 +194,27 @@ export class LandingPhase implements Phase {
     const tt = Math.max(0, T_TOUCH - this.t);
     g.font = `600 26px ${UI.mono}`; g.fillStyle = 'rgba(143,203,155,.8)';
     g.fillText(this.touched ? 'ALUNIZAJE CONFIRMADO' : `CONTACTO EN ${tt.toFixed(1)} s`, 40, 410);
+  }
+
+  controlHud(): PhaseHud {
+    const site = this.world.m.site;
+    const status = this.touched ? 'Luz de contacto · motor apagado' : this.t < T_BRAKE ? 'Descenso motorizado · aproximación' : 'Descenso terminal · vertical';
+    const toTouch = Math.max(0, T_TOUCH - this.t);
+    const progress = clamp01(this.t / T_TOUCH);
+    return {
+      figure: { value: `${this.alt < 100 ? this.alt.toFixed(1) : fmtInt(this.alt)} m`, caption: 'sobre la superficie' },
+      progress: { value: progress, label: 'Avance del descenso', text: fmtPercent(progress * 100) },
+      detail: `${status} · ${this.touched ? 'alunizaje confirmado' : `contacto en ${toTouch.toFixed(0)} s`}`,
+      side: {
+        kind: 'readouts',
+        items: [
+          { label: 'Velocidad de descenso', value: `${(this.touched ? 0 : Math.abs(this.vs)).toFixed(1)} m/s` },
+          { label: 'Velocidad horizontal', value: `${(this.touched ? 0 : this.hs).toFixed(1)} m/s` },
+          { label: 'Combustible', value: fmtPercent(this.fuel), meter: { value: this.fuel / 100, label: `Combustible al ${Math.round(this.fuel)} %` } },
+          { label: 'Luz de contacto', value: this.touched ? 'Encendida' : 'Apagada' },
+          { label: 'Zona de alunizaje', value: fmtLatLon(site.lat, site.lon), size: 'md' },
+        ],
+      },
+    };
   }
 }

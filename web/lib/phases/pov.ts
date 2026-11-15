@@ -8,6 +8,7 @@ import { MarkerField } from './markers';
 import { defaultMission } from './orbit';
 import { SpyView } from './spy-view';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
+import { STATUS_LABELS, fmtPercent, fmtSigned, type PhaseHud } from '../engine/hud';
 
 const MARKER_KINDS: [MarkerKind, string][] = [
   ['rock', '🪨 Roca'], ['slope', '⛰ Pendiente'], ['shadow', '🌑 Sombra'], ['other', '⚠ Otro'],
@@ -180,7 +181,7 @@ export class PovPhase implements Phase {
     }
     if (this.spy) {
       this.spy.update(t, this.app.renderer, [
-        this.info.mesh, this.actions.mesh, this.spy.mesh, this.app.fadeMesh, this.app.exitPanel.mesh,
+        this.info.mesh, this.actions.mesh, this.spy.mesh, this.app.fadeMesh, this.app.exitPanel.mesh, this.app.runPanel.mesh,
         ...this.app.input.controllers, ...this.app.input.grips,
       ]);
     }
@@ -261,5 +262,50 @@ export class PovPhase implements Phase {
         p.button(g, `mark-${kind}`, 48 + i * (bw + gap), y, bw, bh, label, () => this.placeMarker(kind), 'ghost');
       });
     }
+  }
+
+  controlHud(): PhaseHud {
+    const m = this.m;
+    const lit = m.sun.aboveHorizon > -0.27;
+    const earthUp = m.earth.aboveHorizon > 0;
+    const night = `La noche más larga de la misión dura ${fmtHours(m.longestDarkH)}.`;
+    const sun = lit
+      ? `El Sol está ${fmtSigned(m.sun.aboveHorizon, 2)}° sobre el horizonte local y se pone en ${fmtHours(m.hoursToSunset)}. ${night}`
+      : `El Sol está ${Math.abs(m.sun.aboveHorizon).toFixed(2)}° bajo el horizonte local. ${night}`;
+    return {
+      figure: { value: lit ? 'Iluminado' : 'En sombra', caption: '' },
+      detail: sun,
+      facts: [
+        { label: 'Noche más larga', value: fmtHours(m.longestDarkH) },
+        { label: 'Puntaje', value: `${Math.round(m.score)} de 100 · ${STATUS_LABELS[m.status]}` },
+        { label: 'Ventana de comunicación', value: earthUp ? `${fmtHours(m.hoursToEarthset)} restantes` : 'requiere relevo' },
+      ],
+      side: {
+        kind: 'sky',
+        blocks: [
+          {
+            kind: 'sun', label: 'Sol · energía', value: `${fmtSigned(m.sun.elevation, 2)}°`,
+            detail: `${lit ? 'sobre' : 'bajo'} el horizonte local · azimut ${m.sun.azimuth.toFixed(0)}°`,
+            share: m.illumPct / 100, shareLabel: `Sol visible el ${Math.round(m.illumPct)} % de los 14 días`,
+          },
+          {
+            kind: 'earth', label: 'Tierra · comunicación', value: `${fmtSigned(m.earth.elevation, 2)}°`,
+            detail: earthUp ? 'visible · enlace directo' : 'oculta · requiere relevo',
+            share: m.earthPct / 100, shareLabel: `Tierra visible el ${Math.round(m.earthPct)} % de los 14 días`,
+          },
+        ],
+        extras: [
+          { label: 'Potencia solar', value: fmtPercent(m.powerPct) },
+          { label: 'Temperatura estimada', value: `${fmtSigned(m.tempC, 0)} °C` },
+          { label: 'Rugosidad de la zona', value: `${this.world.roughness.toFixed(2)} m` },
+        ],
+        marks: this.app.isHost ? {
+          label: 'Marcar riesgo donde miras (anillo verde)',
+          options: MARKER_KINDS.map(([kind, text]) => ({ id: `mark-${kind}`, label: text.replace(/^\S+\s+/, ''), disabled: !this.aimPoint, run: () => this.placeMarker(kind) })),
+        } : undefined,
+      },
+      secondary: [{ id: 'back', label: 'Elegir otro sitio', run: () => this.app.goTo('orbit', 0.7, 1.0) }],
+      primary: { id: 'confirm', label: 'Iniciar descenso', run: () => this.app.goTo('landing', 0.8, 1.0) },
+    };
   }
 }

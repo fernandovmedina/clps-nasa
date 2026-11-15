@@ -1,0 +1,290 @@
+import * as THREE from 'three';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const xrState = { presenting: false };
+const renders: number[] = [];
+let frame: (() => void) | null = null;
+
+vi.mock('three', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('three')>();
+  class FakeRenderer {
+    domElement = document.createElement('canvas');
+    shadowMap = {};
+    outputColorSpace = '';
+    toneMapping = 0;
+    toneMappingExposure = 1;
+    xr = {
+      enabled: false,
+      get isPresenting() { return xrState.presenting; },
+      setReferenceSpaceType() {},
+      setFoveation() {},
+      addEventListener() {},
+      removeEventListener() {},
+      getController: () => new actual.Group(),
+      getControllerGrip: () => new actual.Group(),
+      getSession: () => null,
+      getCamera: () => new actual.ArrayCamera(),
+    };
+    setPixelRatio() {}
+    setSize() {}
+    setAnimationLoop(fn: (() => void) | null) { frame = fn; }
+    render() { renders.push(renders.length); }
+    dispose() {}
+  }
+  return { ...actual, WebGLRenderer: FakeRenderer };
+});
+
+vi.mock('./moon', () => ({ loadMoonTextures: async () => ({}) }));
+
+class FakeSocket {
+  static OPEN = 1;
+  readyState = 0;
+  onopen: unknown = null; onmessage: unknown = null; onclose: unknown = null; onerror: unknown = null;
+  send() {}
+  close() {}
+}
+
+import { LunarApp, type Phase, type PhaseName } from './app';
+import { Panel } from './panel';
+import type { PhaseHud } from './hud';
+
+interface Probe { updates: { dt: number; t: number }[]; made: number; waiting: boolean; hudPanel: Panel; exited: number }
+
+function register(app: LunarApp, name: PhaseName, probe: Probe) {
+  app.register(name, () => {
+    probe.made++;
+    probe.updates = [];
+    const phase: Phase = {
+      name,
+      scene: new THREE.Scene(),
+      targets: [],
+      enter() { phase.scene.add(app.rig); app.rig.add(probe.hudPanel.mesh); },
+      update(dt, t) { probe.updates.push({ dt, t }); },
+      exit() { probe.exited++; },
+      controlHud: () => ({ figure: { value: name, caption: '' }, side: { kind: 'readouts', items: [] }, waiting: probe.waiting }) as PhaseHud,
+    };
+    return phase;
+  });
+}
+
+const tick = (ms = 50) => { vi.advanceTimersByTime(ms); frame?.(); };
+
+async function boot() {
+  const probe: Probe = { updates: [], made: 0, waiting: false, hudPanel: new Panel(64, 64, 0.1, () => undefined), exited: 0 };
+  const app = new LunarApp(document.createElement('div'), { loadData: async () => { throw new Error('unused'); } });
+  register(app, 'launch', probe);
+  register(app, 'orbit', probe);
+  await app.start();
+  tick(0);
+  return { app, probe };
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['performance', 'Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  xrState.presenting = false;
+  renders.length = 0;
+  frame = null;
+  vi.stubGlobal('WebSocket', FakeSocket);
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+    get: (target, key) => (key in target ? target[key] : () => undefined),
+    set: (target, key, value) => { target[key] = value; return true; },
+  });
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ctx) as never);
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe('LunarApp run control', () => {
+
+  it('advances the phase and the simulation clock while running', async () => {
+    const { app, probe } = await boot();
+    tick(); tick();
+    expect(probe.updates.length).toBeGreaterThanOrEqual(2);
+    expect(app.time).toBeGreaterThan(0);
+  });
+
+  it('pausing stops phase updates and the clock but keeps drawing every frame', async () => {
+    const { app, probe } = await boot();
+    tick();
+    app.setPaused(true);
+    expect(app.run.mode).toBe('paused');
+    const calls = probe.updates.length, time = app.time, drawn = renders.length;
+    for (let i = 0; i < 20; i++) tick();
+    expect(probe.updates.length).toBe(calls);
+    expect(app.time).toBe(time);
+    expect(renders.length).toBe(drawn + 20);
+
+    app.setPaused(false);
+    tick();
+    expect(probe.updates.length).toBe(calls + 1);
+    expect(app.time).toBeGreaterThan(time);
+  });
+
+  it('suspends audio on pause and resumes it on resume', async () => {
+    const { app } = await boot();
+    const pause = vi.spyOn(app.audio, 'pause'), resume = vi.spyOn(app.audio, 'resume');
+    app.setPaused(true);
+    app.setPaused(true);
+    app.setPaused(false);
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('cannot be paused before the phase has started', async () => {
+    const { app, probe } = await boot();
+    probe.waiting = true;
+    expect(app.awaitingStart).toBe(true);
+    app.setPaused(true);
+    expect(app.run.mode).toBe('running');
+    probe.waiting = false;
+    app.setPaused(true);
+    expect(app.run.mode).toBe('paused');
+  });
+
+  it('stop freezes the phase, silences audio and refuses to pause or change phase', async () => {
+    const { app, probe } = await boot();
+    tick();
+    const silence = vi.spyOn(app.audio, 'pause');
+    app.stop();
+    expect(app.run.mode).toBe('stopped');
+    expect(silence).toHaveBeenCalledTimes(1);
+    const calls = probe.updates.length;
+    for (let i = 0; i < 5; i++) tick();
+    expect(probe.updates.length).toBe(calls);
+    app.setPaused(true);
+    expect(app.run.mode).toBe('stopped');
+    await app.goTo('orbit');
+    expect(app.phase?.name).toBe('launch');
+  });
+
+  it('a transition in flight does not swap the phase after stop', async () => {
+    const { app } = await boot();
+    for (let i = 0; i < 30; i++) tick();
+    const going = app.goTo('orbit', 0.5, 0.5);
+    tick(); tick();
+    app.stop();
+    for (let i = 0; i < 40; i++) tick();
+    await going;
+    expect(app.phase?.name).toBe('launch');
+  });
+
+  it('restart starts the first phase again with a clean session', async () => {
+    const { app, probe } = await boot();
+    app.flags.add('orbit-done');
+    app.selected = { site: { id: 'x' } } as never;
+    app.ranking = [{}] as never;
+    app.data = {} as never;
+    tick();
+    app.stop();
+    const made = probe.made, resume = vi.spyOn(app.audio, 'resume');
+
+    app.restart();
+
+    expect(app.run.mode).toBe('running');
+    expect(resume).toHaveBeenCalled();
+    expect(probe.made).toBe(made + 1);
+    expect(probe.exited).toBe(1);
+    expect(app.phase?.name).toBe('launch');
+    expect(app.flags.has('orbit-done')).toBe(false);
+    expect(app.selected).toBeNull();
+    expect(app.ranking).toEqual([]);
+    expect(app.data).toBeNull();
+    expect(app.time).toBe(0);
+    tick();
+    expect(probe.updates.length).toBeGreaterThan(0);
+  });
+
+  it('restart brings back a launch that waits for its start button', async () => {
+    const { app, probe } = await boot();
+    app.stop();
+    probe.waiting = true;
+    app.restart();
+    expect(app.awaitingStart).toBe(true);
+    app.setPaused(true);
+    expect(app.run.mode).toBe('running');
+  });
+});
+
+describe('LunarApp panels outside and inside VR', () => {
+  it('hides every 3D panel on the desktop and shows them in a headset', async () => {
+    xrState.presenting = false;
+    const { app, probe } = await boot();
+    tick();
+    expect(probe.hudPanel.mesh.visible).toBe(false);
+    expect(app.runPanel.mesh.visible).toBe(false);
+    expect(app.exitPanel.mesh.visible).toBe(false);
+
+    xrState.presenting = true;
+    tick();
+    expect(probe.hudPanel.mesh.visible).toBe(true);
+    expect(app.runPanel.mesh.visible).toBe(true);
+    expect(app.exitPanel.mesh.visible).toBe(true);
+
+    xrState.presenting = false;
+    tick();
+    expect(probe.hudPanel.mesh.visible).toBe(false);
+  });
+
+  it('keeps the run panel and the exit button reachable by the controller rays', async () => {
+    const { app } = await boot();
+    expect(app.globalTargets).toContain(app.runPanel.mesh);
+    expect(app.globalTargets).toContain(app.exitPanel.mesh);
+  });
+
+  it('places the run panel below the line of sight, centred, about 1.2 m away', async () => {
+    const { app } = await boot();
+    const eye = new THREE.Vector3(0, app.eyeHeight, 0);
+    const offset = app.runPanel.mesh.position.clone().sub(eye);
+    const distance = offset.length();
+    const below = THREE.MathUtils.radToDeg(Math.asin(-offset.y / distance));
+    expect(distance).toBeGreaterThan(1.1);
+    expect(distance).toBeLessThan(1.3);
+    expect(below).toBeGreaterThanOrEqual(25);
+    expect(below).toBeLessThanOrEqual(35);
+    expect(app.runPanel.mesh.position.x).toBe(0);
+  });
+
+  it('offers Pausar and Detener, never a second exit button', async () => {
+    xrState.presenting = true;
+    const { app } = await boot();
+    tick();
+    expect(app.runPanel.buttons.map((b) => b.id)).toEqual(['pause', 'stop']);
+  });
+
+  it('draws the pause button dimmed and inert while the phase waits for its start', async () => {
+    xrState.presenting = true;
+    const { app, probe } = await boot();
+    probe.waiting = true;
+    app.runPanel.invalidate();
+    tick();
+    expect(app.runPanel.buttons.map((b) => b.id)).toEqual(['stop']);
+  });
+
+  it('switches to a restart button once the mission is stopped', async () => {
+    xrState.presenting = true;
+    const { app } = await boot();
+    tick();
+    app.stop();
+    tick();
+    expect(app.runPanel.buttons.map((b) => b.id)).toEqual(['restart']);
+  });
+
+  it('the run panel buttons drive the engine', async () => {
+    xrState.presenting = true;
+    const { app } = await boot();
+    tick();
+    const click = (id: string) => app.runPanel.buttons.find((b) => b.id === id)!.onClick();
+    click('pause');
+    expect(app.run.mode).toBe('paused');
+    tick();
+    expect(app.runPanel.buttons.map((b) => b.id)).toEqual(['pause', 'stop']);
+    click('pause');
+    expect(app.run.mode).toBe('running');
+    click('stop');
+    expect(app.run.mode).toBe('stopped');
+  });
+});
