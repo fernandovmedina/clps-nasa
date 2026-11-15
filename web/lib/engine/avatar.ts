@@ -50,11 +50,11 @@ const _d = new THREE.Vector3();
  * solve; `d` is clamped to the reachable range so an out-of-reach target just fully extends the
  * arm toward it instead of producing NaNs.
  */
-function solveElbow(out: THREE.Vector3, shoulder: THREE.Vector3, target: THREE.Vector3, poleHint: THREE.Vector3) {
+export function solveElbow(out: THREE.Vector3, shoulder: THREE.Vector3, target: THREE.Vector3, poleHint: THREE.Vector3) {
   const toTarget = _toTarget.subVectors(target, shoulder);
   const rawLen = toTarget.length();
   const minD = Math.abs(UPPER_LEN - FORE_LEN) + 1e-4;
-  const maxD = UPPER_LEN + FORE_LEN - 1e-4;
+  const maxD = UPPER_LEN + FORE_LEN - 1e-5;
   const d = THREE.MathUtils.clamp(rawLen, minD, maxD);
   const axis = rawLen > 1e-5 ? toTarget.multiplyScalar(1 / rawLen) : _fallbackAxis.set(0, -1, 0);
   const a = (UPPER_LEN * UPPER_LEN - FORE_LEN * FORE_LEN + d * d) / (2 * d);
@@ -62,12 +62,48 @@ function solveElbow(out: THREE.Vector3, shoulder: THREE.Vector3, target: THREE.V
   const perp = _perp.subVectors(poleHint, _axisProj.copy(axis).multiplyScalar(poleHint.dot(axis)));
   if (perp.lengthSq() < 1e-6) perp.set(0, -1, 0);
   perp.normalize();
-  out.copy(shoulder).addScaledVector(axis, a).addScaledVector(perp, h);
+  return out.copy(shoulder).addScaledVector(axis, a).addScaledVector(perp, h);
 }
 const _toTarget = new THREE.Vector3();
 const _fallbackAxis = new THREE.Vector3();
 const _perp = new THREE.Vector3();
 const _axisProj = new THREE.Vector3();
+
+/** Head forward projected onto the horizontal plane (pitching the head must not tip the torso). */
+export function headFacing(out: THREE.Vector3, headQuat: THREE.Quaternion) {
+  out.set(0, 0, -1).applyQuaternion(headQuat);
+  out.y = 0;
+  if (out.lengthSq() < 1e-6) out.set(0, 0, -1); else out.normalize();
+  return out;
+}
+
+/** Yaw of the torso around +Y for a given facing direction. */
+export function facingYaw(fwd: THREE.Vector3) {
+  return Math.atan2(-fwd.x, -fwd.z);
+}
+
+export function shoulderPosition(out: THREE.Vector3, side: 1 | -1, head: THREE.Vector3, yaw: number) {
+  return out.set(side * SHOULDER_X, -SHOULDER_DROP, SHOULDER_FWD)
+    .applyQuaternion(_yawTmp.setFromAxisAngle(Y_AXIS, yaw))
+    .add(head);
+}
+
+export const CHEST_PLATE_LOCAL = new THREE.Vector3(0, 0.04, -0.175);
+
+/** World-space center of the chest plate that sits on the front of the torso. */
+export function chestFrontPosition(out: THREE.Vector3, head: THREE.Vector3, yaw: number) {
+  return out.set(0, -TORSO_DROP, 0).add(CHEST_PLATE_LOCAL)
+    .applyQuaternion(_yawTmp.setFromAxisAngle(Y_AXIS, yaw))
+    .add(head);
+}
+
+/** Elbow for one arm. The hint is a direction (not a point): down, slightly forward and outward for that side. */
+export function armElbow(out: THREE.Vector3, side: 1 | -1, shoulder: THREE.Vector3, target: THREE.Vector3, fwd: THREE.Vector3) {
+  const pole = _armPole.set(-fwd.z * side * 0.25, -1, fwd.x * side * 0.25).addScaledVector(fwd, 0.15);
+  return solveElbow(out, shoulder, target, pole);
+}
+const _yawTmp = new THREE.Quaternion();
+const _armPole = new THREE.Vector3();
 
 /**
  * First-person astronaut body. The hands already render via XRControllerModelFactory
@@ -113,10 +149,8 @@ export class Avatar {
     const cam = app.camera;
     // Body-facing: head forward projected onto the horizontal plane, so pitching your head
     // down to look at your hands doesn't tip the torso forward with it.
-    const fwd = _fwd.set(0, 0, -1).applyQuaternion(cam.quaternion);
-    fwd.y = 0;
-    if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1); else fwd.normalize();
-    const targetYaw = Math.atan2(fwd.x, fwd.z);
+    const fwd = headFacing(_fwd, cam.quaternion);
+    const targetYaw = facingYaw(fwd);
     const diff = Math.atan2(Math.sin(targetYaw - this.torsoYaw), Math.cos(targetYaw - this.torsoYaw));
     this.torsoYaw += diff * damp(TORSO_YAW_DAMP, dt);
     const yawQuat = _yawQuat.setFromAxisAngle(Y_AXIS, this.torsoYaw);
@@ -124,7 +158,6 @@ export class Avatar {
     this.torso.position.set(cam.position.x, cam.position.y - TORSO_DROP, cam.position.z);
     this.torso.quaternion.copy(yawQuat);
 
-    const poleHint = _pole; // elbows bend forward-and-down - matches reaching for the floating panels in front of you
     app.input.controllers.forEach((controller, i) => {
       const handedness = controller.userData.handedness as 'left' | 'right' | undefined;
       const side: 1 | -1 = handedness === 'right' ? 1 : handedness === 'left' ? -1 : (i === 0 ? -1 : 1);
@@ -134,14 +167,11 @@ export class Avatar {
       if (!connected) return;
 
       const grip = app.input.grips[i];
-      const shoulder = _shoulder.set(side * SHOULDER_X, -SHOULDER_DROP, SHOULDER_FWD)
-        .applyQuaternion(yawQuat)
-        .add(cam.position);
+      const shoulder = shoulderPosition(_shoulder, side, cam.position, this.torsoYaw);
       const target = _target.copy(grip.position);
-      poleHint.copy(shoulder).addScaledVector(fwd, 0.3).addScaledVector(Y_AXIS, -0.5);
 
       arm.shoulderJoint.position.copy(shoulder);
-      solveElbow(_elbow, shoulder, target, poleHint);
+      armElbow(_elbow, side, shoulder, target, fwd);
       aimSegment(arm.upper, shoulder, _elbow);
       arm.elbowJoint.position.copy(_elbow);
       aimSegment(arm.fore, _elbow, target);
@@ -160,7 +190,6 @@ export class Avatar {
 }
 const _fwd = new THREE.Vector3();
 const _yawQuat = new THREE.Quaternion();
-const _pole = new THREE.Vector3();
 const _shoulder = new THREE.Vector3();
 const _target = new THREE.Vector3();
 const _elbow = new THREE.Vector3();
