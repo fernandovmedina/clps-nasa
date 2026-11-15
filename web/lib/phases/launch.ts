@@ -106,7 +106,7 @@ export class LaunchPhase implements Phase {
       applyLanding: (date) => { app.setLanding(date); },
       send: (msg) => app.room.send(msg),
       applyMarkerEvent: (msg) => app.applyMarkerEvent(msg),
-    }, () => app.narrator.speak('Secuencia de despegue iniciada. Destino: polo sur lunar.'));
+    }, () => app.narrator.say('launchStart'));
     this.motion?.addEventListener('change', this.onMotion);
     const sc = this.scene;
     this.env = new LaunchEnvironment(EARTH_R, this.sunDir, app.renderer.capabilities.getMaxAnisotropy(), Math.atan2(-this.padCam.x, -this.padCam.z) + Math.PI / 2);
@@ -287,7 +287,7 @@ export class LaunchPhase implements Phase {
     else if (t >= T_LIFT && t < T_LIFT + 1.6) label = 'DESPEGUE';
     if (label !== this.countLabel && label.startsWith('T-')) app.audio.play('countdown_tick');
     if (label !== this.countLabel && label === 'IGNICIÓN') app.audio.play('ignition');
-    if (label !== this.countLabel && label === 'DESPEGUE') app.narrator.speak('Despegue confirmado.');
+    if (label !== this.countLabel && label === 'DESPEGUE') app.narrator.say('liftoff');
     if (label !== this.countLabel) { this.countLabel = label; this.count.mesh.visible = label !== ''; this.count.invalidate(); }
 
     // motion along the trajectory, gated by real loading progress
@@ -323,7 +323,7 @@ export class LaunchPhase implements Phase {
 
     // sky → space
     const sky = smooth(30, 900, alt);
-    if (!this.narratedAtmo && sky > 0.5) { this.narratedAtmo = true; app.narrator.speak('Hemos salido de la atmósfera. Rumbo a la Luna.'); }
+    if (!this.narratedAtmo && sky > 0.5) { this.narratedAtmo = true; app.narrator.say('leftAtmosphere'); }
     this.rumble?.set('thrust', thrust);
     this.rumble?.set('atmosphere', 1 - sky);
     this.wind?.set('dynamic_pressure', smooth(60, 300, alt) * (1 - smooth(300, 850, alt)));
@@ -382,7 +382,7 @@ export class LaunchPhase implements Phase {
 
     if (!this.narratedApproach && this.done && s > 0.85) {
       this.narratedApproach = true;
-      app.narrator.speak('Aproximándonos a la Luna. Preparando inserción orbital.');
+      app.narrator.say('lunarApproach');
     }
 
     // arrival → orbit insertion
