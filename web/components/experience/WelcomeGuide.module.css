@@ -1,0 +1,4 @@
+.guide { display: flex; align-items: flex-start; gap: 14px; }
+.avatar { flex: none; font-size: 40px; line-height: 1; }
+.roles { display: flex; flex-direction: column; gap: 10px; }
+.roles > button { width: 100%; justify-content: center; }

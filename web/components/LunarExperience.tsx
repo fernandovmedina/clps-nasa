@@ -15,6 +15,7 @@ import { installCapcomDebug } from '@/lib/capcom/debug';
 import { mountCapcomVrPanel } from '@/lib/capcom/vr-panel';
 import { clearSavedRoom, readSavedRoom, resolveInitialRoom, saveRoom, type RoomSession } from '@/lib/sync/room-session';
 import MissionLayer from './experience/MissionLayer';
+import WelcomeGuide, { type GuideRole } from './experience/WelcomeGuide';
 import styles from './LunarExperience.module.css';
 
 // Avoids 0/O/1/I - easier to read aloud or type from across the room.
@@ -57,6 +58,9 @@ export default function LunarExperience() {
   const [roomCode, setRoomCode] = useState('');
   const [isHost, setIsHost] = useState(true);
   const [planning, setPlanning] = useState(false);
+  /** The Burrito espacial's question, asked once per load; null keeps the welcome dialog up. */
+  const [role, setRole] = useState<GuideRole | null>(null);
+  const [openFollowOnMount, setOpenFollowOnMount] = useState(false);
 
   useEffect(() => {
     const el = mount.current;
@@ -70,6 +74,8 @@ export default function LunarExperience() {
     setRoomCode(initialRoom);
     setIsHost(initialIsHost);
     setPlanning(opensPlanner(window.location.search, initialIsHost));
+    // The ?phase= dev shortcut jumps straight past the welcome question, as it already did past the planner.
+    if (q) setRole(initialIsHost ? 'vr' : 'monitor');
     const app = new LunarApp(el, {
       // ⬇️ Replace loadMissionData with your real fetches (JPL Horizons, LOLA, your API)
       loadData: loadMissionData,
@@ -129,6 +135,19 @@ export default function LunarExperience() {
     if (roomCode) saveRoom({ room: roomCode, isHost });
   }, [roomCode, isHost]);
 
+  /** The Burrito espacial's answer: VR claims the host role and opens the planner; Monitor needs a code to follow. */
+  const chooseRole = (next: GuideRole) => {
+    if (next === 'vr') {
+      if (appRef.current) appRef.current.isHost = true;
+      setIsHost(true);
+      setPlanning(true);
+    } else {
+      setPlanning(false);
+      setOpenFollowOnMount(isHost);
+    }
+    setRole(next);
+  };
+
   const enterVR = async () => {
     // The microphone cannot be requested inside a VR session: ask for it here, while the page is still on screen.
     try { await capcomRef.current?.prepareForVR(); } catch { /* VR works without CAPCOM */ }
@@ -153,7 +172,11 @@ export default function LunarExperience() {
   return (
     <div className={styles.root}>
       <div ref={mount} className={styles.canvas} />
-      {!inVR && !preview && <MissionLayer app={app} vr={xr} onEnterVR={enterVR} capcom={capcom} room={{ code: roomCode, isHost, onJoin: joinRoom, onLeave: leaveRoom }} planning={planning} onPlanning={setPlanning} />}
+      {!inVR && !preview && (
+        role === null
+          ? <WelcomeGuide app={app} onChoose={chooseRole} />
+          : <MissionLayer app={app} vr={xr} onEnterVR={enterVR} capcom={capcom} room={{ code: roomCode, isHost, onJoin: joinRoom, onLeave: leaveRoom }} planning={planning} onPlanning={setPlanning} openFollowOnMount={openFollowOnMount} />
+      )}
       {error && <div role="alert" className={styles.error}>{error}</div>}
     </div>
   );

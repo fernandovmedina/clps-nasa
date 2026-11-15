@@ -28,9 +28,16 @@ async function confirmPlan(page: Page) {
   await expect(dialog).toHaveCount(0)
 }
 
-async function openLaunch(page: Page, query = '') {
+/** The Burrito espacial's welcome gate, shown on every full load of `/` unless `?phase=` skips it. */
+async function chooseRole(page: Page, role: 'vr' | 'monitor' = 'vr') {
+  const name = role === 'vr' ? 'Voy en VR' : 'Sigo la misión (Monitor)'
+  await page.getByRole('button', { name }).click()
+}
+
+async function openLaunch(page: Page, query = '', role: 'vr' | 'monitor' = 'vr') {
   await page.goto(`/${query}`)
   test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+  if (!query.includes('phase=')) await chooseRole(page, role)
   await expect(page.getByRole('list', { name: 'Fases de la misión' })).toBeVisible()
   await confirmPlan(page)
   await expect(start(page)).toBeEnabled({ timeout: 30_000 })
@@ -58,6 +65,7 @@ test('the team experience mounts its canvas at / without console errors and offe
   const shownError = page.getByRole('alert').filter({ hasText: /\S/ })
 
   await page.goto('/')
+  await chooseRole(page, 'vr')
   const webgl = await hasWebGL(page)
   test.info().annotations.push({ type: 'webgl', description: webgl ? 'available' : 'unavailable' })
 
@@ -298,10 +306,11 @@ const roomCode = (page: Page) => page.getByTestId('room-code')
 const roomInUrl = (page: Page) => new URL(page.url()).searchParams.get('room')
 const followPill = (page: Page) => page.getByText(/Mission Control · siguiendo la misión/)
 
-async function openRoom(page: Page, query = '') {
+async function openRoom(page: Page, query = '', role: 'vr' | 'monitor' = 'vr') {
   await page.setViewportSize({ width: 640, height: 480 })
   await page.goto(`/${query}`)
   test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+  await chooseRole(page, role)
   await expect(roomCode(page)).toHaveText(/^[A-Za-z0-9_-]{4,64}$/, { timeout: 30_000 })
 }
 
@@ -311,13 +320,15 @@ async function expectRole(page: Page, role: 'host' | 'monitor') {
   await expect(page.getByRole('region', { name: role === 'host' ? 'Misión' : 'Misión que sigues' })).toBeVisible()
 }
 
-async function goThroughMissionControl(page: Page) {
+async function goThroughMissionControl(page: Page, role: 'vr' | 'monitor' = 'vr') {
   await page.goto('/mission-control/')
   const card = page.getByTestId('scenario-card').first()
   await expect(card).toBeVisible({ timeout: 60_000 })
   await card.getByRole('link', { name: 'Lanzar misión con esta fecha' }).click()
   await expect(page).toHaveURL(/\/\?landing=/)
   expect(new URL(page.url()).searchParams.get('landing')).toBe('2027-01-10T00:00:00Z')
+  // The link navigates back to `/` as a fresh load, so the Burrito espacial asks again.
+  await chooseRole(page, role)
 }
 
 async function followFromDialog(page: Page, code: string) {
@@ -337,6 +348,7 @@ test('the host keeps the room and the host role after reloading', async ({ page 
   await expectRole(page, 'host')
 
   await page.reload()
+  await chooseRole(page, 'vr')
   await expect(roomCode(page)).toHaveText(code, { timeout: 30_000 })
   expect(roomInUrl(page)).toBe(code)
   await expectRole(page, 'host')
@@ -354,10 +366,10 @@ test('the host keeps the room and the host role after going through Mission Cont
 
 test('a monitor keeps the room and the monitor role after going through Mission Control and launching the mission', async ({ page }) => {
   test.setTimeout(180_000)
-  await openRoom(page, '?room=ZZZZ')
+  await openRoom(page, '?room=ZZZZ', 'monitor')
   await expect(roomCode(page)).toHaveText('ZZZZ')
   await expectRole(page, 'monitor')
-  await goThroughMissionControl(page)
+  await goThroughMissionControl(page, 'monitor')
   await expect(roomCode(page)).toHaveText('ZZZZ', { timeout: 30_000 })
   expect(roomInUrl(page)).toBe('ZZZZ')
   await expectRole(page, 'monitor')
@@ -368,7 +380,7 @@ test('opening a shared link in a fresh browser context makes a monitor of that r
   const context = await browser.newContext({ baseURL: test.info().project.use.baseURL, locale: 'es-MX', colorScheme: 'dark', viewport: { width: 1440, height: 900 } })
   try {
     const page = await context.newPage()
-    await openRoom(page, '?room=ZZZZ')
+    await openRoom(page, '?room=ZZZZ', 'monitor')
     await expect(roomCode(page)).toHaveText('ZZZZ')
     expect(roomInUrl(page)).toBe('ZZZZ')
     await expectRole(page, 'monitor')
@@ -418,10 +430,12 @@ test('following another room makes a monitor and it stays one after a reload; Sa
   await expectRole(page, 'monitor')
 
   await page.reload()
+  await chooseRole(page, 'monitor')
   await expect(roomCode(page)).toHaveText('QRST', { timeout: 30_000 })
   await expectRole(page, 'monitor')
 
   await page.getByRole('button', { name: 'Salir' }).click()
+  await chooseRole(page, 'vr')
   await expect(roomCode(page)).toHaveText(/^[A-Za-z0-9_-]{4,64}$/, { timeout: 30_000 })
   await expect(roomCode(page)).not.toHaveText('QRST')
   expect(roomInUrl(page)).not.toBe('QRST')
@@ -433,6 +447,7 @@ test('the planner opens first: pick a date, see the plan change, confirm and beg
   test.setTimeout(300_000)
   await page.goto('/?speed=4')
   test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+  await chooseRole(page, 'vr')
 
   const dialog = planner(page)
   await expect(dialog).toBeVisible()
@@ -487,6 +502,7 @@ test('the Mission Control dialog exists, validates the code and cancels with Esc
   test.setTimeout(120_000)
   await page.goto('/')
   test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+  await chooseRole(page, 'vr')
   await expect(planner(page)).toBeVisible()
 
   await page.getByRole('button', { name: 'Mission Control' }).click()

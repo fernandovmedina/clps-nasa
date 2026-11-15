@@ -27,6 +27,8 @@ interface Props {
   /** The launch planner is open. Held by the parent: this layer unmounts while the headset is on. */
   planning?: boolean;
   onPlanning?: (open: boolean) => void;
+  /** Opens the "Seguir una misión" dialog as soon as this layer mounts (the Burrito espacial's Monitor answer, with no code yet). */
+  openFollowOnMount?: boolean;
 }
 
 const NO_VR = 'VR no disponible aquí · ábrelo en el navegador del Quest (HTTPS)';
@@ -41,7 +43,7 @@ const IDLE: HudSnapshot = {
 };
 
 /** DOM control layer over the 3D scene: phases, mission, the phase's own data and the run controls. */
-export default function MissionLayer({ app, vr, onEnterVR, room, capcom, planning = false, onPlanning }: Props) {
+export default function MissionLayer({ app, vr, onEnterVR, room, capcom, planning = false, onPlanning, openFollowOnMount = false }: Props) {
   const { snap, refresh } = useHudSnapshot(app);
   const view = snap ?? IDLE;
   const { phase, mode, muted, hud, mission, roomOpen } = view;
@@ -88,7 +90,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
   const canVR = vr === 'yes';
 
   const follow = !room.isHost;
-  const [following, setFollowing] = useState(false);
+  const [following, setFollowing] = useState(openFollowOnMount);
   const prelaunch = phase === 'launch' && hud?.waiting === true && !stopped;
   const planner = planning && !follow && app !== null;
   const closePlanner = useCallback(() => { onPlanning?.(false); refresh(); }, [onPlanning, refresh]);
