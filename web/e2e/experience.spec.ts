@@ -122,7 +122,7 @@ test('Detener shows the stopped card and Reiniciar desde el despegue goes back t
   await expect(start(page)).toBeVisible()
   await expect(page.getByRole('button', { name: 'Pausar' })).toBeDisabled()
   await expect(page.getByText('Aterrizaje 24 ene 2027 · 12:00 UTC')).toBeVisible()
-  await expect(page.getByText('Malapert A (IM-1 Odysseus)')).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByText('Malapert A (IM-1 Odysseus)', { exact: true })).toBeVisible({ timeout: 60_000 })
 })
 
 test('in the orbit, choosing another site in the list changes the big figure and the mission block; axe passes', async ({ page }) => {
