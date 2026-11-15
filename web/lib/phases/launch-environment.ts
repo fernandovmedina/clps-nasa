@@ -226,11 +226,7 @@ function structures() {
   p.box(4.4, 0.9, 13.1, -4.8, 3.35, -1.05, 0x7b7d80).box(4.4, 0.9, 13.1, 4.8, 3.35, -1.05, 0x7b7d80);
   p.box(5.2, 0.9, 2.9, 0, 3.35, 4.05, 0x7b7d80).box(5.2, 0.9, 5, 0, 3.35, -5.1, 0x7b7d80);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) p.box(1, 0.5, 1, sx * 2.25, 4.05, sz * 2.25, 0x34383e);
-  for (const [x, z] of [[-20, 14], [18, -16], [-48, -6]] as const) p.cyl(0.3, 0.5, 46, x, 23.6, z, 0x9aa1a9, 8);
-  p.cyl(4, 4, 6, -38, 22, 26, 0xbab7ae, 20).cyl(0.6, 0.6, 19, -38, 9.5, 26, 0x6f7680, 8);
   p.box(18, 7, 12, -34, 4.1, -14, 0xc3c0b6).box(10, 3, 8, -34, 8.6, -14, 0x8c8f93);
-  p.box(44, 52, 36, -150, 26, -62, 0x66707b).box(45, 3, 37, -150, 38, -62, 0x363d47).box(45, 3, 37, -150, 49, -62, 0x363d47);
-  p.box(14, 36, 1.2, -150, 18, -43.4, 0x20252c).box(30, 14, 22, -110, 7, -110, 0x5f6872);
   return p.build();
 }
 
@@ -352,9 +348,7 @@ export class LaunchEnvironment {
     arch.castShadow = arch.receiveShadow = true;
     const tower = this.tower = lattice();
     tower.castShadow = tower.receiveShadow = true;
-    const beacons = new Parts();
-    for (const [x, z] of [[-20, 14], [18, -16], [-48, -6]] as const) beacons.sphere(0.6, x, 46.4, z, 0xff3020);
-    g.add(arch, tower, new THREE.Mesh(beacons.build(), new THREE.MeshBasicMaterial({ vertexColors: true })));
+    g.add(arch, tower);
 
     const sun = new THREE.DirectionalLight(0xffe4c4, 3.4);
     sun.position.copy(sunDir).multiplyScalar(260);
