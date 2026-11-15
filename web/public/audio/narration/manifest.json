@@ -26,6 +26,11 @@
       "file": "siteCriteria.wav",
       "text": "Estoy comparando cada sitio por tres cosas: cuánto sol reciben sus paneles solares, si tienen línea directa con la Tierra para comunicarse, y qué tan inclinado es el terreno para alunizar seguro.",
       "durationMs": 10090
+    },
+    "welcome": {
+      "file": "welcome.wav",
+      "text": "Bienvenido a touchdown. Soy el burrito espacial, tu guía. ¿Vas en VR, o sigues la misión en Mission Control?",
+      "durationMs": 6758
     }
   }
 }

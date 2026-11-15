@@ -1,0 +1,401 @@
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { StrictMode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { LunarApp } from '@/lib/engine/app';
+import type { SayOutcome } from '@/lib/engine/narration';
+import WelcomeGuide from './WelcomeGuide';
+
+const stages = vi.hoisted(() => [] as { canvas: HTMLCanvasElement; ok: boolean; setMood: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }[]);
+const webgl = vi.hoisted(() => ({ available: true }));
+
+vi.mock('@/lib/capcom/donkey-stage', () => ({
+  DonkeyStage: class {
+    ok = webgl.available;
+    setMood = vi.fn();
+    dispose = vi.fn();
+    constructor(readonly canvas: HTMLCanvasElement) { stages.push(this); }
+  },
+}));
+
+const SUBTITLE = 'Bienvenido a TOUCHDOWN. Soy el burrito espacial, tu guía. ¿Vas en VR, o sigues la misión en Mission Control?';
+
+interface Line { onStart?: () => void; resolve: (outcome: SayOutcome) => void }
+
+function fakeApp({ muted = false, ready = Promise.resolve() }: { muted?: boolean; ready?: Promise<void> } = {}) {
+  const lines: Line[] = [];
+  const narrator = {
+    ready,
+    setMuted: vi.fn(),
+    stop: vi.fn(),
+    sayAndWait: vi.fn((_id: string, onStart?: () => void) => new Promise<SayOutcome>((resolve) => { lines.push({ onStart, resolve }); })),
+  };
+  const app = { narrator, audio: { muted } } as unknown as LunarApp;
+  return { app, narrator, lines };
+}
+
+const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
+const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+const settle = (line: Line | undefined, outcome: SayOutcome) => act(async () => { line!.resolve(outcome); await vi.advanceTimersByTimeAsync(0); });
+const start = (line: Line | undefined) => act(async () => { line!.onStart?.(); await vi.advanceTimersByTimeAsync(0); });
+const canvas = () => screen.getByTestId('welcome-donkey');
+const dialog = () => screen.queryByRole('dialog');
+const lastMood = () => stages.at(-1)!.setMood.mock.calls.at(-1)?.[0];
+
+beforeEach(() => {
+  stages.length = 0;
+  webgl.available = true;
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+describe('WelcomeGuide', () => {
+  it('shows the donkey, no dialog and a Saltar button from the very first render', async () => {
+    const { app } = fakeApp();
+    render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+    expect(dialog()).toBeNull();
+    expect(screen.getByRole('button', { name: 'Saltar' })).toBeTruthy();
+    expect(canvas().getAttribute('aria-hidden')).toBe('true');
+    expect(canvas().getAttribute('data-mood')).toBe('idle');
+    expect(stages).toHaveLength(1);
+    expect(stages[0]!.canvas).toBe(canvas());
+    expect(lastMood()).toBe('idle');
+    await flush();
+    expect(dialog()).toBeNull();
+  });
+
+  it('asks for the welcome line after syncing the saved mute setting with the narrator', async () => {
+    const { app, narrator } = fakeApp({ muted: true });
+    render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+    await flush();
+    expect(narrator.setMuted).toHaveBeenCalledWith(true);
+    expect(narrator.sayAndWait).toHaveBeenCalledTimes(1);
+    expect(narrator.sayAndWait.mock.calls[0]![0]).toBe('welcome');
+    expect(narrator.setMuted.mock.invocationCallOrder[0]).toBeLessThan(narrator.sayAndWait.mock.invocationCallOrder[0]!);
+  });
+
+  it('does not wait for the recorded clips for more than 1.5 s', async () => {
+    const { app, narrator } = fakeApp({ ready: new Promise<void>(() => {}) });
+    render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+    await advance(1499);
+    expect(narrator.sayAndWait).not.toHaveBeenCalled();
+    await advance(5);
+    expect(narrator.sayAndWait).toHaveBeenCalledTimes(1);
+  });
+
+  it('subtitles the line while it is spoken, with the donkey talking, and then opens the dialog with it listening', async () => {
+    const { app, lines } = fakeApp();
+    render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+    await flush();
+    expect(screen.queryByText(SUBTITLE)).toBeNull();
+
+    await start(lines[0]);
+    const subtitle = screen.getByText(SUBTITLE);
+    expect(subtitle.closest('[aria-live="polite"]')).not.toBeNull();
+    expect(canvas().getAttribute('data-mood')).toBe('speaking');
+    expect(lastMood()).toBe('speaking');
+    expect(dialog()).toBeNull();
+
+    await settle(lines[0], 'ended');
+    const card = screen.getByRole('dialog', { name: 'Bienvenido a TOUCHDOWN' });
+    expect(card.getAttribute('aria-modal')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Voy en VR' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sigo la misión (Monitor)' })).toBeTruthy();
+    expect(screen.queryByText(SUBTITLE)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Saltar' })).toBeNull();
+    expect(canvas().getAttribute('data-mood')).toBe('listening');
+    expect(lastMood()).toBe('listening');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Voy en VR' }));
+  });
+
+  it('also opens the dialog when the line is cut off from outside', async () => {
+    const { app, lines } = fakeApp();
+    render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+    await flush();
+    await settle(lines[0], 'stopped');
+    expect(dialog()).not.toBeNull();
+  });
+
+  describe('when the browser blocks the audio', () => {
+    it('waits idle with "Toca para empezar" and no dialog, then tries again on that tap', async () => {
+      const { app, narrator, lines } = fakeApp();
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await settle(lines[0], 'blocked');
+      const tap = screen.getByRole('button', { name: 'Toca para empezar' });
+      expect(dialog()).toBeNull();
+      expect(canvas().getAttribute('data-mood')).toBe('idle');
+      expect(screen.getByRole('button', { name: 'Saltar' })).toBeTruthy();
+      expect(document.activeElement).toBe(tap);
+      expect(narrator.sayAndWait).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(tap);
+      expect(narrator.sayAndWait).toHaveBeenCalledTimes(2);
+      await start(lines[1]);
+      expect(screen.getByText(SUBTITLE)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Toca para empezar' })).toBeNull();
+      expect(canvas().getAttribute('data-mood')).toBe('speaking');
+      await settle(lines[1], 'ended');
+      expect(dialog()).not.toBeNull();
+    });
+
+    it('starts the voice from a click anywhere on the veil, and calls the narrator inside that click', async () => {
+      const { app, narrator, lines } = fakeApp();
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await settle(lines[0], 'blocked');
+      fireEvent.click(screen.getByTestId('welcome-veil'));
+      expect(narrator.sayAndWait).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole('button', { name: 'Toca para empezar' })).toBeNull();
+    });
+
+    it('opens the dialog when the tap is blocked again', async () => {
+      const { app, lines } = fakeApp();
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await settle(lines[0], 'blocked');
+      fireEvent.click(screen.getByRole('button', { name: 'Toca para empezar' }));
+      await settle(lines[1], 'blocked');
+      expect(dialog()).not.toBeNull();
+      expect(screen.queryByRole('button', { name: 'Toca para empezar' })).toBeNull();
+    });
+
+    it('opens the dialog with Saltar instead of tapping', async () => {
+      const { app, narrator, lines } = fakeApp();
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await settle(lines[0], 'blocked');
+      fireEvent.click(screen.getByRole('button', { name: 'Saltar' }));
+      expect(dialog()).not.toBeNull();
+      expect(narrator.sayAndWait).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('skipping', () => {
+    it('Saltar cuts the voice and shows the dialog', async () => {
+      const { app, narrator, lines } = fakeApp();
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await start(lines[0]);
+      fireEvent.click(screen.getByRole('button', { name: 'Saltar' }));
+      expect(narrator.stop).toHaveBeenCalled();
+      expect(dialog()).not.toBeNull();
+      await settle(lines[0], 'stopped');
+      expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    });
+
+    it('Escape does the same', async () => {
+      const { app, narrator, lines } = fakeApp();
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await start(lines[0]);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(narrator.stop).toHaveBeenCalled();
+      expect(dialog()).not.toBeNull();
+    });
+
+    it('a click on the veil while it talks does the same', async () => {
+      const { app, narrator, lines } = fakeApp();
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await start(lines[0]);
+      fireEvent.click(screen.getByTestId('welcome-veil'));
+      expect(narrator.stop).toHaveBeenCalled();
+      expect(dialog()).not.toBeNull();
+    });
+
+    it('Escape does nothing once the dialog is up', async () => {
+      const { app, lines } = fakeApp();
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await settle(lines[0], 'ended');
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(dialog()).not.toBeNull();
+    });
+  });
+
+  describe('choosing', () => {
+    it('calls onChoose once, in the same click, and cuts the voice', async () => {
+      const { app, narrator, lines } = fakeApp();
+      const onChoose = vi.fn();
+      render(<WelcomeGuide app={app} onChoose={onChoose} />);
+      await flush();
+      await settle(lines[0], 'ended');
+      fireEvent.click(screen.getByRole('button', { name: 'Voy en VR' }));
+      expect(onChoose).toHaveBeenCalledTimes(1);
+      expect(onChoose).toHaveBeenCalledWith('vr');
+      expect(narrator.stop).toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Sigo la misión (Monitor)' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Voy en VR' }));
+      expect(onChoose).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers Monitor with the monitor role and never speaks again', async () => {
+      const { app, narrator, lines } = fakeApp();
+      const onChoose = vi.fn();
+      render(<WelcomeGuide app={app} onChoose={onChoose} />);
+      await flush();
+      await settle(lines[0], 'ended');
+      fireEvent.click(screen.getByRole('button', { name: 'Sigo la misión (Monitor)' }));
+      expect(onChoose).toHaveBeenCalledWith('monitor');
+      expect(narrator.sayAndWait).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps Tab inside the dialog', async () => {
+      const { app, lines } = fakeApp();
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await settle(lines[0], 'ended');
+      const card = screen.getByRole('dialog');
+      const first = screen.getByRole('button', { name: 'Voy en VR' });
+      const last = screen.getByRole('button', { name: 'Sigo la misión (Monitor)' });
+      last.focus();
+      fireEvent.keyDown(card, { key: 'Tab' });
+      expect(document.activeElement).toBe(first);
+      fireEvent.keyDown(card, { key: 'Tab', shiftKey: true });
+      expect(document.activeElement).toBe(last);
+    });
+  });
+
+  describe('never leaves the visitor stuck', () => {
+    it('opens the dialog after 4 s if the engine never shows up, and Saltar works meanwhile', async () => {
+      const onChoose = vi.fn();
+      render(<WelcomeGuide app={null} onChoose={onChoose} />);
+      await advance(3999);
+      expect(dialog()).toBeNull();
+      await advance(5);
+      expect(dialog()).not.toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Voy en VR' }));
+      expect(onChoose).toHaveBeenCalledWith('vr');
+    });
+
+    it('lets Saltar through while there is no engine', () => {
+      render(<WelcomeGuide app={null} onChoose={vi.fn()} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Saltar' }));
+      expect(dialog()).not.toBeNull();
+    });
+
+    it('starts the greeting when the engine arrives in time', async () => {
+      const { app, narrator } = fakeApp();
+      const view = render(<WelcomeGuide app={null} onChoose={vi.fn()} />);
+      await advance(2000);
+      view.rerender(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      expect(narrator.sayAndWait).toHaveBeenCalledTimes(1);
+      await advance(5000);
+      expect(dialog()).toBeNull();
+    });
+
+    it('gives an engine that arrives right at the limit one more turn before giving up on it', async () => {
+      const { app, narrator } = fakeApp();
+      const view = render(<WelcomeGuide app={null} onChoose={vi.fn()} />);
+      await advance(4000);
+      view.rerender(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await advance(10);
+      expect(dialog()).toBeNull();
+      expect(narrator.sayAndWait).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not start talking once the dialog is already up', async () => {
+      const { app, narrator } = fakeApp();
+      const view = render(<WelcomeGuide app={null} onChoose={vi.fn()} />);
+      await advance(4005);
+      expect(dialog()).not.toBeNull();
+      view.rerender(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      expect(narrator.sayAndWait).not.toHaveBeenCalled();
+      expect(dialog()).not.toBeNull();
+    });
+
+    it('subtitles a muted greeting for about 6.5 s and then opens the dialog', async () => {
+      const { app, lines } = fakeApp({ muted: true });
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await settle(lines[0], 'silent');
+      expect(screen.getByText(SUBTITLE)).toBeTruthy();
+      expect(canvas().getAttribute('data-mood')).toBe('speaking');
+      await advance(6499);
+      expect(dialog()).toBeNull();
+      await advance(1);
+      expect(dialog()).not.toBeNull();
+      expect(screen.queryByText(SUBTITLE)).toBeNull();
+    });
+
+    it('opens the dialog 15 s after calling the narrator when the audio never resolves, silencing it', async () => {
+      const { app, narrator } = fakeApp();
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await advance(14_999);
+      expect(dialog()).toBeNull();
+      await advance(1);
+      expect(dialog()).not.toBeNull();
+      expect(narrator.stop).toHaveBeenCalled();
+    });
+
+    it('counts the 15 s again from the moment it starts talking', async () => {
+      const { app, lines } = fakeApp();
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await advance(10_000);
+      await start(lines[0]);
+      await advance(14_999);
+      expect(dialog()).toBeNull();
+      await advance(1);
+      expect(dialog()).not.toBeNull();
+    });
+  });
+
+  describe('lifecycle', () => {
+    it('frees the donkey stage, removes its canvas and cuts a pending voice on unmount', async () => {
+      const { app, narrator } = fakeApp();
+      const view = render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      const stage = stages[0]!;
+      view.unmount();
+      expect(stage.dispose).toHaveBeenCalledTimes(1);
+      expect(document.querySelector('canvas')).toBeNull();
+      expect(narrator.stop).toHaveBeenCalled();
+    });
+
+    it('does not touch the narrator on unmount once its line is over', async () => {
+      const { app, narrator, lines } = fakeApp();
+      const view = render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      await settle(lines[0], 'ended');
+      narrator.stop.mockClear();
+      view.unmount();
+      expect(narrator.stop).not.toHaveBeenCalled();
+    });
+
+    it('collapses the donkey slot, and still opens the dialog, when the stage has no WebGL', async () => {
+      webgl.available = false;
+      const { app, lines } = (() => fakeApp())();
+      render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+      await flush();
+      expect(canvas().parentElement!.getAttribute('data-ok')).toBe('false');
+      await settle(lines[0], 'ended');
+      expect(dialog()).not.toBeNull();
+    });
+
+    it('keeps the donkey slot when the stage works', () => {
+      render(<WelcomeGuide app={fakeApp().app} onChoose={vi.fn()} />);
+      expect(canvas().parentElement!.getAttribute('data-ok')).toBe('true');
+    });
+
+    it('survives React StrictMode mounting twice: one live stage, one greeting', async () => {
+      const { app, narrator, lines } = fakeApp();
+      render(<StrictMode><WelcomeGuide app={app} onChoose={vi.fn()} /></StrictMode>);
+      await flush();
+      expect(stages.length).toBeGreaterThanOrEqual(2);
+      expect(stages[0]!.dispose).toHaveBeenCalledTimes(1);
+      expect(stages.at(-1)!.dispose).not.toHaveBeenCalled();
+      expect(document.querySelectorAll('canvas')).toHaveLength(1);
+      expect(stages.at(-1)!.canvas).toBe(canvas());
+      expect(narrator.sayAndWait).toHaveBeenCalledTimes(1);
+      await settle(lines[0], 'ended');
+      expect(dialog()).not.toBeNull();
+    });
+  });
+});

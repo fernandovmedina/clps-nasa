@@ -7,6 +7,9 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 
 interface Clause { text: string; pauseAfterMs: number }
 
+/** How `sayAndWait` went: it played to the end, the browser refused to play without a gesture, nothing could sound, or it was cut off. */
+export type SayOutcome = 'ended' | 'blocked' | 'silent' | 'stopped';
+
 /**
  * Splits on sentence/clause punctuation so we can insert a deliberate pause between parts -
  * the Web Speech API has no SSML <break> support, this is the only lever available to make a
@@ -44,9 +47,13 @@ export class Narrator {
   /** Pre-recorded clips by id; only ids whose recorded text still matches NARRATION_LINES. */
   private clips = new Map<NarrationId, HTMLAudioElement>();
   private playing: HTMLAudioElement | null = null;
+  /** Settles the `sayAndWait` in flight; `stopAll()` resolves it as 'stopped' because pausing a clip fires no `ended`. */
+  private settle: ((outcome: SayOutcome) => void) | null = null;
+  /** Settles once the recorded clips are known (loaded, or loading failed). Never rejects. */
+  readonly ready: Promise<void>;
 
   constructor() {
-    void this.loadClips();
+    this.ready = this.loadClips().catch(() => {});
     if (!this.synth) return;
     this.pickVoice();
     // Chrome/Edge often return an empty voice list on the very first call.
@@ -93,7 +100,13 @@ export class Narrator {
     this.gen++;
     this.synth?.cancel();
     if (this.playing) { this.playing.pause(); this.playing = null; }
+    const settle = this.settle;
+    this.settle = null;
+    settle?.('stopped');
   }
+
+  /** Stops whatever is being said (clip or TTS). */
+  stop() { this.stopAll(); }
 
   /** Stops anything currently queued/playing the instant the user mutes; a later unmute doesn't replay it. */
   setMuted(muted: boolean) {
@@ -125,6 +138,51 @@ export class Narrator {
     });
   }
 
+  /**
+   * Says a scripted line like `say()` and reports how it went. `onStart` fires once, when the line actually starts
+   * sounding. Browsers refuse audio before a user gesture: that is 'blocked' (no TTS attempt - it would be refused too),
+   * and the caller can retry from a click. Never rejects.
+   */
+  sayAndWait(id: NarrationId, onStart?: () => void): Promise<SayOutcome> {
+    const clip = this.clips.get(id);
+    if (this.muted || this.suspended || (!clip && !this.synth)) return Promise.resolve('silent');
+    this.stopAll();
+    const myGen = this.gen;
+    return new Promise<SayOutcome>((resolve) => {
+      const finish = (outcome: SayOutcome) => {
+        if (this.settle === finish) this.settle = null;
+        resolve(outcome);
+      };
+      this.settle = finish;
+      const started = () => { if (this.gen === myGen) onStart?.(); };
+      const text = NARRATION_LINES[id];
+      if (!clip) { void this.speakAndReport(text, myGen, finish, started); return; }
+
+      clip.currentTime = 0;
+      this.playing = clip;
+      clip.onended = () => {
+        if (this.playing === clip) this.playing = null;
+        if (this.gen === myGen) finish('ended');
+      };
+      clip.play().then(started, (err: unknown) => {
+        if (this.gen !== myGen) return; // paused by stop(): that rejects a pending play() with AbortError
+        this.playing = null;
+        if ((err as { name?: string } | null)?.name === 'NotAllowedError') { finish('blocked'); return; }
+        void this.speakAndReport(text, myGen, finish, started);
+      });
+    });
+  }
+
+  private async speakAndReport(text: string, myGen: number, finish: (outcome: SayOutcome) => void, started: () => void) {
+    if (!this.synth) { finish('silent'); return; }
+    // Chrome logs a console warning when speak() is called before any user gesture, and refuses it anyway.
+    const activation = typeof navigator !== 'undefined' ? navigator.userActivation : undefined;
+    if (activation && !activation.hasBeenActive) { finish('blocked'); return; }
+    const result = await this.speakClauses(splitIntoClauses(text), myGen, started);
+    if (result === 'blocked') finish('blocked');
+    else if (result === 'done') finish('ended');
+  }
+
   /** Queues `text` as its own clause chain, cancelling whatever the narrator was still saying. */
   speak(text: string) {
     if (!this.synth || this.muted || this.suspended) return;
@@ -133,26 +191,32 @@ export class Narrator {
     void this.speakClauses(splitIntoClauses(text), myGen);
   }
 
-  private async speakClauses(clauses: Clause[], myGen: number) {
-    for (const clause of clauses) {
-      if (this.gen !== myGen) return; // superseded by a newer speak()/mute - stop talking over it
-      await this.speakOne(clause.text);
-      if (this.gen !== myGen) return;
+  private async speakClauses(clauses: Clause[], myGen: number, onStart?: () => void): Promise<'done' | 'blocked' | 'superseded'> {
+    for (const [i, clause] of clauses.entries()) {
+      if (this.gen !== myGen) return 'superseded'; // superseded by a newer speak()/mute - stop talking over it
+      const error = await this.speakOne(clause.text, i === 0 ? onStart : undefined);
+      if (this.gen !== myGen) return 'superseded';
+      if (i === 0 && error === 'not-allowed') return 'blocked';
       if (clause.pauseAfterMs) await wait(clause.pauseAfterMs);
     }
+    return 'done';
   }
 
-  private speakOne(text: string): Promise<void> {
+  /** Resolves with the utterance's error code, or null when it was spoken. */
+  private speakOne(text: string, onStart?: () => void): Promise<string | null> {
     return new Promise((resolve) => {
-      if (!this.synth) { resolve(); return; }
+      if (!this.synth) { resolve(null); return; }
       const u = new SpeechSynthesisUtterance(text);
       u.lang = this.voice?.lang ?? 'es-ES';
       if (this.voice) u.voice = this.voice;
       // Slightly under 1x: a flat, instant "1.0" reads as rushed/robotic for short mission-
       // control lines - this is closer to how someone actually paces a status callout.
       u.rate = 0.94;
-      u.onend = () => resolve();
-      u.onerror = () => resolve();
+      let started = false;
+      const markStarted = () => { if (!started) { started = true; onStart?.(); } };
+      u.onstart = markStarted;
+      u.onend = () => { markStarted(); resolve(null); }; // some engines never fire `start`
+      u.onerror = (e) => resolve(e?.error ?? 'error');
       this.synth.speak(u);
     });
   }

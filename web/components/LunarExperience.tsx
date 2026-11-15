@@ -135,7 +135,25 @@ export default function LunarExperience() {
     if (roomCode) saveRoom({ room: roomCode, isHost });
   }, [roomCode, isHost]);
 
-  /** The Burrito espacial's answer: VR claims the host role and opens the planner; Monitor needs a code to follow. */
+  const enterVR = async (): Promise<boolean> => {
+    // The microphone cannot be requested inside a VR session: ask for it here, while the page is still on screen.
+    try { await capcomRef.current?.prepareForVR(); } catch { /* VR works without CAPCOM */ }
+    const current = appRef.current;
+    if (!current) return false;
+    try {
+      await current.enterVR();
+      return true;
+    } catch (e) {
+      setError(`No se pudo iniciar VR: ${String(e)}`);
+      return false;
+    }
+  };
+
+  /**
+   * The Burrito espacial's answer: VR claims the host role and goes straight into the headset when there is one (the
+   * planner is DOM, which the visor cannot show), falling back to the planner if the session does not start; without a
+   * headset it opens the planner. Monitor needs a code to follow.
+   */
   const chooseRole = (next: GuideRole) => {
     if (next === 'vr') {
       const current = appRef.current;
@@ -147,18 +165,18 @@ export default function LunarExperience() {
         if (!wasHost && current.phase) current.restart();
       }
       setIsHost(true);
-      setPlanning(true);
+      if (xr === 'yes') {
+        setPlanning(false);
+        // Called inside the click on purpose: requestSession only works during that user gesture.
+        void enterVR().then((entered) => { if (!entered) setPlanning(true); });
+      } else {
+        setPlanning(true);
+      }
     } else {
       setPlanning(false);
       setOpenFollowOnMount(isHost);
     }
     setRole(next);
-  };
-
-  const enterVR = async () => {
-    // The microphone cannot be requested inside a VR session: ask for it here, while the page is still on screen.
-    try { await capcomRef.current?.prepareForVR(); } catch { /* VR works without CAPCOM */ }
-    try { await appRef.current?.enterVR(); } catch (e) { setError(`No se pudo iniciar VR: ${String(e)}`); }
   };
 
   const joinRoom = (code: string): boolean => {

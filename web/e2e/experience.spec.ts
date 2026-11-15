@@ -28,10 +28,16 @@ async function confirmPlan(page: Page) {
   await expect(dialog).toHaveCount(0)
 }
 
-/** The Burrito espacial's welcome gate, shown on every full load of `/` unless `?phase=` skips it. */
+/**
+ * The Burrito espacial's welcome gate, shown on every full load of `/` unless `?phase=` skips it. It greets by voice
+ * first (or waits for a tap when the browser blocks audio); Saltar, there until the question is up, goes straight to it.
+ */
 async function chooseRole(page: Page, role: 'vr' | 'monitor' = 'vr') {
-  const name = role === 'vr' ? 'Voy en VR' : 'Sigo la misión (Monitor)'
-  await page.getByRole('button', { name }).click()
+  const target = page.getByRole('button', { name: role === 'vr' ? 'Voy en VR' : 'Sigo la misión (Monitor)' })
+  const skip = page.getByRole('button', { name: 'Saltar' })
+  await expect(skip.or(target).first()).toBeVisible({ timeout: 30_000 })
+  await skip.click({ timeout: 2000 }).catch(() => {})
+  await target.click()
 }
 
 async function openLaunch(page: Page, query = '', role: 'vr' | 'monitor' = 'vr') {

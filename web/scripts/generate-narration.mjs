@@ -172,8 +172,9 @@ async function recordOnce(client, cfg, text) {
     finish();
   }
   if (!gotAudioEnd) throw new Error('la sesión terminó sin audio completo');
-  // La transcripción especulativa es lo que el modelo genera para locutar; la final, si llega, la confirma.
-  return { pcm: Buffer.concat(chunks), transcript: (finals.length ? finals : speculative).join(' ') };
+  // La transcripción especulativa es lo que el modelo genera para locutar; la final la confirma, pero si
+  // locuta en varios tramos solo llega la del primero: entonces vale la especulativa, que los trae todos.
+  return { pcm: Buffer.concat(chunks), transcript: (finals.length >= speculative.length ? finals : speculative).join(' ') };
 }
 
 const normalize = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ñ ]+/g, ' ').replace(/\s+/g, ' ').trim();
