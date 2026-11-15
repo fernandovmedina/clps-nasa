@@ -20,7 +20,16 @@ export class Narrator {
   private pickVoice = () => {
     const voices = this.synth?.getVoices() ?? [];
     const byLang = (prefix: string) => voices.find((v) => v.lang.toLowerCase().startsWith(prefix)) ?? null;
-    this.voice = byLang('es-mx') ?? byLang('es-us') ?? byLang('es-419') ?? byLang('es-es') ?? byLang('es');
+    // Some Android/Quest TTS engines list a Spanish voice with an English-looking lang tag -
+    // catch those by name too before giving up.
+    const byName = () => voices.find((v) => /spanish|español|espanol/i.test(v.name)) ?? null;
+    this.voice = byLang('es-mx') ?? byLang('es-us') ?? byLang('es-419') ?? byLang('es-es') ?? byLang('es') ?? byName();
+    if (voices.length && !this.voice) {
+      // No Spanish voice installed on this device's TTS engine at all - no front-end code can
+      // fix the accent from here, only installing a Spanish voice/language pack can. Setting
+      // `lang` on the utterance anyway (see speak()) is the best effort left.
+      console.warn('[narration] no se encontró una voz en español; el narrador sonará con la voz por defecto del dispositivo.');
+    }
   };
 
   /** Stops anything currently queued/playing the instant the user mutes; a later unmute doesn't replay it. */
