@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Input } from './input';
 import { AudioEngine } from './audio';
+import { Avatar } from './avatar';
 import { damp, lookQuat } from './util';
 import { loadMoonTextures, type MoonTextures } from './moon';
 import { RunState, type PhaseHud } from './hud';
@@ -93,6 +94,8 @@ export class LunarApp {
   /** Head-locked, visible only in VR - the only way out of a session besides powering off the headset.
    *  Public like fadeMesh: a spy-view capture (spy-view.ts) must hide this too. */
   readonly exitPanel: Panel;
+  /** First-person torso + IK arms, visible only in VR. See avatar.ts. */
+  private avatar: Avatar;
   private fade = { value: 1, target: 1, speed: 1, resolve: null as null | (() => void) };
   private transitioning = false;
   /** Bumped by stop/restart so a transition in flight does not swap the phase afterwards. */
@@ -146,6 +149,8 @@ export class LunarApp {
     this.runPanel = createRunPanel(this);
     this.rig.add(this.runPanel.mesh);
     this.globalTargets.push(this.runPanel.mesh);
+    this.avatar = new Avatar(this);
+    this.rig.add(this.avatar.group);
     this.room = new RoomClient(opts.room ?? 'touchdown', opts.onRoomStatus, opts.onRoomChange);
     this.isHost = opts.isHost ?? true;
     this.ro = new ResizeObserver(() => this.resize());
@@ -319,6 +324,7 @@ export class LunarApp {
 
     this.exitPanel.mesh.visible = this.isXR;
     this.exitPanel.update();
+    this.avatar.update(frame);
 
     const k = this.view.snap ? 1 : damp(this.view.rate, frame);
     this.view.snap = false;
@@ -362,6 +368,7 @@ export class LunarApp {
     this.phase?.exit();
     this.runPanel.dispose();
     this.exitPanel.dispose();
+    this.avatar.dispose();
     this.audio.dispose();
     this.input.dispose();
     this.room.close();

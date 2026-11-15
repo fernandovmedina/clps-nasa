@@ -40,8 +40,9 @@ export class Input {
       const line = new THREE.Line(lineGeo, lineMat);
       line.scale.z = 5;
       c.add(line);
-      c.addEventListener('connected', () => (c.userData.connected = true));
-      c.addEventListener('disconnected', () => (c.userData.connected = false));
+      // handedness: used by avatar.ts to attach the right/left IK arm to the right/left controller.
+      c.addEventListener('connected', (e) => { c.userData.connected = true; c.userData.handedness = e.data.handedness; });
+      c.addEventListener('disconnected', () => { c.userData.connected = false; c.userData.handedness = undefined; });
       c.addEventListener('select', () => this.activate(this.castFrom(c)));
       app.rig.add(c);
       this.controllers.push(c); this.lines.push(line);
