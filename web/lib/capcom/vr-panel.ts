@@ -1,6 +1,7 @@
 import type { LunarApp } from '../engine/app';
 import { Panel, UI } from '../engine/panel';
 import type { CapcomController, CapcomSnapshot } from './controller';
+import { DonkeyGuide, donkeyMood } from './donkey';
 
 const W = 560;
 const H = 250;
@@ -9,6 +10,9 @@ const DISTANCE_M = 1.2;
 const DEPRESSION_DEG = 28;
 const AZIMUTH_DEG = 24;
 const BODY_LINES = 4;
+/** The donkey stands just outside the panel's right edge, feet level with its bottom, turned a bit toward the text. */
+const DONKEY_GAP_M = 0.07;
+const DONKEY_TURN_RAD = -0.3;
 
 export const NEEDS_MIC_TEXT = 'Activa CAPCOM antes de entrar en VR';
 
@@ -47,7 +51,8 @@ function wrap(g: CanvasRenderingContext2D, text: string, maxWidth: number): stri
 
 /**
  * Small panel next to the pause / stop panel: CAPCOM's state and its last subtitle, plus the right A button as the
- * hold-to-talk control (and a toggle button for hand tracking). Returns the function that removes it.
+ * hold-to-talk control (and a toggle button for hand tracking), with the Burro Pardo donkey hopping beside it as the
+ * face of the voice assistant. Returns the function that removes it.
  */
 export function mountCapcomVrPanel(app: LunarApp, controller: CapcomController): () => void {
   const panel = new Panel(W, H, WIDTH_M, (p, g) => {
@@ -72,18 +77,27 @@ export function mountCapcomVrPanel(app: LunarApp, controller: CapcomController):
     app.eyeHeight - DISTANCE_M * Math.sin(a),
     -DISTANCE_M * Math.cos(a) * Math.cos(z),
   );
+
+  // Child of the panel: it faces the viewer with it and hides with it outside VR.
+  const donkey = new DonkeyGuide().load();
+  donkey.group.position.set(WIDTH_M / 2 + DONKEY_GAP_M, -(WIDTH_M * H) / W / 2, 0.02);
+  donkey.group.rotation.y = DONKEY_TURN_RAD;
+  donkey.setMood(donkeyMood(controller.getSnapshot()));
+  panel.mesh.add(donkey.group);
+
   // Panels redraw from the frame loop; this one is owned here, so it redraws when it is about to be drawn.
-  panel.mesh.onBeforeRender = () => panel.update();
+  panel.mesh.onBeforeRender = () => { panel.update(); donkey.update(performance.now() / 1000); };
   app.rig.add(panel.mesh);
   app.globalTargets.push(panel.mesh);
 
-  const offState = controller.subscribe(() => panel.invalidate());
+  const offState = controller.subscribe(() => { panel.invalidate(); donkey.setMood(donkeyMood(controller.getSnapshot())); });
   const offButton = app.input.onAButton((held) => (held ? controller.press() : controller.release()));
   return () => {
     offState();
     offButton();
     const at = app.globalTargets.indexOf(panel.mesh);
     if (at >= 0) app.globalTargets.splice(at, 1);
+    donkey.dispose();
     panel.dispose();
   };
 }
