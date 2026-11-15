@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Input } from './input';
 import { AudioEngine } from './audio';
+import { Avatar } from './avatar';
 import { damp, lookQuat } from './util';
 import { loadMoonTextures, type MoonTextures } from './moon';
 import { Panel } from './panel';
@@ -86,6 +87,8 @@ export class LunarApp {
   /** Head-locked, visible only in VR - the only way out of a session besides powering off the headset.
    *  Public like fadeMesh: a spy-view capture (spy-view.ts) must hide this too. */
   readonly exitPanel: Panel;
+  /** First-person torso + IK arms, visible only in VR. See avatar.ts. */
+  private avatar: Avatar;
   private fade = { value: 1, target: 1, speed: 1, resolve: null as null | (() => void) };
   private transitioning = false;
   private ro: ResizeObserver;
@@ -131,6 +134,8 @@ export class LunarApp {
     this.globalTargets.push(this.exitPanel.mesh);
 
     this.input = new Input(this);
+    this.avatar = new Avatar(this);
+    this.rig.add(this.avatar.group);
     this.room = new RoomClient(opts.room ?? 'touchdown', opts.onRoomStatus, opts.onRoomChange);
     this.isHost = opts.isHost ?? true;
     this.ro = new ResizeObserver(() => this.resize());
@@ -263,6 +268,7 @@ export class LunarApp {
 
     this.exitPanel.mesh.visible = this.isXR;
     this.exitPanel.update();
+    this.avatar.update(dt);
 
     const k = this.view.snap ? 1 : damp(this.view.rate, dt);
     this.view.snap = false;
@@ -295,6 +301,7 @@ export class LunarApp {
     this.renderer.setAnimationLoop(null);
     this.phase?.exit();
     this.exitPanel.dispose();
+    this.avatar.dispose();
     this.audio.dispose();
     this.input.dispose();
     this.room.close();
