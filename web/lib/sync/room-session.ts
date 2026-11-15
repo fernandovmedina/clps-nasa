@@ -53,3 +53,9 @@ export function saveRoom(session: RoomSession): void {
     window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session));
   } catch { /* no sessionStorage (private mode, blocked): the room still works, it just isn't remembered */ }
 }
+
+export function clearSavedRoom(): void {
+  try {
+    window.sessionStorage.removeItem(STORAGE_KEY);
+  } catch { /* nothing remembered to forget */ }
+}

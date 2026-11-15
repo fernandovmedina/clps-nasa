@@ -9,6 +9,7 @@ import { RunState, type PhaseHud } from './hud';
 import { Panel, showPanels } from './panel';
 import { createRunPanel } from './run-panel';
 import type { MissionData } from '../mission/sites';
+import { isLandingInRange, withLandingParam } from '../mission/launch-plan';
 import type { SiteMetrics } from '../mission/scoring';
 import { RoomClient, type RoomEvent, type RoomStatus } from '../sync/room-client';
 import { reduceRoom, type Marker } from '@touchdown/core';
@@ -271,6 +272,18 @@ export class LunarApp {
     this.setPhase(name);
     await this.fadeTo(0, fadeIn);
     if (epoch === this.epoch) this.transitioning = false;
+  }
+
+  /**
+   * Moves the mission to another landing date (the planner, or the crew through the room). The URL
+   * carries it for a data load still in flight and for restart(); loaded data changes in place.
+   * False, changing nothing, when the loaded ephemeris does not cover the date.
+   */
+  setLanding(date: Date): boolean {
+    if (this.data && !isLandingInRange(date, this.data.ephemerisRange)) return false;
+    window.history.replaceState(null, '', withLandingParam(window.location.href, date));
+    if (this.data) this.data.landingDate = date;
+    return true;
   }
 
   /** True while the current phase is waiting for the viewer to start it (see PhaseHud.waiting). */

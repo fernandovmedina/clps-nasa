@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readSavedRoom, resolveInitialRoom, saveRoom } from './room-session';
+import { clearSavedRoom, readSavedRoom, resolveInitialRoom, saveRoom } from './room-session';
 
 const saved = (room: string, isHost: boolean) => JSON.stringify({ room, isHost });
 const resolve = (query: string, stored: string | null, generate = () => 'NEWC') =>
@@ -101,6 +101,7 @@ describe('the sessionStorage wrappers', () => {
     return {
       getItem: vi.fn((k: string) => data.get(k) ?? null),
       setItem: vi.fn((k: string, v: string) => { data.set(k, v); }),
+      removeItem: vi.fn((k: string) => { data.delete(k); }),
     };
   };
 
@@ -113,16 +114,26 @@ describe('the sessionStorage wrappers', () => {
     expect(resolve('', readSavedRoom())).toEqual({ room: 'WXYZ', isHost: false });
   });
 
+  it('forgets the saved room, so the next visit generates a new code as host', () => {
+    vi.stubGlobal('sessionStorage', fakeStorage());
+    saveRoom({ room: 'WXYZ', isHost: false });
+    clearSavedRoom();
+    expect(readSavedRoom()).toBeNull();
+    expect(resolve('', readSavedRoom())).toEqual({ room: 'NEWC', isHost: true });
+  });
+
   it('survives a sessionStorage that throws on access, on read and on write', () => {
     const boom = () => { throw new DOMException('denied', 'SecurityError'); };
     vi.stubGlobal('sessionStorage', undefined);
     Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, get: boom });
     expect(readSavedRoom()).toBeNull();
     expect(() => saveRoom({ room: 'ABCD', isHost: true })).not.toThrow();
+    expect(() => clearSavedRoom()).not.toThrow();
 
-    Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: { getItem: boom, setItem: boom } });
+    Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: { getItem: boom, setItem: boom, removeItem: boom } });
     expect(readSavedRoom()).toBeNull();
     expect(() => saveRoom({ room: 'ABCD', isHost: true })).not.toThrow();
+    expect(() => clearSavedRoom()).not.toThrow();
   });
 
   it('survives a missing sessionStorage', () => {
