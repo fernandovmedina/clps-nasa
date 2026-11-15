@@ -150,6 +150,8 @@ export class LaunchPhase implements Phase {
     this.count = new Panel(480, 360, COUNT_W, (p, g) => this.drawCount(p, g));
     this.count.mesh.visible = false;
     this.dock.add(this.hud.mesh, this.count.mesh);
+    // Without this, pointer/controller rays never hit the HUD panel - the
+    // "Comenzar despegue" button renders but nothing can ever click it.
     this.targets.push(this.hud.mesh);
   }
 

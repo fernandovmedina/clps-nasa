@@ -6,6 +6,8 @@ import { earthTexture, glowTexture, regolithTexture, solarCellTexture } from '..
 import { disposeTree, seeded, smooth } from '../engine/util';
 import { horizonAt, type SiteMetrics } from '../mission/scoring';
 import { sampleTerrainHeight, type TerrainPatch } from '../mission/terrain';
+import { loadLanderModel } from './lander-model';
+import { disposeObject } from './rocket-model';
 
 const FAR_SIZE = 5200;
 const NEAR_SIZE = 420;
@@ -47,6 +49,8 @@ export class SurfaceWorld {
   readonly sunPos: THREE.Vector3; readonly earthPos: THREE.Vector3;
   readonly sunVisible: number; readonly earthVisible: boolean;
   readonly lzMarker = new THREE.Group();
+  /** Far + near ground meshes, for the risk-marker aim raycast in pov.ts. */
+  readonly groundMeshes: THREE.Mesh[] = [];
   readonly lander: THREE.Group;
   readonly dish: THREE.Object3D;
   readonly solarPanels: THREE.Mesh[] = [];
@@ -58,6 +62,7 @@ export class SurfaceWorld {
   private flatten = false;
   private beacon: THREE.Mesh;
   private readonly terrain: TerrainPatch | undefined;
+  private hull: THREE.Group; private model: THREE.Group | null = null; private closed = false;
 
   constructor(readonly app: LunarApp, readonly m: SiteMetrics) {
     const rnd = seeded(m.site.id + '-terrain');
@@ -101,6 +106,7 @@ export class SurfaceWorld {
     const near = this.terrainMesh(NEAR_SIZE, 260, nearC, tex, 12, 0, false);
     near.castShadow = true; near.receiveShadow = true; far.receiveShadow = true;
     sc.add(far, near);
+    this.groundMeshes.push(far, near);
 
     // roughness inside the LZ (std-dev of heights, r = 20 m)
     const hs: number[] = [];
@@ -174,10 +180,16 @@ export class SurfaceWorld {
 
     // lander (hidden until touchdown)
     const built = this.buildLander();
-    this.lander = built.group; this.dish = built.dish;
+    this.lander = built.group; this.dish = built.dish; this.hull = built.hull;
     this.lander.position.copy(this.lz);
     this.lander.visible = false;
     sc.add(this.lander);
+    loadLanderModel(this.hull).then((model) => {
+      if (!model) return;
+      if (this.closed) { disposeObject(model); return; }
+      this.hull.removeFromParent(); disposeObject(this.hull);
+      this.model = model; this.lander.add(model);
+    });
   }
 
   /* ----- height field ----- */
@@ -258,14 +270,14 @@ export class SurfaceWorld {
   }
 
   private buildLander() {
-    const g = new THREE.Group();
+    const g = new THREE.Group(), hull = new THREE.Group();
     const gold = new THREE.MeshStandardMaterial({ color: 0xc9a13b, metalness: 0.85, roughness: 0.35 });
     const grey = new THREE.MeshStandardMaterial({ color: 0xb8bcc2, metalness: 0.5, roughness: 0.45 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x2a2c30, metalness: 0.4, roughness: 0.6 });
     const body = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.9, 2.2, 8), gold); body.position.y = 2.6;
     const top = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.7, 0.7, 8), grey); top.position.y = 4.05;
     const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.8, 0.9, 16, 1, true), dark); nozzle.position.y = 1.1;
-    g.add(body, top, nozzle);
+    hull.add(body, top, nozzle);
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
       const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 3.0, 8), grey);
@@ -273,8 +285,9 @@ export class SurfaceWorld {
       leg.lookAt(Math.cos(a) * 1.4, 2.6, Math.sin(a) * 1.4); leg.rotateX(Math.PI / 2);
       const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.5, 0.12, 16), grey);
       foot.position.set(Math.cos(a) * 2.9, 0.06, Math.sin(a) * 2.9);
-      g.add(leg, foot);
+      hull.add(leg, foot);
     }
+    g.add(hull);
     // vertical solar wings facing the Sun azimuth (the polar Sun is always near the horizon)
     const wings = new THREE.Group(); wings.position.y = 3.2;
     const cell = new THREE.MeshStandardMaterial({ map: solarCellTexture(), metalness: 0.6, roughness: 0.25, emissive: 0x2a4aa8, emissiveIntensity: 0 });
@@ -298,7 +311,7 @@ export class SurfaceWorld {
     dish.lookAt(this.earthPos);
     g.add(mast, dish);
     g.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    return { group: g, dish };
+    return { group: g, dish, hull };
   }
 
   update(dt: number, t: number) {
@@ -308,7 +321,10 @@ export class SurfaceWorld {
     void dt;
   }
 
-  dispose() { disposeTree(this.scene); }
+  dispose() {
+    this.closed = true; disposeTree(this.scene);
+    if (this.model) disposeObject(this.model);
+  }
 }
 
 function fbm(n: (x: number, y: number) => number, x: number, y: number, oct: number) {
