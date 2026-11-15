@@ -22,6 +22,9 @@ const ORTHO_FADE_FROM = 150, ORTHO_FADE_TO = 700, ORTHO_GAIN = 1.4;
 // it dies out before the near mesh ends, so the coarse far mesh meets it without a visible step.
 const DETAIL_FADE_FROM = 120, DETAIL_FADE_TO = 190;
 const FAR_SINK = 3;
+const SHADOW_FADE_FROM = 70, SHADOW_FADE_TO = 190;
+// The near mesh dissolves (screen-door) into the far one over this distance band from its centre.
+const NEAR_DISSOLVE_FROM = 150, NEAR_DISSOLVE_TO = 205;
 
 /* ---- seeded 2D Perlin noise ---- */
 function perlin(rnd: () => number) {
@@ -274,28 +277,41 @@ export class SurfaceWorld {
     }
     const map = tex.clone(); map.needsUpdate = true; map.repeat.set(repeat, repeat);
     const mat = new THREE.MeshStandardMaterial({ map, color: GROUND_COLOR, roughness: 1, metalness: 0 });
-    const ortho = this.terrain?.texture;
-    if (ortho && this.terrain) this.modulateWithOrtho(mat, ortho, this.terrain.info.extent_m);
+    this.shadeGround(mat, this.terrain?.texture ?? undefined, this.terrain?.info.extent_m ?? 0, !sink);
     if (sink) { mat.polygonOffset = true; mat.polygonOffsetFactor = 1; mat.polygonOffsetUnits = 1; }
     return new THREE.Mesh(geo, mat);
   }
 
-  /** Scales the albedo by the orthophoto's brightness relative to its own mean (the 1x1 mip), by world position. */
-  private modulateWithOrtho(mat: THREE.MeshStandardMaterial, ortho: THREE.Texture, extent: number) {
+  /**
+   * Shading both ground meshes share, so nothing differs across their seam: the orthophoto's brightness
+   * (relative to its own mean, the 1x1 mip) by world position, and cast shadows that fade out with distance
+   * from the landing area (only the near mesh casts them, so beyond it they would leave a brightness step).
+   * The near mesh also dissolves into the far one toward its border, which hides whatever shading still differs.
+   */
+  private shadeGround(mat: THREE.MeshStandardMaterial, ortho: THREE.Texture | undefined, extent: number, dissolve: boolean) {
     const focus = this.nearC;
+    mat.customProgramCacheKey = () => `ground-${dissolve ? 'near' : 'far'}-${ortho ? 'ortho' : 'plain'}`;
     mat.onBeforeCompile = (shader) => {
-      shader.uniforms.uOrtho = { value: ortho };
-      shader.uniforms.uOrthoExtent = { value: extent };
-      shader.uniforms.uOrthoFocus = { value: focus };
+      shader.uniforms.uFocus = { value: focus };
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec2 vGroundXZ;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundXZ = (modelMatrix * vec4(position, 1.0)).xz;');
+      const lights = THREE.ShaderChunk.lights_fragment_begin.replace('directionalLightShadow.shadowIntensity', 'directionalLightShadow.shadowIntensity * shadowFade');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec2 vGroundXZ;\nuniform sampler2D uOrtho;\nuniform float uOrthoExtent;\nuniform vec2 uOrthoFocus;')
-        .replace('#include <map_fragment>', `#include <map_fragment>
+        .replace('#include <common>', '#include <common>\nvarying vec2 vGroundXZ;\nuniform vec2 uFocus;' + (ortho ? '\nuniform sampler2D uOrtho;\nuniform float uOrthoExtent;' : ''))
+        .replace('#include <clipping_planes_fragment>', dissolve ? `#include <clipping_planes_fragment>
+        vec2 qEdge = abs( vGroundXZ - uFocus );
+        if ( smoothstep( ${NEAR_DISSOLVE_FROM.toFixed(1)}, ${NEAR_DISSOLVE_TO.toFixed(1)}, max( qEdge.x, qEdge.y ) ) > fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) ) ) discard;` : '#include <clipping_planes_fragment>')
+        .replace('#include <lights_fragment_begin>', `
+        float shadowFade = 1.0 - smoothstep( ${SHADOW_FADE_FROM.toFixed(1)}, ${SHADOW_FADE_TO.toFixed(1)}, distance( vGroundXZ, uFocus ) );
+        ${lights}`);
+      if (!ortho) return;
+      shader.uniforms.uOrtho = { value: ortho };
+      shader.uniforms.uOrthoExtent = { value: extent };
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
         float oLum = texture2D(uOrtho, vGroundXZ / uOrthoExtent + 0.5).r;
         float oMean = max(textureLod(uOrtho, vec2(0.5), 16.0).r, 1e-3);
-        float oFade = smoothstep(${ORTHO_FADE_FROM.toFixed(1)}, ${ORTHO_FADE_TO.toFixed(1)}, distance(vGroundXZ, uOrthoFocus));
+        float oFade = smoothstep(${ORTHO_FADE_FROM.toFixed(1)}, ${ORTHO_FADE_TO.toFixed(1)}, distance(vGroundXZ, uFocus));
         diffuseColor.rgb *= mix(1.0, clamp(1.0 + ${ORTHO_GAIN.toFixed(2)} * (oLum / oMean - 1.0), 0.4, 1.8), oFade);`);
     };
   }
