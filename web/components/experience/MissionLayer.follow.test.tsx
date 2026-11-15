@@ -29,6 +29,7 @@ function fakeApp(hud: PhaseHud, phase: PhaseName = 'launch') {
     room: { get status() { return state.room; }, send: vi.fn() },
     data: null,
     selected: null,
+    ranking: [],
     setPaused: vi.fn(),
     stop: vi.fn(),
     restart: vi.fn(),
@@ -98,8 +99,9 @@ describe('Mission Control follow mode', () => {
     render(<MissionLayer app={fakeApp(waitingHud()).app} vr="no" onEnterVR={vi.fn()} room={monitor()} />);
     await tick();
     const block = screen.getByRole('region', { name: 'Misión que sigues' });
-    expect(within(block).getByText('Despegue 5 ene 2027 · 12:00 UTC')).toBeTruthy();
-    expect(within(block).getByText('Llegada 10 ene 2027 · 00:00 UTC')).toBeTruthy();
+    expect(within(block).getByText('5 ene 2027 · 12:00 UTC')).toBeTruthy();
+    expect(within(block).getByText('10 ene 2027 · 00:00 UTC')).toBeTruthy();
+    expect(within(block).getByText('4.5 días (supuesto)')).toBeTruthy();
     expect(screen.queryByText('Código Mission Control')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cambiar lanzamiento' })).toBeNull();
   });
@@ -111,7 +113,7 @@ describe('Mission Control follow mode', () => {
     await tick();
     const block = screen.getByRole('region', { name: 'Misión que sigues' });
     expect(within(block).getByText('Conectando con la misión…')).toBeTruthy();
-    expect(within(block).queryByText(/Despegue/)).toBeNull();
+    expect(within(block).queryByText('Despegue')).toBeNull();
   });
 
   it('after the crew launches the controls come back and behave as in any other mission', async () => {

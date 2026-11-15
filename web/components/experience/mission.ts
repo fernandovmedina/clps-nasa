@@ -1,8 +1,9 @@
-import { PHASE_LABELS, PHASE_ORDER, type HudSide, type PhaseHud, type RunMode } from '@/lib/engine/hud';
+import { PHASE_LABELS, PHASE_ORDER, type HudSide, type PhaseHud, type RunMode, type SiteStatus } from '@/lib/engine/hud';
 import type { PhaseName } from '@/lib/engine/app';
 import { readLandingParams } from '@/lib/mission/landing-param';
 import { currentLanding, formatPlanDate, launchFromLanding } from '@/lib/mission/launch-plan';
-import type { SiteMetrics } from '@/lib/mission/scoring';
+import { earthMoonDistanceKm } from '@/lib/phases/launch-telemetry';
+import { fmtHours, type SiteMetrics } from '@/lib/mission/scoring';
 import type { MissionData } from '@/lib/mission/sites';
 
 export interface MissionInfo { site: string; launch: string; landing: string }
@@ -51,4 +52,42 @@ export function paintedHud(mode: RunMode, hud: PhaseHud | null): PhaseHud | null
       : hud.side;
   const base = { ...hud, side, progress: hud.progress && { ...hud.progress, value: percent(hud.progress.value) } };
   return mode === 'paused' ? { ...base, progress: undefined, detail: undefined } : base;
+}
+
+export interface SiteSummary {
+  name: string;
+  score: number;
+  status: SiteStatus;
+  sunElevation: number;
+  earthElevation: number;
+  earthVisible: boolean;
+  /** Hours (or days) until the Sun / the Earth set, from the landing. */
+  sunHours: string;
+  earthHours: string;
+}
+
+export function summarizeSite(m: SiteMetrics | null): SiteSummary | null {
+  if (!m) return null;
+  return {
+    name: m.site.name,
+    score: Math.round(m.score),
+    status: m.status,
+    sunElevation: Math.round(m.sun.elevation * 100) / 100,
+    earthElevation: Math.round(m.earth.elevation * 100) / 100,
+    earthVisible: m.earth.aboveHorizon > 0,
+    sunHours: fmtHours(m.hoursToSunset),
+    earthHours: fmtHours(m.hoursToEarthset),
+  };
+}
+
+export interface RankSummary { id: string; rank: number; name: string; score: number; status: SiteStatus }
+
+export function summarizeRanking(ranking: SiteMetrics[], count = 5): RankSummary[] {
+  return ranking.slice(0, count).map((m) => ({ id: m.site.id, rank: m.rank, name: m.site.name, score: Math.round(m.score), status: m.status }));
+}
+
+/** Earth-Moon distance (km) at the landing, rounded to the km so the snapshot only changes when the plan does. */
+export function moonDistanceKm(data: MissionData | null): number | null {
+  const km = data ? earthMoonDistanceKm(data.global, data.landingDate) : null;
+  return km === null ? null : Math.round(km);
 }
