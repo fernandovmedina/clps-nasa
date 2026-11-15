@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { LunarApp } from './app';
-import { UI } from './panel';
+import { buildForearm, buildGlove, buildTorso, buildUpperArm, GLOVE_FROM_GRIP, stretchForearm, WRIST_BACK } from './avatar-geometry';
+import { createSuitMaterials } from './avatar-material';
 import { damp } from './util';
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -8,11 +9,6 @@ const Y_AXIS = new THREE.Vector3(0, 1, 0);
 // Adult-proportioned, slightly bulked up for a spacesuit silhouette (meters).
 const UPPER_LEN = 0.3;
 const FORE_LEN = 0.27;
-const UPPER_RADIUS = 0.055;
-const FORE_RADIUS = 0.048;
-const SHOULDER_JOINT_R = 0.085;
-const ELBOW_JOINT_R = 0.062;
-const WRIST_JOINT_R = 0.05;
 
 const SHOULDER_X = 0.19;      // half shoulder width, below the eyes
 const SHOULDER_DROP = 0.2;
@@ -26,22 +22,31 @@ const TORSO_YAW_DAMP = 7;
 
 interface Arm {
   side: 1 | -1; // -1 = left, +1 = right
-  shoulderJoint: THREE.Mesh;
   upper: THREE.Mesh;
-  elbowJoint: THREE.Mesh;
   fore: THREE.Mesh;
-  wristJoint: THREE.Mesh;
+  glove: THREE.Mesh;
+  foreBase: Float32Array;
+  foreExtra: number;
 }
 
-/** Aligns a unit-height cylinder's local Y axis to run from `a` to `b`, scaling it to that length. */
+/**
+ * Puts a mesh that runs along +Y from its origin at `a`, pointing at `b`. It turns from the way it
+ * pointed last frame by the shortest rotation, so the weave does not swirl when an arm hangs straight down.
+ * Returns the distance from `a` to `b`.
+ */
 function aimSegment(mesh: THREE.Mesh, a: THREE.Vector3, b: THREE.Vector3) {
   const d = _d.subVectors(b, a);
   const len = d.length();
-  mesh.position.copy(a).addScaledVector(d, 0.5);
-  if (len > 1e-5) mesh.quaternion.setFromUnitVectors(Y_AXIS, d.multiplyScalar(1 / len));
-  mesh.scale.set(1, len, 1);
+  mesh.position.copy(a);
+  if (len > 1e-5) {
+    const was = _was.copy(Y_AXIS).applyQuaternion(mesh.quaternion);
+    mesh.quaternion.premultiply(_turn.setFromUnitVectors(was, d.multiplyScalar(1 / len))).normalize();
+  }
+  return len;
 }
 const _d = new THREE.Vector3();
+const _was = new THREE.Vector3();
+const _turn = new THREE.Quaternion();
 
 /**
  * Two-bone IK: elbow position given a shoulder, a hand target and the two bone lengths, biased
@@ -136,10 +141,10 @@ function armSides(handedness: (string | undefined)[], active: boolean[]) {
 }
 
 /**
- * First-person astronaut body. The hands already render via XRControllerModelFactory
- * (input.ts) - this adds what was missing: a torso that follows head position/yaw (not pitch,
- * so looking down doesn't bend your spine) and two arms solved with simple IK from the
- * shoulders to the real controller grips, so reaching for a panel actually looks like it.
+ * First-person astronaut body: a torso that follows head position/yaw (not pitch, so looking
+ * down doesn't bend your spine) and two arms solved with simple IK from the shoulders to the
+ * wrists behind the real controller grips, each ending in a pressurized glove that takes the
+ * controller's pose, so reaching for a panel actually looks like it.
  * No legs - with no leg tracking on a 3-point rig (head + 2 controllers) there's nothing to
  * drive them with, so like most VR apps this stops at a floating torso.
  */
@@ -149,27 +154,23 @@ export class Avatar {
   private torsoYaw = 0;
   private placed = false;
   private arms: Arm[];
+  private suit = createSuitMaterials();
 
   constructor(private app: LunarApp) {
-    const suit = new THREE.MeshStandardMaterial({ color: 0xece8dd, roughness: 0.6, metalness: 0.08 });
-    const trim = new THREE.MeshStandardMaterial({ color: UI.accent, roughness: 0.4, metalness: 0.4 });
-
-    this.torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.22, 4, 12), suit);
+    const { cloth, metal } = this.suit;
+    this.torso = new THREE.Mesh(buildTorso(CHEST_PLATE_LOCAL), cloth);
     this.group.add(this.torso);
-    const chestPanel = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.02), trim);
-    chestPanel.position.set(0, 0.04, -0.175);
-    this.torso.add(chestPanel);
 
-    const cylGeo = (r: number) => new THREE.CylinderGeometry(r, r, 1, 10);
+    const upperGeo = buildUpperArm(UPPER_LEN);
     this.arms = ([-1, 1] as const).map((side) => {
-      const shoulderJoint = new THREE.Mesh(new THREE.SphereGeometry(SHOULDER_JOINT_R, 12, 10), trim);
-      const upper = new THREE.Mesh(cylGeo(UPPER_RADIUS), suit);
-      const elbowJoint = new THREE.Mesh(new THREE.SphereGeometry(ELBOW_JOINT_R, 10, 8), trim);
-      const fore = new THREE.Mesh(cylGeo(FORE_RADIUS), suit);
-      const wristJoint = new THREE.Mesh(new THREE.SphereGeometry(WRIST_JOINT_R, 10, 8), trim);
-      this.group.add(shoulderJoint, upper, elbowJoint, fore, wristJoint);
-      return { side, shoulderJoint, upper, elbowJoint, fore, wristJoint };
+      const foreGeo = buildForearm(FORE_LEN);
+      const upper = new THREE.Mesh(upperGeo, cloth);
+      const fore = new THREE.Mesh(foreGeo, [cloth, metal]);
+      const glove = new THREE.Mesh(buildGlove(side), cloth);
+      this.group.add(upper, fore, glove);
+      return { side, upper, fore, glove, foreBase: foreGeo.attributes.position.array.slice() as Float32Array, foreExtra: 0 };
     });
+    this.group.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = o.receiveShadow = true; });
   }
 
   update(dt: number) {
@@ -199,36 +200,34 @@ export class Avatar {
       controllers.map((c) => c.userData.handedness as string | undefined),
       controllers.map((c, i) => !!c.userData.connected && app.input.grips[i].visible),
     );
-    for (const arm of this.arms) {
-      arm.shoulderJoint.visible = arm.upper.visible = arm.elbowJoint.visible = arm.fore.visible = arm.wristJoint.visible = sides.includes(arm.side);
-    }
+    for (const arm of this.arms) arm.upper.visible = arm.fore.visible = arm.glove.visible = sides.includes(arm.side);
     controllers.forEach((_, i) => {
       const side = sides[i];
       if (!side) return;
       const arm = this.arms.find((a) => a.side === side)!;
+      const grip = app.input.grips[i];
       const shoulder = shoulderPosition(_shoulder, side, cam.position, this.torsoYaw);
-      const target = _target.copy(app.input.grips[i].position);
+      arm.glove.position.copy(grip.position);
+      arm.glove.quaternion.copy(grip.quaternion).multiply(GLOVE_FROM_GRIP);
+      const wrist = _wrist.set(0, 0, WRIST_BACK).applyQuaternion(arm.glove.quaternion).add(grip.position);
 
-      arm.shoulderJoint.position.copy(shoulder);
-      armElbow(_elbow, side, shoulder, target, fwd);
+      armElbow(_elbow, side, shoulder, wrist, fwd);
       aimSegment(arm.upper, shoulder, _elbow);
-      arm.elbowJoint.position.copy(_elbow);
-      aimSegment(arm.fore, _elbow, target);
-      arm.wristJoint.position.copy(target);
+      const extra = THREE.MathUtils.clamp(aimSegment(arm.fore, _elbow, wrist) - FORE_LEN, -0.05, 0.4);
+      if (Math.abs(extra - arm.foreExtra) > 5e-4) {
+        arm.foreExtra = extra;
+        stretchForearm(arm.fore.geometry, arm.foreBase, extra);
+      }
     });
   }
 
   dispose() {
-    this.group.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      mesh.geometry?.dispose?.();
-      const m = mesh.material as THREE.Material | THREE.Material[] | undefined;
-      if (m) (Array.isArray(m) ? m : [m]).forEach((x) => x.dispose());
-    });
+    this.group.traverse((o) => (o as THREE.Mesh).geometry?.dispose?.());
+    this.suit.dispose();
   }
 }
 const _fwd = new THREE.Vector3();
 const _yawQuat = new THREE.Quaternion();
 const _shoulder = new THREE.Vector3();
-const _target = new THREE.Vector3();
+const _wrist = new THREE.Vector3();
 const _elbow = new THREE.Vector3();

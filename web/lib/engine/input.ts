@@ -47,7 +47,9 @@ export class Input {
       app.rig.add(c);
       this.controllers.push(c); this.lines.push(line);
       const grip = app.renderer.xr.getControllerGrip(i);
-      grip.add(factory.createControllerModel(grip));
+      const model = factory.createControllerModel(grip);
+      model.visible = false; // the suit glove (avatar.ts) is held in its place
+      grip.add(model);
       app.rig.add(grip);
       this.grips.push(grip);
     }
