@@ -2,12 +2,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LunarApp } from '../engine/app';
 import type { CapcomController, CapcomSnapshot } from './controller';
 
-const made: Array<{ invalidate: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; mesh: { onBeforeRender?: () => void } }> = [];
+const made: Array<{ invalidate: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; mesh: { onBeforeRender?: () => void; add: ReturnType<typeof vi.fn> } }> = [];
+const donkeys: Array<{ group: object; setMood: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }> = [];
+
+vi.mock('./donkey', () => ({
+  donkeyMood: (s: { state: string }) => (s.state === 'speaking' ? 'speaking' : 'idle'),
+  DonkeyGuide: class {
+    group = { position: { set: vi.fn() }, rotation: { y: 0 } };
+    setMood = vi.fn();
+    update = vi.fn();
+    dispose = vi.fn();
+    load() { return this; }
+    constructor() { donkeys.push(this); }
+  },
+}));
 
 vi.mock('../engine/panel', () => ({
   UI: { font: 'x', text: '#fff', dim: '#aaa', ok: '#0f0', warn: '#ff0', bad: '#f00' },
   Panel: class {
-    mesh: { onBeforeRender?: () => void } = {};
+    mesh: { onBeforeRender?: () => void; add: ReturnType<typeof vi.fn> } = { add: vi.fn() };
     invalidate = vi.fn();
     update = vi.fn();
     dispose = vi.fn();
@@ -41,7 +54,7 @@ describe('describePanel', () => {
 });
 
 describe('mountCapcomVrPanel', () => {
-  beforeEach(() => { made.length = 0; });
+  beforeEach(() => { made.length = 0; donkeys.length = 0; });
 
   function setup() {
     let buttonListener: ((held: boolean) => void) | null = null;
@@ -73,6 +86,16 @@ describe('mountCapcomVrPanel', () => {
     expect(made[0]!.invalidate).toHaveBeenCalledTimes(1);
   });
 
+  it('puts the donkey on the panel, animates it every frame and follows CAPCOM\'s state', () => {
+    const { change } = setup();
+    expect(made[0]!.mesh.add).toHaveBeenCalledWith(donkeys[0]!.group);
+    made[0]!.mesh.onBeforeRender?.();
+    expect(donkeys[0]!.update).toHaveBeenCalledTimes(1);
+    expect(donkeys[0]!.setMood).toHaveBeenLastCalledWith('idle');
+    change();
+    expect(donkeys[0]!.setMood).toHaveBeenCalledTimes(2);
+  });
+
   it('holds to talk with the right A button', () => {
     const { controller, press } = setup();
     press(true);
@@ -88,5 +111,6 @@ describe('mountCapcomVrPanel', () => {
     expect(offButton).toHaveBeenCalled();
     expect(offState).toHaveBeenCalled();
     expect(made[0]!.dispose).toHaveBeenCalled();
+    expect(donkeys[0]!.dispose).toHaveBeenCalled();
   });
 });
