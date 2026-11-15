@@ -37,10 +37,9 @@ function makeEnvironment(renderer: THREE.WebGLRenderer) {
 }
 
 /**
- * One cloth material (quilting, bellows, rubber and fabric, picked per vertex), metal for the rings and details, and
- * the mission patch. They reflect a small room environment of their own (the scene's is left alone; if it cannot be
- * built, the metal keeps its color). Until the
- * images load, or if they never do, the cloth is plain vertex color and the patch a flat disc.
+ * One cloth material (quilting, bellows, rubber and fabric, picked per vertex), metal for the rings and details, and the
+ * mission patch. They reflect a small room environment of their own; the scene's is left alone, and if it cannot be built
+ * the metal keeps its color. Until the images load, or if they never do, the cloth is plain vertex color.
  */
 export function createSuitMaterials(renderer?: THREE.WebGLRenderer) {
   const environment = renderer ? makeEnvironment(renderer) : null;
