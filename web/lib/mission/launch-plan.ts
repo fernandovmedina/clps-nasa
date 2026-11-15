@@ -54,9 +54,11 @@ export function checkLaunch(launch: Date | null, range: LandingRange): LaunchChe
   };
 }
 
-/** The first `count` sites of the same ranking the orbit builds: evaluateSites already returns it ordered. */
+export const SOUTH_POLE_MAX_LAT = -60;
+
+/** The first `count` south-polar sites, in the same order the orbit ranking gives them. */
 export function topSites(sites: SiteInput[], landing: Date, count = 3): SiteMetrics[] {
-  return evaluateSites(sites, landing).slice(0, count);
+  return evaluateSites(sites.filter((s) => s.lat <= SOUTH_POLE_MAX_LAT), landing).slice(0, count);
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
