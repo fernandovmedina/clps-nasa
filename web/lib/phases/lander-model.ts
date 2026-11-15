@@ -4,7 +4,7 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { disposeObject } from './rocket-model';
 
 const MODEL_URL = '/models/lander.glb';
-const TIMEOUT_MS = 3000;
+const TIMEOUT_MS = 20000;
 
 /**
  * Loads the lander model and fits it to the reference group: same height, feet at y = 0,

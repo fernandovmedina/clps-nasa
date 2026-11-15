@@ -4,7 +4,7 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { disposeObject } from './rocket-model';
 
 const TOWER_URL = '/models/launch-tower.glb';
-const TIMEOUT_MS = 3000;
+const TIMEOUT_MS = 20000;
 
 // Same fit rocket-model.ts applies to the vehicle (bbox of the source file): scale and offset of the rocket's base.
 const FIT_SCALE = 25.833115919471275;

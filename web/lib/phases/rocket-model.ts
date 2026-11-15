@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 
 const MODEL_URL = '/models/rocket.glb';
-const TIMEOUT_MS = 3000;
+const TIMEOUT_MS = 20000;
 
 /**
  * Loads the rocket model and fits it to the reference group: same height, base at y = 0,
