@@ -26,7 +26,8 @@ export class PovPhase implements Phase {
   private world: SurfaceWorld;
   private m: SiteMetrics;
   private info: Panel; private actions: Panel;
-  private spy: SpyView;
+  /** Only the monitor role watches - the VR/host doesn't need a mirror of itself. */
+  private spy: SpyView | null;
   private series: Sample[] = [];
   private eye: THREE.Vector3;
   private lastCamSentAt = -Infinity;
@@ -39,7 +40,9 @@ export class PovPhase implements Phase {
     this.world = surfaceFor(app, this.m);
     this.scene = this.world.scene;
     this.eye = new THREE.Vector3(0, this.world.heightAt(0, 0) + app.eyeHeight, 0);
-    this.spy = new SpyView(this.world.scene, this.m.site.id);
+    // Created/destroyed live in syncSpy() (not just here) - isHost can flip mid-phase
+    // if the user switches rooms via "Cambiar" while already standing at the site.
+    this.spy = null;
 
     const start = app.data!.landingDate.getTime();
     for (let h = 0; h <= 14 * 24; h += 2) {
@@ -56,33 +59,60 @@ export class PovPhase implements Phase {
   enter() {
     this.world.lander.visible = false;
     this.world.lzMarker.visible = true;
-    this.app.rig.add(this.info.mesh, this.actions.mesh, this.spy.mesh);
+    this.app.rig.add(this.info.mesh, this.actions.mesh);
     this.info.place(-0.86, 1.4, -1.45);
     this.actions.place(0.84, 1.28, -1.45);
-    this.placeSpy();
     const look = this.world.lz.clone().add(new THREE.Vector3(0, 3, 0));
     this.app.setView(this.eye, look, { snap: true, rate: 3 });
-    this.app.room.setListener((msg: RoomEvent) => this.spy.handleRoomEvent(msg, this.app.time));
+    this.app.room.setListener((msg: RoomEvent) => this.handleRoom(msg));
+    this.syncSpy();
   }
 
   exit() {
     this.app.room.setListener(null);
-    this.info.dispose(); this.actions.dispose(); this.spy.dispose();
+    this.info.dispose(); this.actions.dispose(); this.spy?.dispose();
   }
 
   /** Faces the rig's eye point, same convention as Panel.place(). */
-  private placeSpy() {
-    this.spy.mesh.position.set(0, 1.98, -1.55);
-    const m = new THREE.Matrix4().lookAt(new THREE.Vector3(0, 1.6, 0), this.spy.mesh.position, new THREE.Vector3(0, 1, 0));
-    this.spy.mesh.quaternion.setFromRotationMatrix(m);
+  private placeSpy(spy: SpyView) {
+    spy.mesh.position.set(0, 1.98, -1.55);
+    const m = new THREE.Matrix4().lookAt(new THREE.Vector3(0, 1.6, 0), spy.mesh.position, new THREE.Vector3(0, 1, 0));
+    spy.mesh.quaternion.setFromRotationMatrix(m);
+  }
+
+  /** Creates/destroys the spy-view PiP to track the live role - isHost can change after this phase already entered. */
+  private syncSpy() {
+    if (!this.app.isHost && !this.spy) {
+      this.spy = new SpyView(this.world.scene, this.m.site.id);
+      this.app.rig.add(this.spy.mesh);
+      this.placeSpy(this.spy);
+    } else if (this.app.isHost && this.spy) {
+      this.spy.dispose();
+      this.spy = null;
+    }
+  }
+
+  /**
+   * Monitor-only: cam_update for a site other than the one shown here means the host moved on
+   * to a different site without the monitor following via orbit.ts (which the monitor isn't in
+   * right now) - jump straight to that site instead of being stuck watching a stale/frozen view.
+   */
+  private handleRoom(msg: RoomEvent) {
+    if (msg.type === 'cam_update' && !this.app.isHost && msg.site_id !== this.m.site.id) {
+      const target = this.app.ranking.find((r) => r.site.id === msg.site_id);
+      if (target) { this.app.selected = target; this.app.goTo('pov', 0.5, 0.8); }
+      return;
+    }
+    this.spy?.handleRoomEvent(msg, this.app.time);
   }
 
   update(dt: number, t: number) {
+    this.syncSpy();
     this.world.update(dt, t);
     this.app.setView(this.eye, this.world.lz.clone().add(new THREE.Vector3(0, 3, 0)), { rate: 3 });
     this.info.update(); this.actions.update();
 
-    if (t - this.lastCamSentAt > CAM_SEND_INTERVAL_S) {
+    if (this.app.isHost && t - this.lastCamSentAt > CAM_SEND_INTERVAL_S) {
       this.lastCamSentAt = t;
       this.app.camera.updateMatrixWorld();
       this.app.camera.matrixWorld.decompose(this.camPos, this.camQuat, this.camScale);
@@ -92,10 +122,12 @@ export class PovPhase implements Phase {
         qx: this.camQuat.x, qy: this.camQuat.y, qz: this.camQuat.z, qw: this.camQuat.w,
       });
     }
-    this.spy.update(t, this.app.renderer, [
-      this.info.mesh, this.actions.mesh, this.spy.mesh, this.app.fadeMesh,
-      ...this.app.input.controllers, ...this.app.input.grips,
-    ]);
+    if (this.spy) {
+      this.spy.update(t, this.app.renderer, [
+        this.info.mesh, this.actions.mesh, this.spy.mesh, this.app.fadeMesh, this.app.exitPanel.mesh,
+        ...this.app.input.controllers, ...this.app.input.grips,
+      ]);
+    }
   }
 
   private drawInfo(p: Panel, g: CanvasRenderingContext2D) {

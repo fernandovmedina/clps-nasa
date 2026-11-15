@@ -3,6 +3,7 @@ import { Input } from './input';
 import { AudioEngine } from './audio';
 import { damp, lookQuat } from './util';
 import { loadMoonTextures, type MoonTextures } from './moon';
+import { Panel } from './panel';
 import type { MissionData } from '../mission/sites';
 import type { SiteMetrics } from '../mission/scoring';
 import { RoomClient, type RoomStatus } from '../sync/room-client';
@@ -30,6 +31,15 @@ export interface AppOptions {
   room?: string;
   onRoomStatus?: (s: RoomStatus) => void;
   onRoomChange?: (room: string) => void;
+  /**
+   * True = this client generated its own room code (nobody handed it one) -
+   * the usual VR/inspector role: broadcasts its camera in pov.ts, doesn't
+   * render the spy-view PiP. False = arrived via a shared link or typed a
+   * code into "Cambiar" - the monitoring role: watches the host's camera,
+   * doesn't broadcast its own (a desktop mouse-look pose isn't useful to
+   * show the VR person). See LunarExperience.tsx's resolveInitialRoom/joinRoom.
+   */
+  isHost?: boolean;
 }
 
 type PhaseFactory = (app: LunarApp) => Phase;
@@ -46,6 +56,8 @@ export class LunarApp {
   readonly room: RoomClient;
   readonly audio = new AudioEngine();
   readonly eyeHeight = 1.6;
+  /** See AppOptions.isHost - mutable because joining a room at runtime (not just at load) also changes the role. */
+  isHost: boolean;
   phase: Phase | null = null;
   moonTex!: MoonTextures;
   data: MissionData | null = null;
@@ -54,12 +66,17 @@ export class LunarApp {
   /** Session flags (e.g. 'orbit-done' to skip the scan lap when coming back). */
   flags = new Set<string>();
   time = 0;
+  /** Objects clickable from any phase (e.g. the in-VR exit button) - merged with phase.targets by Input.cast(). */
+  readonly globalTargets: THREE.Object3D[] = [];
 
   private clock = new THREE.Clock();
   private view = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), rate: 3, snap: true };
   private look = { yaw: 0, pitch: 0, idle: 0 };
   /** Child of `camera`, not `rig` - a spy-view capture (spy-view.ts) must hide this too. */
   readonly fadeMesh: THREE.Mesh;
+  /** Head-locked, visible only in VR - the only way out of a session besides powering off the headset.
+   *  Public like fadeMesh: a spy-view capture (spy-view.ts) must hide this too. */
+  readonly exitPanel: Panel;
   private fade = { value: 1, target: 1, speed: 1, resolve: null as null | (() => void) };
   private transitioning = false;
   private ro: ResizeObserver;
@@ -93,8 +110,20 @@ export class LunarApp {
     this.fadeMesh.renderOrder = 1000;
     this.camera.add(this.fadeMesh);
 
+    // Head-locked exit button: child of `camera` (not `rig`) so it renders in every phase
+    // without being re-added, and tracks the view the same way fadeMesh does.
+    this.exitPanel = new Panel(640, 220, 0.26, (p, g) => {
+      p.frame(g);
+      p.button(g, 'exit-vr', 20, 20, 600, 180, '✕ Salir de VR', () => this.exitVR());
+    });
+    this.exitPanel.mesh.position.set(0.4, -0.26, -0.85);
+    this.exitPanel.mesh.visible = false;
+    this.camera.add(this.exitPanel.mesh);
+    this.globalTargets.push(this.exitPanel.mesh);
+
     this.input = new Input(this);
     this.room = new RoomClient(opts.room ?? 'touchdown', opts.onRoomStatus, opts.onRoomChange);
+    this.isHost = opts.isHost ?? true;
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
     this.resize();
@@ -120,6 +149,11 @@ export class LunarApp {
     });
     await this.renderer.xr.setSession(session);
     this.view.snap = true;
+  }
+
+  /** The in-world "✕ Salir de VR" button calls this - the headset's own UI has no other way out mid-session. */
+  exitVR() {
+    this.renderer.xr.getSession()?.end().catch(() => {});
   }
 
   /** Where the viewer's eyes should be and what they should face. Smoothed every frame. */
@@ -201,6 +235,9 @@ export class LunarApp {
     if (!p) return;
     p.update(dt, this.time);
 
+    this.exitPanel.mesh.visible = this.isXR;
+    this.exitPanel.update();
+
     const k = this.view.snap ? 1 : damp(this.view.rate, dt);
     this.view.snap = false;
     this.rig.position.lerp(this.view.pos, k);
@@ -231,6 +268,7 @@ export class LunarApp {
   dispose() {
     this.renderer.setAnimationLoop(null);
     this.phase?.exit();
+    this.exitPanel.dispose();
     this.audio.dispose();
     this.input.dispose();
     this.room.close();

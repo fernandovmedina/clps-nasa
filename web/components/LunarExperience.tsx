@@ -26,15 +26,23 @@ function randomRoomCode(len = 4): string {
   return s;
 }
 
-/** Without a room in the URL, everyone would land in the same default room. Give each new visit its own, and put it in the URL so it's shareable. */
-function resolveInitialRoom(params: URLSearchParams): string {
+/**
+ * Without a room in the URL, everyone would land in the same default room.
+ * Give each new visit its own, and put it in the URL so it's shareable.
+ *
+ * isHost marks who generated the code themselves (nobody handed it to them) -
+ * that's the VR/inspector by convention: their camera gets broadcast in
+ * pov.ts. Arriving via a shared link (room already in the URL) means someone
+ * else is hosting, so this client is the monitor instead (see AppOptions.isHost).
+ */
+function resolveInitialRoom(params: URLSearchParams): { room: string; isHost: boolean } {
   const fromUrl = params.get('room');
-  if (fromUrl) return fromUrl;
+  if (fromUrl) return { room: fromUrl, isHost: false };
   const generated = randomRoomCode();
   const url = new URL(window.location.href);
   url.searchParams.set('room', generated);
   window.history.replaceState(null, '', url.toString());
-  return generated;
+  return { room: generated, isHost: true };
 }
 
 export default function LunarExperience() {
@@ -49,6 +57,7 @@ export default function LunarExperience() {
   const [joinValue, setJoinValue] = useState('');
   const [copied, setCopied] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [isHost, setIsHost] = useState(true);
 
   useEffect(() => {
     const el = mount.current;
@@ -56,8 +65,9 @@ export default function LunarExperience() {
     let cancelled = false;
     const params = new URLSearchParams(window.location.search);
     const q = params.get('phase') as PhaseName | null;
-    const initialRoom = resolveInitialRoom(params);
+    const { room: initialRoom, isHost: initialIsHost } = resolveInitialRoom(params);
     setRoomCode(initialRoom);
+    setIsHost(initialIsHost);
     const app = new LunarApp(el, {
       // ⬇️ Replace loadMissionData with your real fetches (JPL Horizons, LOLA, your API)
       loadData: loadMissionData,
@@ -66,6 +76,7 @@ export default function LunarExperience() {
       timeScale: Number(params.get('speed')) || 1,
       // Same room on two tabs/headsets = synced site + landing date (see orbit.ts).
       room: initialRoom,
+      isHost: initialIsHost,
       onRoomChange: (r) => {
         setRoomCode(r);
         const url = new URL(window.location.href);
@@ -118,7 +129,9 @@ export default function LunarExperience() {
   const joinRoom = () => {
     const code = joinValue.trim().toUpperCase();
     if (!code) return;
-    appRef.current?.room.setRoom(code);
+    const app = appRef.current;
+    if (app) { app.room.setRoom(code); app.isHost = false; }
+    setIsHost(false);
     setJoinOpen(false);
     setJoinValue('');
   };
@@ -149,6 +162,9 @@ export default function LunarExperience() {
               <>
                 <span className={styles.roomLabel}>Sala</span>
                 <code className={styles.roomCode}>{roomCode || '…'}</code>
+                <span className={styles.roleTag} title={isHost ? 'Tu cámara se transmite a quien se una con este código' : 'Estás viendo la cámara de quien generó este código'}>
+                  {isHost ? '📡 VR' : '👁 monitor'}
+                </span>
                 <button className={styles.roomBtn} onClick={copyLink} title="Copiar enlace para invitar">
                   {copied ? '✓ copiado' : '🔗 copiar'}
                 </button>

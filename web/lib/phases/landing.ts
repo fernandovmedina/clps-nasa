@@ -3,7 +3,7 @@ import type { LunarApp, Phase } from '../engine/app';
 import type { LoopControl } from '../engine/audio';
 import { Panel, UI, roundRect } from '../engine/panel';
 import { Particles } from '../engine/particles';
-import { glowTexture } from '../engine/textures';
+import { cockpitTexture, glowTexture } from '../engine/textures';
 import { clamp01, disposeTree, rand, smooth } from '../engine/util';
 import { ensureSelection } from './pov';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
@@ -12,34 +12,43 @@ const T_BRAKE = 17;     // end of the powered approach
 const T_TOUCH = 25.5;   // touchdown
 const DECK = 3.0;       // cockpit floor height above the ground
 
-/** Cockpit interior in rig-local space (eye at 0, 1.6, 0 looking −Z). */
-function buildCockpit() {
+// Far enough from the rig that head movement in VR causes negligible parallax against the
+// flat photo (same "distant backdrop" trick as the stars/moon/earth elsewhere in this app).
+const COCKPIT_RADIUS = 60;
+// The source photo's chroma-key window sits almost exactly at image-center (u≈0.499, found
+// by scanning the green pixels), which three.js's SphereGeometry UV mapping places at local
+// −X once the usual scale(-1,1,1) "view from inside" flip is applied. Rotating the sphere
+// −90° around Y brings that point to local −Z - this engine's forward direction - verified
+// numerically against three.js's own UV/position mapping, not eyeballed.
+const COCKPIT_YAW = -Math.PI / 2;
+
+/** Cockpit interior in rig-local space (eye at 0, 1.6, 0 looking −Z): a 360° photo sphere
+ *  wrapped around the viewer, with its chroma-key window punched through to the real exterior. */
+function buildCockpit(app: LunarApp) {
   const g = new THREE.Group();
-  const wall = new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.85, metalness: 0.2 });
-  const trim = new THREE.MeshStandardMaterial({ color: 0x8a9099, roughness: 0.4, metalness: 0.7 });
-  const box = (w: number, h: number, d: number, x: number, y: number, z: number, mat = wall) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); g.add(m); return m;
+
+  const geo = new THREE.SphereGeometry(COCKPIT_RADIUS, 64, 48);
+  geo.scale(-1, 1, 1);
+  const texture = cockpitTexture();
+  const material = new THREE.MeshBasicMaterial({ map: texture });
+  // The photo has a flat chroma-key green panel where the real exterior should show through -
+  // discard those pixels so whatever is actually behind the sphere (the lunar scene, already
+  // rendered in this same THREE.Scene) shows there instead of a baked-in green rectangle.
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <map_fragment>',
+      `#include <map_fragment>
+      if (diffuseColor.g - max(diffuseColor.r, diffuseColor.b) > 0.15) discard;`,
+    );
   };
-  // window opening x ∈ [−0.85, 0.85], y ∈ [0.75, 1.95] at z = −0.85
-  box(2.6, 0.55, 0.12, 0, 2.225, -0.85);
-  box(2.6, 0.75, 0.12, 0, 0.375, -0.85);
-  box(0.45, 1.2, 0.12, -1.075, 1.35, -0.85);
-  box(0.45, 1.2, 0.12, 1.075, 1.35, -0.85);
-  box(1.76, 0.05, 0.16, 0, 1.97, -0.82, trim); box(1.76, 0.05, 0.16, 0, 0.73, -0.82, trim);
-  box(0.05, 1.26, 0.16, -0.87, 1.35, -0.82, trim); box(0.05, 1.26, 0.16, 0.87, 1.35, -0.82, trim);
-  box(0.08, 2.5, 1.6, -1.3, 1.25, -0.1); box(0.08, 2.5, 1.6, 1.3, 1.25, -0.1);
-  box(2.68, 0.08, 1.6, 0, 2.5, -0.1); box(2.68, 0.06, 1.6, 0, 0.0, -0.1);
-  box(2.68, 2.5, 0.08, 0, 1.25, 0.7);
-  const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.2), new THREE.MeshBasicMaterial({ color: 0x6fa8ff, transparent: true, opacity: 0.05, depthWrite: false }));
-  glass.position.set(0, 1.35, -0.8); g.add(glass);
-  const console = box(1.7, 0.06, 0.42, 0, 0.72, -0.6, wall);
-  console.rotation.x = -0.45;
+  const sphere = new THREE.Mesh(geo, material);
+  sphere.position.set(0, app.eyeHeight, 0);
+  sphere.rotation.y = COCKPIT_YAW;
+  g.add(sphere);
+
+  // The photo already shows a detailed, lit console - no need for the old procedural blinking
+  // cubes, which would now float in empty space in front of it instead of sitting on anything.
   const lights: THREE.Mesh[] = [];
-  for (let i = 0; i < 14; i++) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.012, 0.035), new THREE.MeshBasicMaterial({ color: [0x5cf2b0, 0xff9a3c, 0xff4a3a, 0x8ec5ff][i % 4] }));
-    m.position.set(-0.75 + (i % 7) * 0.05 + (i < 7 ? 0 : 1.15), 0.77, -0.52 - Math.floor(i / 7) * 0.0);
-    g.add(m); lights.push(m);
-  }
   const lamp = new THREE.PointLight(0xffd9b0, 1.6, 3.2, 2); lamp.position.set(0, 2.3, -0.1); g.add(lamp);
   return { group: g, lights };
 }
@@ -71,7 +80,7 @@ export class LandingPhase implements Phase {
     this.P2 = lz.clone().addScaledVector(up, DECK + app.eyeHeight);
     this.last.copy(this.P0);
 
-    this.cockpit = buildCockpit();
+    this.cockpit = buildCockpit(app);
     this.hud = new Panel(1024, 440, 0.56, (p, g) => this.drawHud(p, g));
     const glow = glowTexture();
     this.dust = new Particles(2400, glow, false);

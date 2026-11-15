@@ -76,6 +76,7 @@ export class LaunchPhase implements Phase {
 
   private t = 0; private s = 0; private speed = 0; private roll = 0; private arrivalT = 0;
   private progress = 0; private shownPct = 0; private done = false; private leaving = false;
+  private started = false;
   private status = 'Inicializando sistemas de vuelo';
   private tele = { alt: '0.0 km', vel: '0.00 km/s', dist: '384,400 km' };
   private uiT = 0; private countLabel = '';
@@ -139,7 +140,9 @@ export class LaunchPhase implements Phase {
     sc.add(this.smoke.points, this.flame.points);
 
     const P0 = new THREE.Vector3(0, 3.8, 0);
-    const end = MOON_C.clone().add(new THREE.Vector3(-0.15, -1, 0.45).normalize().multiplyScalar(MOON_R + 45));
+    // Altitude kept well clear of the surface (not a close dive) so the launch→orbit handoff
+    // reads as "entering orbit", not "already landing" — the real touchdown only happens in landing.ts.
+    const end = MOON_C.clone().add(new THREE.Vector3(-0.15, -1, 0.45).normalize().multiplyScalar(MOON_R + 130));
     this.curve = new THREE.CatmullRomCurve3([
       P0, new THREE.Vector3(0, 130, 0), new THREE.Vector3(25, 480, -50), new THREE.Vector3(230, 1250, -420),
       new THREE.Vector3(600, 2050, -900), end.clone().add(new THREE.Vector3(-140, -260, 160)), end,
@@ -168,8 +171,8 @@ export class LaunchPhase implements Phase {
     this.wind = this.app.audio.loop('wind_maxq');
 
     this.app.opts.loadData((p, msg) => { this.progress = Math.max(this.progress, clamp01(p)); this.status = msg; this.hud.invalidate(); })
-      .then((d) => { this.app.data = d; this.done = true; this.status = 'Datos listos · Rumbo al polo sur lunar'; })
-      .catch((e) => { console.error(e); this.status = 'Error al cargar datos — reintenta'; });
+      .then((d) => { this.app.data = d; this.done = true; this.status = 'Datos listos · Rumbo al polo sur lunar'; this.hud.invalidate(); })
+      .catch((e) => { console.error(e); this.status = 'Error al cargar datos — reintenta'; this.hud.invalidate(); });
   }
 
   exit() {
@@ -183,6 +186,15 @@ export class LaunchPhase implements Phase {
     g.fillStyle = UI.accent; g.beginPath(); g.arc(56, 62, 9, 0, 7); g.fill();
     g.font = `600 26px ${UI.mono}`; g.fillStyle = UI.dim;
     g.fillText('MISSION CONTROL  /  LUNAR SOUTH POLE · SITE PLANNER', 80, 72);
+    if (!this.started) {
+      g.font = `500 30px ${UI.font}`; g.fillStyle = UI.text; g.fillText(this.status, 44, 140);
+      roundRect(g, 44, 170, 1200, 10, 5); g.fillStyle = 'rgba(250,249,245,.15)'; g.fill();
+      if (this.shownPct > 0.002) { roundRect(g, 44, 170, 1200 * this.shownPct, 10, 5); g.fillStyle = UI.accent; g.fill(); }
+      g.font = `700 24px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right';
+      g.fillText(`${Math.round(this.shownPct * 100)}%`, 1356, 184); g.textAlign = 'left';
+      p.button(g, 'start', 44, 215, 1200, 96, 'Comenzar despegue', () => { this.started = true; });
+      return;
+    }
     const cols: [string, string][] = [['ALTITUD', this.tele.alt], ['VELOCIDAD', this.tele.vel], ['DIST. A LA LUNA', this.tele.dist]];
     cols.forEach(([k, v], i) => {
       const x = 44 + i * 440;
@@ -197,10 +209,14 @@ export class LaunchPhase implements Phase {
   }
 
   update(dt: number) {
-    this.t += dt;
-    const t = this.t, app = this.app;
-    if (!this.done) this.progress = Math.max(this.progress, Math.min(0.9, 0.9 * (1 - Math.exp(-t / 14))) * 0.5);
+    const app = this.app;
+    if (!this.done) this.progress = Math.max(this.progress, Math.min(0.9, 0.9 * (1 - Math.exp(-this.t / 14))) * 0.5);
     this.shownPct = lerp(this.shownPct, this.done ? 1 : this.progress, damp(4, dt));
+
+    if (!this.started) { this.hud.update(); this.count.update(); return; }
+
+    this.t += dt;
+    const t = this.t;
 
     // countdown
     let label = '';

@@ -16,6 +16,13 @@ const R = 1000;               // moon radius in scene units (1 u ≈ 1.74 km)
 const ORBIT_ALT = 150;
 const LAP = 20;               // seconds for the scanning orbit
 const STATION_LAT = -70;      // where the spacecraft parks to show the south pole
+// Keeps the camera gently swaying after the scan lap instead of freezing (a fully static shot
+// reads as "already landed", not orbiting). Bounded, not monotonic: look is pinned at the pole
+// and up=radial for the whole parked phase, so a full sweep through ±90°/270° would make up and
+// forward momentarily parallel (lookAt singularity → visible horizon snap). Staying within this
+// amplitude of STATION_LAT keeps well clear of those angles.
+const PARK_DRIFT_AMPLITUDE_DEG = 15;
+const PARK_DRIFT_PERIOD_S = 50;
 const DELAY_OPTIONS = [7, 14, 21, 30]; // days - matches the delay narrative in CLAUDE.md sec. 3
 const SUN_DIST = 5000, SUN_SPRITE_DIST = 150000, EARTHSHINE_DIST = 5000, EARTH_DIST = 60000;
 
@@ -170,6 +177,15 @@ export class OrbitPhase implements Phase {
       case 'set_time':
         this.applyRemoteTime(msg.t);
         return;
+      case 'cam_update':
+        // Mirror mode: the host only sends cam_update once it's in pov.ts inspecting a site.
+        // The monitor would otherwise have to manually click the same site/phase to follow -
+        // auto-follow here so handing over the room code is enough to mirror the VR view.
+        if (!this.app.isHost && this.analysisDone) {
+          this.applyRemoteSite(msg.site_id);
+          if (this.app.selected?.site.id === msg.site_id) this.app.goTo('pov', 0.6, 1.0);
+        }
+        return;
       default:
         return; // hello/ping never relayed; marker_* has no UI yet
     }
@@ -241,7 +257,8 @@ export class OrbitPhase implements Phase {
 
   private orbitAngle(t: number) {
     const k = smooth(0, LAP, t);
-    return (STATION_LAT + 360 * (1 - k)) * DEG;
+    const drift = t > LAP ? PARK_DRIFT_AMPLITUDE_DEG * Math.sin((t - LAP) * ((2 * Math.PI) / PARK_DRIFT_PERIOD_S)) : 0;
+    return (STATION_LAT + 360 * (1 - k) + drift) * DEG;
   }
 
   private placeViewer(t: number, snap = false) {
@@ -437,6 +454,7 @@ export class OrbitPhase implements Phase {
       p.button(g, 'preconfirm', 48, 1150, 928, 100, 'Preconfirmar punto', () => {
         this.app.audio.play('ui_confirm');
         this.app.selected = m;
+        this.app.room.send({ type: 'set_site', site_id: m.site.id }); // keeps room state in sync even when m was auto-selected (never went through select())
         this.app.goTo('pov', 0.8, 1.2);
       });
     } else {
