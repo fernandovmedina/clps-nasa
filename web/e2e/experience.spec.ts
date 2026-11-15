@@ -245,3 +245,86 @@ test.describe('narrow screens', () => {
     expect(box!.x + box!.width).toBeLessThanOrEqual(390.5)
   })
 })
+
+const HOST_ROLE = 'Tu cámara se transmite a quien se una con este código.'
+const MONITOR_ROLE = 'Estás viendo la cámara de quien generó este código.'
+const roomCode = (page: Page) => page.locator('summary code')
+const roomBox = (page: Page) => page.locator('details', { has: page.locator('summary code') })
+
+async function openRoom(page: Page, query = '') {
+  await page.goto(`/${query}`)
+  test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+  await expect(roomCode(page)).toHaveText(/^[A-Za-z0-9_-]{4,64}$/, { timeout: 30_000 })
+}
+
+async function openRoomBox(page: Page) {
+  const box = roomBox(page)
+  if (!(await box.evaluate((el) => (el as HTMLDetailsElement).open))) await box.locator('summary').click()
+  return box
+}
+
+async function expectRole(page: Page, role: 'host' | 'monitor') {
+  const box = await openRoomBox(page)
+  await expect(box.getByText(role === 'host' ? HOST_ROLE : MONITOR_ROLE)).toBeVisible()
+  await expect(box.getByText(role === 'host' ? MONITOR_ROLE : HOST_ROLE)).toHaveCount(0)
+}
+
+const roomInUrl = (page: Page) => new URL(page.url()).searchParams.get('room')
+
+async function goThroughMissionControl(page: Page) {
+  await page.getByRole('link', { name: 'Cambiar fecha o sitio' }).click()
+  await expect(page).toHaveURL(/\/mission-control\//)
+  const card = page.getByTestId('scenario-card').first()
+  await expect(card).toBeVisible({ timeout: 60_000 })
+  await card.getByRole('link', { name: 'Lanzar misión con esta fecha' }).click()
+  await expect(page).toHaveURL(/\/\?landing=/)
+  expect(new URL(page.url()).searchParams.get('landing')).toBe('2027-01-10T00:00:00Z')
+}
+
+test('the host keeps the room and the host role after reloading', async ({ page }) => {
+  test.setTimeout(120_000)
+  await openRoom(page)
+  const code = (await roomCode(page).textContent()) ?? ''
+  expect(roomInUrl(page)).toBe(code)
+  await expectRole(page, 'host')
+
+  await page.reload()
+  await expect(roomCode(page)).toHaveText(code, { timeout: 30_000 })
+  expect(roomInUrl(page)).toBe(code)
+  await expectRole(page, 'host')
+})
+
+test('the host keeps the room and the host role after going through Mission Control and launching the mission', async ({ page }) => {
+  test.setTimeout(180_000)
+  await openRoom(page)
+  const code = (await roomCode(page).textContent()) ?? ''
+  await goThroughMissionControl(page)
+  await expect(roomCode(page)).toHaveText(code, { timeout: 30_000 })
+  expect(roomInUrl(page)).toBe(code)
+  await expectRole(page, 'host')
+})
+
+test('a monitor keeps the room and the monitor role after going through Mission Control and launching the mission', async ({ page }) => {
+  test.setTimeout(180_000)
+  await openRoom(page, '?room=ZZZZ')
+  await expect(roomCode(page)).toHaveText('ZZZZ')
+  await expectRole(page, 'monitor')
+  await goThroughMissionControl(page)
+  await expect(roomCode(page)).toHaveText('ZZZZ', { timeout: 30_000 })
+  expect(roomInUrl(page)).toBe('ZZZZ')
+  await expectRole(page, 'monitor')
+})
+
+test('opening a shared link in a fresh browser context makes a monitor of that room', async ({ browser }) => {
+  test.setTimeout(120_000)
+  const context = await browser.newContext({ baseURL: test.info().project.use.baseURL, locale: 'es-MX', colorScheme: 'dark', viewport: { width: 1440, height: 900 } })
+  try {
+    const page = await context.newPage()
+    await openRoom(page, '?room=ZZZZ')
+    await expect(roomCode(page)).toHaveText('ZZZZ')
+    expect(roomInUrl(page)).toBe('ZZZZ')
+    await expectRole(page, 'monitor')
+  } finally {
+    await context.close()
+  }
+})

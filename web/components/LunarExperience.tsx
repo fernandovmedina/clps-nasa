@@ -9,6 +9,7 @@ import { LandingPhase } from '@/lib/phases/landing';
 import { TransmitPhase } from '@/lib/phases/transmit';
 import { PHASE_ORDER } from '@/lib/engine/hud';
 import { loadMissionData } from '@/lib/mission/sites';
+import { readSavedRoom, resolveInitialRoom, saveRoom, type RoomSession } from '@/lib/sync/room-session';
 import MissionLayer from './experience/MissionLayer';
 import styles from './LunarExperience.module.css';
 
@@ -26,17 +27,17 @@ function randomRoomCode(len = 4): string {
  *
  * isHost marks who generated the code themselves (nobody handed it to them) -
  * that's the VR/inspector by convention: their camera gets broadcast in
- * pov.ts. Arriving via a shared link (room already in the URL) means someone
- * else is hosting, so this client is the monitor instead (see AppOptions.isHost).
+ * pov.ts. Arriving via a shared link means someone else is hosting, so this
+ * client is the monitor instead (see AppOptions.isHost). The URL alone can't
+ * tell the two apart after a reload, so room-session.ts also uses what this
+ * tab remembered.
  */
-function resolveInitialRoom(params: URLSearchParams): { room: string; isHost: boolean } {
-  const fromUrl = params.get('room');
-  if (fromUrl) return { room: fromUrl, isHost: false };
-  const generated = randomRoomCode();
+function startRoom(params: URLSearchParams): RoomSession {
+  const session = resolveInitialRoom(params, readSavedRoom(), randomRoomCode);
   const url = new URL(window.location.href);
-  url.searchParams.set('room', generated);
+  url.searchParams.set('room', session.room);
   window.history.replaceState(null, '', url.toString());
-  return { room: generated, isHost: true };
+  return session;
 }
 
 export default function LunarExperience() {
@@ -55,7 +56,7 @@ export default function LunarExperience() {
     let cancelled = false;
     const params = new URLSearchParams(window.location.search);
     const q = params.get('phase') as PhaseName | null;
-    const { room: initialRoom, isHost: initialIsHost } = resolveInitialRoom(params);
+    const { room: initialRoom, isHost: initialIsHost } = startRoom(params);
     setRoomCode(initialRoom);
     setIsHost(initialIsHost);
     const app = new LunarApp(el, {
@@ -103,6 +104,10 @@ export default function LunarExperience() {
       setApp(null);
     };
   }, []);
+
+  useEffect(() => {
+    if (roomCode) saveRoom({ room: roomCode, isHost });
+  }, [roomCode, isHost]);
 
   const enterVR = async () => {
     try { await appRef.current?.enterVR(); } catch (e) { setError(`No se pudo iniciar VR: ${String(e)}`); }
