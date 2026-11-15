@@ -9,9 +9,10 @@ import { RunState, type PhaseHud } from './hud';
 import { Panel, showPanels } from './panel';
 import { createRunPanel } from './run-panel';
 import type { MissionData } from '../mission/sites';
-import { isLandingInRange, withLandingParam } from '../mission/launch-plan';
+import { currentLanding, isLandingInRange, withLandingParam } from '../mission/launch-plan';
 import type { SiteMetrics } from '../mission/scoring';
 import { RoomClient, type RoomEvent, type RoomStatus } from '../sync/room-client';
+import { PhaseFollow } from '../sync/phase-follow';
 import { reduceRoom, type Marker } from '@touchdown/core';
 
 export interface Phase {
@@ -75,7 +76,13 @@ export class LunarApp {
   isHost: boolean;
   phase: Phase | null = null;
   moonTex!: MoonTextures;
-  data: MissionData | null = null;
+  /** Loading the data may be what lets a monitor catch up with the crew's phase. */
+  get data(): MissionData | null { return this.missionData; }
+  set data(d: MissionData | null) {
+    this.missionData = d;
+    if (d) this.follow.tryFollow();
+  }
+  private missionData: MissionData | null = null;
   ranking: SiteMetrics[] = [];
   selected: SiteMetrics | null = null;
   /**
@@ -119,6 +126,7 @@ export class LunarApp {
   private waitCheck = 0;
   private ro: ResizeObserver;
   private factories = new Map<PhaseName, PhaseFactory>();
+  private follow: PhaseFollow;
 
   constructor(readonly container: HTMLElement, readonly opts: AppOptions) {
     const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -167,6 +175,16 @@ export class LunarApp {
     this.rig.add(this.avatar.group);
     this.room = new RoomClient(opts.room ?? 'touchdown', opts.onRoomStatus, opts.onRoomChange);
     this.isHost = opts.isHost ?? true;
+    this.follow = new PhaseFollow({
+      isHost: () => this.isHost,
+      phase: () => this.phase?.name ?? null,
+      busy: () => this.transitioning,
+      hasData: () => this.missionData !== null,
+      hasSite: (id) => this.selected?.site.id === id || this.ranking.some((m) => m.site.id === id),
+      selectSite: (id) => { this.selected = this.ranking.find((m) => m.site.id === id) ?? this.selected; },
+      goTo: (name) => { void this.goTo(name); },
+      restart: () => this.restart(),
+    }, this.room);
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
     this.resize();
@@ -261,6 +279,7 @@ export class LunarApp {
     this.view.snap = true;
     this.look.yaw = 0; this.look.pitch = 0;
     this.opts.onPhase?.(name);
+    this.follow.announce(name, currentLanding(this.data, window.location.search));
   }
 
   async goTo(name: PhaseName, fadeOut = 0.7, fadeIn = 1.0) {
@@ -271,7 +290,10 @@ export class LunarApp {
     if (epoch !== this.epoch) return;
     this.setPhase(name);
     await this.fadeTo(0, fadeIn);
-    if (epoch === this.epoch) this.transitioning = false;
+    if (epoch === this.epoch) {
+      this.transitioning = false;
+      this.follow.tryFollow();
+    }
   }
 
   /**
