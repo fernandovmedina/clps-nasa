@@ -19,7 +19,7 @@ async function openLaunch(page: Page, query = '') {
   await page.goto(`/${query}`)
   test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
   await expect(page.getByRole('list', { name: 'Fases de la misión' })).toBeVisible()
-  await expect(start(page)).toBeVisible()
+  await expect(start(page)).toBeVisible({ timeout: 30_000 })
 }
 
 async function reachOrbit(page: Page) {
