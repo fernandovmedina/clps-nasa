@@ -1,4 +1,4 @@
-import { PHASE_LABELS, PHASE_ORDER, fmtLanding, type PhaseHud, type RunMode } from '@/lib/engine/hud';
+import { PHASE_LABELS, PHASE_ORDER, fmtLanding, type HudSide, type PhaseHud, type RunMode } from '@/lib/engine/hud';
 import type { PhaseName } from '@/lib/engine/app';
 import { readLandingParams } from '@/lib/mission/landing-param';
 import type { SiteMetrics } from '@/lib/mission/scoring';
@@ -33,8 +33,20 @@ export function announce(prev: { phase: PhaseName; mode: RunMode }, next: { phas
   return '';
 }
 
-/** The part of a phase's HUD that is actually painted in each run mode, so hidden changes never cause a render. */
+const percent = (value: number) => Math.round(value * 100) / 100;
+
+/**
+ * The part of a phase's HUD that is actually painted in each run mode, with bar
+ * values cut to the whole percent the bars can show, so changes nobody can see
+ * (a float creeping toward 1, a progress line hidden while paused) never repaint.
+ */
 export function paintedHud(mode: RunMode, hud: PhaseHud | null): PhaseHud | null {
   if (!hud || mode === 'stopped') return null;
-  return mode === 'paused' ? { ...hud, progress: undefined, detail: undefined } : hud;
+  const side: HudSide = hud.side.kind === 'readouts'
+    ? { ...hud.side, items: hud.side.items.map((i) => (i.meter ? { ...i, meter: { ...i.meter, value: percent(i.meter.value) } } : i)) }
+    : hud.side.kind === 'sky'
+      ? { ...hud.side, blocks: hud.side.blocks.map((b) => ({ ...b, share: percent(b.share) })) }
+      : hud.side;
+  const base = { ...hud, side, progress: hud.progress && { ...hud.progress, value: percent(hud.progress.value) } };
+  return mode === 'paused' ? { ...base, progress: undefined, detail: undefined } : base;
 }

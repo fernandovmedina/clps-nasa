@@ -73,7 +73,17 @@ describe('paintedHud', () => {
   };
 
   it('keeps everything while the mission runs', () => {
-    expect(paintedHud('running', hud)).toBe(hud);
+    expect(paintedHud('running', hud)).toEqual(hud);
+  });
+
+  it('cuts bar values to the whole percent, so a float creeping toward 1 does not repaint', () => {
+    const at = (value: number) => JSON.stringify(paintedHud('running', { ...hud, progress: { value, label: 'Carga' } }));
+    expect(at(0.9981)).toBe(at(0.9987));
+    expect(at(0.99)).not.toBe(at(0.98));
+    const fuel = (value: number): PhaseHud => ({ ...hud, side: { kind: 'readouts', items: [{ label: 'Combustible', value: '94 %', meter: { value, label: 'x' } }] } });
+    expect(JSON.stringify(paintedHud('running', fuel(0.9412)))).toBe(JSON.stringify(paintedHud('running', fuel(0.9449))));
+    const sky = (share: number): PhaseHud => ({ ...hud, side: { kind: 'sky', blocks: [{ kind: 'sun', label: 'Sol', value: '1°', detail: '', share, shareLabel: '' }] } });
+    expect(JSON.stringify(paintedHud('running', sky(0.4801)))).toBe(JSON.stringify(paintedHud('running', sky(0.4849))));
   });
 
   it('drops what is hidden while paused, so background loading does not repaint', () => {
