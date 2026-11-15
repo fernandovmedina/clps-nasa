@@ -113,10 +113,12 @@ export default function LunarExperience() {
     try { await appRef.current?.enterVR(); } catch (e) { setError(`No se pudo iniciar VR: ${String(e)}`); }
   };
 
-  const joinRoom = (code: string) => {
+  const joinRoom = (code: string): boolean => {
     const current = appRef.current;
-    if (current) { current.room.setRoom(code); current.isHost = false; }
+    if (!current?.room.setRoom(code)) return false;
+    current.isHost = false;
     setIsHost(false);
+    return true;
   };
 
   return (

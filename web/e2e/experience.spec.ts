@@ -328,3 +328,39 @@ test('opening a shared link in a fresh browser context makes a monitor of that r
     await context.close()
   }
 })
+
+test('as host, joining an invalid code or the own room shows an error and changes nothing; a real join makes a monitor', async ({ page }) => {
+  test.setTimeout(180_000)
+  await openRoom(page)
+  const code = (await roomCode(page).textContent()) ?? ''
+  const box = await openRoomBox(page)
+  await box.getByRole('button', { name: 'Unirse a otra sala' }).click()
+  const field = box.getByRole('textbox', { name: 'Código de sala' })
+  const join = box.getByRole('button', { name: 'Unirse', exact: true })
+  const alert = box.getByRole('alert')
+
+  for (const [typed, message] of [['AB CD', 'Código no válido'], ['AB.CD', 'Código no válido'], [code, 'Ya estás en esa sala']]) {
+    await field.fill(typed!)
+    await join.click()
+    await expect(alert).toBeVisible()
+    await expect(alert).toHaveText(message!)
+    await expect(field).toBeVisible()
+    await expect(field).toHaveAttribute('aria-invalid', 'true')
+    await expect(field).toHaveAccessibleDescription(message!)
+    await expect(roomCode(page)).toHaveText(code)
+    expect(roomInUrl(page)).toBe(code)
+    await expect(box.getByText(HOST_ROLE)).toBeVisible()
+  }
+
+  await field.fill('QRST')
+  await expect(alert).toHaveCount(0)
+  await join.click()
+  await expect(field).toHaveCount(0)
+  await expect(roomCode(page)).toHaveText('QRST')
+  expect(roomInUrl(page)).toBe('QRST')
+  await expectRole(page, 'monitor')
+
+  await page.reload()
+  await expect(roomCode(page)).toHaveText('QRST', { timeout: 30_000 })
+  await expectRole(page, 'monitor')
+})
