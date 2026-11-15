@@ -321,7 +321,8 @@ test('the launch link hands the effective landing date and site to the experienc
   expect(url.pathname).toBe('/')
   expect(url.searchParams.get('landing')).toBe('2027-01-31T00:00:00Z')
   expect(url.searchParams.get('site')).toBe('malapert-a')
-  await expect(page.locator('canvas')).toHaveCount(1)
+  // The welcome, still up here, draws its donkey on a canvas of its own.
+  await expect(page.locator('canvas:not([data-testid="welcome-donkey"])')).toHaveCount(1)
 })
 
 test('the launch link is omitted for custom coordinates and hidden when the date is out of range', async ({ page }) => {
