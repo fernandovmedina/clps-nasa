@@ -120,6 +120,39 @@ const armShown = (a: Avatar, side: 1 | -1) => {
 describe('Avatar.update', () => {
   const facingX = headQuat(-Math.PI / 2);
 
+  it('places the torso where the head faces on the first frame of a session', () => {
+    const t = makeApp();
+    t.camera.quaternion.copy(facingX);
+    const avatar = new Avatar(t.app);
+    avatar.update(1 / 72);
+    expect(torsoFront(avatar).dot(new THREE.Vector3(1, 0, 0))).toBeGreaterThan(0.999);
+  });
+
+  it('places it again on the first frame of the next session', () => {
+    const t = makeApp();
+    t.camera.quaternion.copy(facingX);
+    const avatar = new Avatar(t.app);
+    avatar.update(1 / 72);
+    t.raw.isXR = false;
+    avatar.update(1 / 72);
+    t.camera.quaternion.copy(headQuat(Math.PI / 2));
+    t.raw.isXR = true;
+    avatar.update(1 / 72);
+    expect(torsoFront(avatar).dot(new THREE.Vector3(-1, 0, 0))).toBeGreaterThan(0.999);
+  });
+
+  it('takes the head of this frame from the XR camera, since the app camera is only updated when drawing', () => {
+    const t = makeApp();
+    const xrCamera = new THREE.ArrayCamera([new THREE.PerspectiveCamera()]);
+    xrCamera.position.set(1, 1.7, 0);
+    xrCamera.quaternion.copy(facingX);
+    (t.raw as unknown as { renderer: unknown }).renderer = { xr: { getCamera: () => xrCamera } };
+    const avatar = new Avatar(t.app);
+    avatar.update(1 / 72);
+    expect(torsoFront(avatar).dot(new THREE.Vector3(1, 0, 0))).toBeGreaterThan(0.999);
+    expect(torsoOf(avatar).position.x).toBeCloseTo(1, 5);
+  });
+
   it('still damps the torso once it is placed', () => {
     const t = makeApp();
     t.camera.quaternion.copy(facingX);
@@ -139,6 +172,32 @@ describe('Avatar.update', () => {
     avatar.update(1 / 72);
     expect(armShown(avatar, 1)).toBe(true);
     expect(armShown(avatar, -1)).toBe(true);
+  });
+
+  it.each([
+    [0, 'right', 1],
+    [1, 'right', 1],
+    [0, 'left', -1],
+    [1, 'left', -1],
+  ] as const)('keeps the arm of a lone connected controller (slot %i, %s)', (slot, handedness, side) => {
+    const t = makeApp();
+    const avatar = new Avatar(t.app);
+    t.connect(slot, handedness);
+    avatar.update(1 / 72);
+    expect(armShown(avatar, side)).toBe(true);
+    expect(armShown(avatar, -side as 1 | -1)).toBe(false);
+  });
+
+  it('shows one arm for a lone controller without handedness and hides it once it disconnects', () => {
+    const t = makeApp();
+    const avatar = new Avatar(t.app);
+    t.connect(1, undefined);
+    avatar.update(1 / 72);
+    expect(armShown(avatar, 1)).toBe(true);
+    expect(armShown(avatar, -1)).toBe(false);
+    t.controllers[1].userData.connected = false;
+    avatar.update(1 / 72);
+    expect(armShown(avatar, 1)).toBe(false);
   });
 
   it('falls back to controller order when no handedness is reported', () => {

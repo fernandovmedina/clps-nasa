@@ -106,6 +106,36 @@ const _yawTmp = new THREE.Quaternion();
 const _armPole = new THREE.Vector3();
 
 /**
+ * Head of this frame. `app.camera` only catches up with the headset when the renderer draws, one
+ * frame late (and still at the desktop pose on the first frame of a session); the XR camera is
+ * refreshed before the loop runs.
+ */
+function headPose(app: LunarApp): THREE.Object3D {
+  const xr = app.renderer?.xr?.getCamera?.();
+  return xr && xr.cameras.length > 0 ? xr : app.camera;
+}
+
+/**
+ * Arm side for each controller (undefined: no arm). A controller keeps the side it reports; one
+ * that reports none takes the side its slot suggests, or the free one.
+ */
+function armSides(handedness: (string | undefined)[], active: boolean[]) {
+  const sides: (1 | -1 | undefined)[] = handedness.map(() => undefined);
+  const taken = new Set<1 | -1>();
+  handedness.forEach((h, i) => {
+    const side = h === 'right' ? 1 : h === 'left' ? -1 : undefined;
+    if (active[i] && side && !taken.has(side)) { sides[i] = side; taken.add(side); }
+  });
+  handedness.forEach((_, i) => {
+    if (!active[i] || sides[i]) return;
+    const options: (1 | -1)[] = i === 0 ? [-1, 1] : [1, -1];
+    const side = options.find((s) => !taken.has(s));
+    if (side) { sides[i] = side; taken.add(side); }
+  });
+  return sides;
+}
+
+/**
  * First-person astronaut body. The hands already render via XRControllerModelFactory
  * (input.ts) - this adds what was missing: a torso that follows head position/yaw (not pitch,
  * so looking down doesn't bend your spine) and two arms solved with simple IK from the
@@ -117,6 +147,7 @@ export class Avatar {
   readonly group = new THREE.Group();
   private torso: THREE.Mesh;
   private torsoYaw = 0;
+  private placed = false;
   private arms: Arm[];
 
   constructor(private app: LunarApp) {
@@ -144,31 +175,39 @@ export class Avatar {
   update(dt: number) {
     const app = this.app;
     this.group.visible = app.isXR;
-    if (!app.isXR) return;
+    if (!app.isXR) { this.placed = false; return; }
 
-    const cam = app.camera;
+    const cam = headPose(app);
     // Body-facing: head forward projected onto the horizontal plane, so pitching your head
     // down to look at your hands doesn't tip the torso forward with it.
     const fwd = headFacing(_fwd, cam.quaternion);
     const targetYaw = facingYaw(fwd);
-    const diff = Math.atan2(Math.sin(targetYaw - this.torsoYaw), Math.cos(targetYaw - this.torsoYaw));
-    this.torsoYaw += diff * damp(TORSO_YAW_DAMP, dt);
+    if (this.placed) {
+      const diff = Math.atan2(Math.sin(targetYaw - this.torsoYaw), Math.cos(targetYaw - this.torsoYaw));
+      this.torsoYaw += diff * damp(TORSO_YAW_DAMP, dt);
+    } else {
+      this.torsoYaw = targetYaw;
+      this.placed = true;
+    }
     const yawQuat = _yawQuat.setFromAxisAngle(Y_AXIS, this.torsoYaw);
 
     this.torso.position.set(cam.position.x, cam.position.y - TORSO_DROP, cam.position.z);
     this.torso.quaternion.copy(yawQuat);
 
-    app.input.controllers.forEach((controller, i) => {
-      const handedness = controller.userData.handedness as 'left' | 'right' | undefined;
-      const side: 1 | -1 = handedness === 'right' ? 1 : handedness === 'left' ? -1 : (i === 0 ? -1 : 1);
+    const controllers = app.input.controllers;
+    const sides = armSides(
+      controllers.map((c) => c.userData.handedness as string | undefined),
+      controllers.map((c, i) => !!c.userData.connected && app.input.grips[i].visible),
+    );
+    for (const arm of this.arms) {
+      arm.shoulderJoint.visible = arm.upper.visible = arm.elbowJoint.visible = arm.fore.visible = arm.wristJoint.visible = sides.includes(arm.side);
+    }
+    controllers.forEach((_, i) => {
+      const side = sides[i];
+      if (!side) return;
       const arm = this.arms.find((a) => a.side === side)!;
-      const connected = !!controller.userData.connected;
-      arm.shoulderJoint.visible = arm.upper.visible = arm.elbowJoint.visible = arm.fore.visible = arm.wristJoint.visible = connected;
-      if (!connected) return;
-
-      const grip = app.input.grips[i];
       const shoulder = shoulderPosition(_shoulder, side, cam.position, this.torsoYaw);
-      const target = _target.copy(grip.position);
+      const target = _target.copy(app.input.grips[i].position);
 
       arm.shoulderJoint.position.copy(shoulder);
       armElbow(_elbow, side, shoulder, target, fwd);
