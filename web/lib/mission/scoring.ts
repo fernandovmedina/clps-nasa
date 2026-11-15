@@ -104,8 +104,12 @@ export function evaluateSites(sites: SiteInput[], landing: Date, windowDays = 14
     const { energy, comms, ops, continuity } = scenario.metrics;
     const breakdown = { energy, comms, ops, continuity };
 
+    // Hardcoded demo case "NO CAER" (sites.ts): always last, always not viable.
+    const score = site.crash ? 0 : scenario.score;
+    const status = site.crash ? 'not_viable' as const : scenario.status;
+
     return {
-      site, score: scenario.score, rank: 0, status: scenario.status,
+      site, score, rank: 0, status,
       sun: s0, earth: e0,
       illumPct: scenario.fractions.sun * 100,
       earthPct: scenario.fractions.earth * 100,

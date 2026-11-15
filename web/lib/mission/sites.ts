@@ -29,6 +29,30 @@ export interface SiteInput {
   ephemerisSource: string;
   /** Real LOLA heightmap, only set when hasTerrain is true. */
   terrain?: TerrainPatch;
+  /** Demo only: the descent at this site ends in a crash (see NO_CAER_SITE_ID). */
+  crash?: boolean;
+}
+
+/**
+ * Hardcoded demo case "NO CAER": NOT a real site. It borrows the terrain,
+ * horizon and ephemeris of Malapert Massif, is always ranked last (score 0,
+ * not viable) and its descent ends in an explosion (landing.ts).
+ */
+export const NO_CAER_SITE_ID = 'no-caer';
+const NO_CAER_SOURCE_ID = 'malapert-massif';
+
+function noCaerSite(sites: SiteInput[]): SiteInput | null {
+  const src = sites.find((s) => s.id === NO_CAER_SOURCE_ID) ?? sites.find((s) => s.hasTerrain) ?? sites[0];
+  if (!src) return null;
+  return {
+    ...src,
+    id: NO_CAER_SITE_ID,
+    name: 'NO CAER',
+    lat: -86.6,
+    lon: -12,
+    note: 'Caso de demostración, no es un sitio real: el descenso termina en impacto.',
+    crash: true,
+  };
 }
 
 export interface MissionData {
@@ -93,6 +117,9 @@ export async function loadMissionData(onProgress: (p: number, msg: string) => vo
       terrain,
     });
   }
+
+  const demo = noCaerSite(sites);
+  if (demo) sites.push(demo);
 
   onProgress(1, 'Datos listos');
   const ephemerisRange = {
