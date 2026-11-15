@@ -5,6 +5,7 @@ import type { LunarApp } from '@/lib/engine/app';
 import type { CapcomController } from '@/lib/capcom/controller';
 import { PHASE_LABELS, PHASE_ORDER, collectActions } from '@/lib/engine/hud';
 import { CapcomButton, CapcomCaption } from './Capcom';
+import ControlRoom, { EMPTY_LOG, nextLog, seenOf } from './ControlRoom';
 import Controls from './Controls';
 import FollowMissionDialog from './FollowMissionDialog';
 import FollowPill from './FollowPill';
@@ -40,6 +41,9 @@ const IDLE: HudSnapshot = {
   hud: null,
   mission: describeMission({ data: null, selected: null }, ''),
   roomOpen: false,
+  site: null,
+  ranking: [],
+  moonKm: null,
 };
 
 /** DOM control layer over the 3D scene: phases, mission, the phase's own data and the run controls. */
@@ -97,6 +101,32 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
   const closeFollowing = useCallback(() => setFollowing(false), []);
   const waitingMonitor = follow && prelaunch;
   const controlsHud = planner && hud?.primary ? { ...hud, primary: { ...hud.primary, disabled: true } } : hud;
+
+  const [log, setLog] = useState(EMPTY_LOG);
+  if (follow) {
+    const next = nextLog(log, seenOf(view), room.code);
+    if (next !== log) setLog(next);
+  }
+
+  if (follow) {
+    return (
+      <div className={styles.layer} data-mode={mode} data-phase={phase}>
+        <ControlRoom
+          view={view}
+          code={room.code}
+          log={log}
+          capcom={capcom}
+          soundOn={soundOn}
+          soundDisabled={stopped}
+          onToggleSound={toggleSound}
+          onLeave={room.onLeave}
+          onRestart={restart}
+          controls={<Controls mode={mode} hud={hud} pauseRef={pauseButton} onTogglePause={togglePause} onStop={stop} onAct={act} />}
+        />
+        <div className={styles.sr} role="status" aria-live="polite" aria-atomic="true">{announced.text}</div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.layer} data-mode={mode} data-phase={phase}>
