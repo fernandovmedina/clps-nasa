@@ -11,7 +11,6 @@ import { createRunPanel } from './run-panel';
 import type { MissionData } from '../mission/sites';
 import { isLandingInRange, withLandingParam } from '../mission/launch-plan';
 import type { SiteMetrics } from '../mission/scoring';
-import { InspectorPip } from '../phases/inspector-pip';
 import { RoomClient, type RoomEvent, type RoomStatus } from '../sync/room-client';
 import { reduceRoom, type Marker } from '@touchdown/core';
 
@@ -93,8 +92,6 @@ export class LunarApp {
   /** Objects clickable from any phase (e.g. the in-VR exit button) - merged with phase.targets by Input.cast(). */
   readonly globalTargets: THREE.Object3D[] = [];
   readonly run = new RunState();
-  /** Mission Control's on-screen view of the inspector; drawn after the main render (see inspector-pip.ts). */
-  readonly pip = new InspectorPip();
   /** Pause / stop controls for the headset; hidden outside VR like every Panel. */
   readonly runPanel: Panel;
 
@@ -399,13 +396,11 @@ export class LunarApp {
     if (this.run.mode !== this.runPanelMode) { this.runPanelMode = this.run.mode; this.runPanel.invalidate(); }
     this.runPanel.update();
     this.renderer.render(p.scene, this.camera);
-    this.pip.draw(this.renderer);
   };
 
   dispose() {
     this.renderer.setAnimationLoop(null);
     this.phase?.exit();
-    this.pip.dispose();
     this.runPanel.dispose();
     this.exitPanel.dispose();
     this.avatar.dispose();

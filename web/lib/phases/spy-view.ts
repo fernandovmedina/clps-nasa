@@ -3,8 +3,6 @@ import { UI, roundRect, textLabel } from '../engine/panel';
 import type { RoomEvent } from '../sync/room-client';
 
 const RT_W = 640, RT_H = 480;
-/** The on-screen picture-in-picture is 16:9, so it gets a 16:9 capture and is drawn 1:1, never stretched. */
-export const WIDE_SIZE = { w: 640, h: 360 };
 const PANEL_W = 0.78; // was 0.46 - too small to read at a glance across the cabin
 const BEZEL_M = 0.05; // backing frame margin around the video quad, in meters
 const LABEL_W = PANEL_W * 0.9;
@@ -56,27 +54,22 @@ export class SpyView {
   private noSignalBadge: THREE.Sprite;
   private lastSeenAt = -Infinity;
   private lastRenderedAt = -Infinity;
-  private stale = true;
-  private readonly rtW: number;
-  private readonly rtH: number;
 
   // Recent network samples, oldest first, for interpolating the pose actually used to render.
   private samples: { pos: THREE.Vector3; quat: THREE.Quaternion; t: number }[] = [];
 
-  constructor(private readonly scene: THREE.Scene, private readonly siteId: string, size: { w: number; h: number } = { w: RT_W, h: RT_H }) {
-    this.rtW = size.w;
-    this.rtH = size.h;
-    this.target = new THREE.WebGLRenderTarget(this.rtW, this.rtH, { colorSpace: THREE.SRGBColorSpace });
-    this.remoteCam = new THREE.PerspectiveCamera(60, this.rtW / this.rtH, 0.05, 250000);
+  constructor(private readonly scene: THREE.Scene, private readonly siteId: string) {
+    this.target = new THREE.WebGLRenderTarget(RT_W, RT_H, { colorSpace: THREE.SRGBColorSpace });
+    this.remoteCam = new THREE.PerspectiveCamera(60, RT_W / RT_H, 0.05, 250000);
 
-    const h = PANEL_W * (this.rtH / this.rtW);
+    const h = PANEL_W * (RT_H / RT_W);
     this.liveMat = new THREE.MeshBasicMaterial({ map: this.target.texture, toneMapped: false });
     this.placeholderMat = new THREE.MeshBasicMaterial({ color: 0x0d1420 });
     this.videoMesh = new THREE.Mesh(new THREE.PlaneGeometry(PANEL_W, h), this.placeholderMat);
     this.videoMesh.position.z = 0.001; // sits just in front of the bezel backing
     this.videoMesh.renderOrder = 20; // renderOrder isn't inherited from the parent Group - each mesh needs its own
 
-    this.bezelMesh = new THREE.Mesh(new THREE.PlaneGeometry(PANEL_W + BEZEL_M * 2, h + BEZEL_M * 2), bezelMaterial(this.rtW, this.rtH));
+    this.bezelMesh = new THREE.Mesh(new THREE.PlaneGeometry(PANEL_W + BEZEL_M * 2, h + BEZEL_M * 2), bezelMaterial());
     this.bezelMesh.renderOrder = 19; // behind the video plane
 
     this.mesh = new THREE.Group();
@@ -119,16 +112,6 @@ export class SpyView {
     return this.samples.length > 0;
   }
 
-  /** True while the capture is fresh: the inspector's camera was heard from in the last few seconds. */
-  get live(): boolean {
-    return !this.stale;
-  }
-
-  /** What the last capture drew; the on-screen picture-in-picture shows it. */
-  get texture(): THREE.Texture {
-    return this.target.texture;
-  }
-
   /** Moves `remoteCam` to the point in the sample history that corresponds to `now - INTERP_DELAY_S`. */
   private interpolatePose(now: number) {
     const renderAt = now - INTERP_DELAY_S;
@@ -157,7 +140,6 @@ export class SpyView {
    */
   update(now: number, renderer: THREE.WebGLRenderer, hideWhileCapturing: THREE.Object3D[]) {
     const stale = !this.hasSignal || now - this.lastSeenAt > STALE_AFTER_S;
-    this.stale = stale;
     this.videoMesh.material = stale ? this.placeholderMat : this.liveMat;
     this.liveBadge.visible = !stale;
     this.noSignalBadge.visible = stale;
@@ -195,10 +177,10 @@ export class SpyView {
 }
 
 /** Rounded-rect canvas texture behind the video quad, in the same frame style as the app's other panels (see Panel.frame). */
-function bezelMaterial(rtW: number, rtH: number): THREE.MeshBasicMaterial {
+function bezelMaterial(): THREE.MeshBasicMaterial {
   const canvas = document.createElement('canvas');
   canvas.width = 320;
-  canvas.height = Math.round((320 * (rtH + 1)) / (rtW + 1));
+  canvas.height = Math.round((320 * (RT_H + 1)) / (RT_W + 1));
   const g = canvas.getContext('2d')!;
   roundRect(g, 4, 4, canvas.width - 8, canvas.height - 8, 18);
   g.fillStyle = UI.bg;

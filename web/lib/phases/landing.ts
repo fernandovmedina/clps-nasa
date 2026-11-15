@@ -6,7 +6,6 @@ import { cockpitTexture, glowTexture } from '../engine/textures';
 import { clamp01, damp, disposeTree, rand, smooth } from '../engine/util';
 import { ensureSelection } from './pov';
 import { CabinConsole } from './landing-console';
-import { InspectorFeed } from './inspector-pip';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
 import { fmtInt, fmtLatLon, fmtPercent, type PhaseHud } from '../engine/hud';
 
@@ -89,13 +88,11 @@ export class LandingPhase implements Phase {
   private fire: Particles | null = null; private smoke: Particles | null = null;
   private blast = new THREE.PointLight(0xffa040, 0, 400, 1.2);
   private alarm: THREE.Mesh | null = null;
-  private feed: InspectorFeed;
 
   constructor(private app: LunarApp) {
     const m = ensureSelection(app);
     this.world = surfaceFor(app, m);
     this.scene = this.world.scene;
-    this.feed = new InspectorFeed(app, this.scene, m.site.id);
     const lz = this.world.lz, dir = this.world.earthHoriz, up = new THREE.Vector3(0, 1, 0);
     this.P0 = lz.clone().addScaledVector(dir, -1300).addScaledVector(up, 850);
     this.C = lz.clone().addScaledVector(dir, -420).addScaledVector(up, 160);
@@ -133,13 +130,9 @@ export class LandingPhase implements Phase {
     this.app.setView(this.pos(0), this.world.lz, { snap: true, rate: 6 });
     this.thruster = this.app.audio.loop('landing_thruster');
     if (this.alarm) this.app.camera.add(this.alarm);
-    this.app.room.setListener((msg) => { this.app.applyMarkerEvent(msg); this.feed.handleRoom(msg, this.app.time); });
-    this.feed.sync();
   }
 
   exit() {
-    this.app.room.setListener(null);
-    this.feed.dispose();
     this.thruster?.stop();
     this.cockpit.group.removeFromParent(); disposeTree(this.cockpit.group);
     this.cabinConsole.dispose();
@@ -270,11 +263,6 @@ export class LandingPhase implements Phase {
   }
 
   update(dt: number, time: number) {
-    this.advance(dt, time);
-    this.feed.update(time);
-  }
-
-  private advance(dt: number, time: number) {
     this.t += dt;
     const t = this.t, app = this.app;
     if (this.crash && t >= T_FAIL) {
