@@ -11,6 +11,7 @@ import { PHASE_ORDER } from '@/lib/engine/hud';
 import { loadMissionData } from '@/lib/mission/sites';
 import { CapcomController } from '@/lib/capcom/controller';
 import { installCapcomDebug } from '@/lib/capcom/debug';
+import { mountCapcomVrPanel } from '@/lib/capcom/vr-panel';
 import { readSavedRoom, resolveInitialRoom, saveRoom, type RoomSession } from '@/lib/sync/room-session';
 import MissionLayer from './experience/MissionLayer';
 import styles from './LunarExperience.module.css';
@@ -97,6 +98,7 @@ export default function LunarExperience() {
     const voice = params.get('capcom') === '0' ? null : new CapcomController(app, installCapcomDebug(params, app));
     capcomRef.current = voice;
     setCapcom(voice);
+    const unmountVrPanel = voice ? mountCapcomVrPanel(app, voice) : null;
 
     const onStart = () => setInVR(true);
     const onEnd = () => setInVR(false);
@@ -110,6 +112,7 @@ export default function LunarExperience() {
       cancelled = true;
       app.renderer.xr.removeEventListener('sessionstart', onStart);
       app.renderer.xr.removeEventListener('sessionend', onEnd);
+      unmountVrPanel?.();
       capcomRef.current?.dispose();
       capcomRef.current = null;
       setCapcom(null);

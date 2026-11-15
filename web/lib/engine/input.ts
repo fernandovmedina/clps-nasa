@@ -5,6 +5,14 @@ import type { Panel } from './panel';
 
 interface Hit { panel?: Panel; uv?: THREE.Vector2; obj?: THREE.Object3D; distance: number }
 
+interface ButtonSource { handedness?: string; gamepad?: { buttons: ReadonlyArray<{ pressed: boolean }> } | null }
+
+/** Button A of the right Touch controller (xr-standard mapping: index 4 is A on the right hand, X on the left). */
+export function rightAButtonHeld(sources: Iterable<ButtonSource>): boolean {
+  for (const source of sources) if (source.handedness === 'right' && source.gamepad?.buttons[4]?.pressed) return true;
+  return false;
+}
+
 /**
  * Unified pointer input:
  *  - Desktop: mouse/touch ray from the camera (drag = look around, click = select)
@@ -23,6 +31,8 @@ export class Input {
   /** Controller 3D models (not just the ray line) - a spy-view capture must hide these too. */
   readonly grips: THREE.XRGripSpace[] = [];
   private lines: THREE.Line[] = [];
+  private aHeld = false;
+  private aListeners = new Set<(held: boolean) => void>();
 
   constructor(private app: LunarApp) {
     const el = app.renderer.domElement;
@@ -55,7 +65,14 @@ export class Input {
     }
   }
 
+  /** Calls `listener(true)` when the right A button goes down in a headset session and `listener(false)` when it comes up. */
+  onAButton(listener: (held: boolean) => void) {
+    this.aListeners.add(listener);
+    return () => { this.aListeners.delete(listener); };
+  }
+
   dispose() {
+    this.aListeners.clear();
     const el = this.app.renderer.domElement;
     el.removeEventListener('pointermove', this.onMove);
     el.removeEventListener('pointerdown', this.onDown);
@@ -132,6 +149,11 @@ export class Input {
   private clearHover() { this.applyHover(null); }
 
   update() {
+    const held = this.app.isXR && rightAButtonHeld(this.app.renderer.xr.getSession()?.inputSources ?? []);
+    if (held !== this.aHeld) {
+      this.aHeld = held;
+      for (const listener of [...this.aListeners]) listener(held);
+    }
     if (this.app.isXR) {
       let best: Hit | null = null;
       this.controllers.forEach((c, i) => {
