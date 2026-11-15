@@ -10,6 +10,7 @@ import { clearSurface } from './surface-world';
 import { disposeObject, loadRocketModel } from './rocket-model';
 import { LaunchEnvironment, rocketShadowProxy } from './launch-environment';
 import { LaunchExhaust } from './launch-exhaust';
+import { loadLaunchTower } from './launch-tower';
 import { MEAN_MOON_DISTANCE_KM, earthMoonDistanceKm } from './launch-telemetry';
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -111,6 +112,11 @@ export class LaunchPhase implements Phase {
       this.rocket.add(model);
       const spread = model.userData.baseRadius * 0.5;
       this.nozzles[1].x = -spread; this.nozzles[2].x = spread;
+    });
+    loadLaunchTower(new THREE.Vector3(0, 3.8, 0)).then((tower) => {
+      if (!tower) return;
+      if (this.closed) { disposeObject(tower); return; }
+      this.env.setTower(tower);
     });
     this.shadowProxy = rocketShadowProxy(23.5, 1);
     this.rocket.add(this.shadowProxy);
