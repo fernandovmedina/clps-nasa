@@ -148,15 +148,15 @@ export class LunarApp {
     this.fadeMesh.renderOrder = 1000;
     this.camera.add(this.fadeMesh);
 
-    // Head-locked exit button: child of `camera` (not `rig`) so it renders in every phase
-    // without being re-added, and tracks the view the same way fadeMesh does.
+    // Exit button: fixed low on the left of the rig, mirroring the CAPCOM panel on the right,
+    // so it never floats over whatever panel the user is looking at.
     this.exitPanel = new Panel(640, 220, 0.26, (p, g) => {
       p.frame(g);
       p.button(g, 'exit-vr', 20, 20, 600, 180, '✕ Salir de VR', () => this.exitVR());
     });
-    this.exitPanel.mesh.position.set(0.4, -0.26, -0.85);
+    this.exitPanel.place(-0.53, this.eyeHeight - 0.56, -0.92);
     this.exitPanel.mesh.visible = false;
-    this.camera.add(this.exitPanel.mesh);
+    this.rig.add(this.exitPanel.mesh);
     this.globalTargets.push(this.exitPanel.mesh);
 
     this.input = new Input(this);

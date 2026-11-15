@@ -8,7 +8,9 @@ const H = 250;
 const WIDTH_M = 0.42;
 const DISTANCE_M = 1.2;
 const DEPRESSION_DEG = 28;
-const AZIMUTH_DEG = 24;
+const AZIMUTH_DEG = 30;
+const CABIN_AZIMUTH_DEG = 46;
+const CABIN_DEPRESSION_DEG = 12;
 const BODY_LINES = 4;
 /** The donkey stands just outside the panel's right edge, feet level with its bottom, turned a bit toward the text. */
 const DONKEY_GAP_M = 0.07;
@@ -70,13 +72,13 @@ export function mountCapcomVrPanel(app: LunarApp, controller: CapcomController):
       p.button(g, 'talk', W - 196, H - 70, 168, 52, snap.talking ? 'Soltar' : 'Hablar', () => (snap.talking ? controller.release() : controller.press()), snap.talking ? 'primary' : 'ghost');
     }
   });
-  const a = (DEPRESSION_DEG * Math.PI) / 180;
-  const z = (AZIMUTH_DEG * Math.PI) / 180;
-  panel.place(
-    DISTANCE_M * Math.cos(a) * Math.sin(z),
-    app.eyeHeight - DISTANCE_M * Math.sin(a),
-    -DISTANCE_M * Math.cos(a) * Math.cos(z),
-  );
+  const placeAt = (azimuthDeg: number, depressionDeg: number) => {
+    const a = (depressionDeg * Math.PI) / 180;
+    const z = (azimuthDeg * Math.PI) / 180;
+    panel.place(DISTANCE_M * Math.cos(a) * Math.sin(z), app.eyeHeight - DISTANCE_M * Math.sin(a), -DISTANCE_M * Math.cos(a) * Math.cos(z));
+  };
+  placeAt(AZIMUTH_DEG, DEPRESSION_DEG);
+  let inCabin = false;
 
   // Child of the panel: it faces the viewer with it and hides with it outside VR.
   const donkey = new DonkeyGuide().load();
@@ -86,7 +88,12 @@ export function mountCapcomVrPanel(app: LunarApp, controller: CapcomController):
   panel.mesh.add(donkey.group);
 
   // Panels redraw from the frame loop; this one is owned here, so it redraws when it is about to be drawn.
-  panel.mesh.onBeforeRender = () => { panel.update(); donkey.update(performance.now() / 1000); };
+  panel.mesh.onBeforeRender = () => {
+    // The landing cabin has its own console low in front: lift the panel onto the window pillar there.
+    const cabin = app.phase?.ownsRunControls === true;
+    if (cabin !== inCabin) { inCabin = cabin; placeAt(cabin ? CABIN_AZIMUTH_DEG : AZIMUTH_DEG, cabin ? CABIN_DEPRESSION_DEG : DEPRESSION_DEG); }
+    panel.update(); donkey.update(performance.now() / 1000);
+  };
   app.rig.add(panel.mesh);
   app.globalTargets.push(panel.mesh);
 
