@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LunarApp, PhaseName } from '@/lib/engine/app';
 import type { PhaseHud, RunMode } from '@/lib/engine/hud';
+import type { RoomStatus } from '@/lib/sync/room-client';
 import { describeMission, paintedHud, type MissionInfo } from './mission';
 
 export interface HudSnapshot {
@@ -11,6 +12,7 @@ export interface HudSnapshot {
   muted: boolean;
   hud: PhaseHud | null;
   mission: MissionInfo;
+  room: RoomStatus;
 }
 
 const POLL_MS = 100;
@@ -33,6 +35,7 @@ export function useHudSnapshot(app: LunarApp | null) {
       muted: app.audio.muted,
       hud: paintedHud(mode, app.phase?.controlHud?.() ?? null),
       mission: describeMission(app, window.location.search),
+      room: app.room.status,
     };
     const key = JSON.stringify(next);
     if (key === last.current) return;

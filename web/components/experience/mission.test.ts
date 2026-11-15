@@ -16,30 +16,37 @@ const picked = (name: string) => ({ site: { name } }) as unknown as SiteMetrics;
 describe('describeMission', () => {
   it('reads the landing date and the site from the URL before the data has loaded', () => {
     const info = describeMission({ data: null, selected: null }, '?landing=2027-01-24T12:00:00Z&site=malapert-a&room=ABCD');
-    expect(info.landing).toBe('Aterrizaje 24 ene 2027 · 12:00 UTC');
+    expect(info.launch).toBe('Despegue 20 ene 2027 · 00:00 UTC');
+    expect(info.landing).toBe('Llegada 24 ene 2027 · 12:00 UTC');
     expect(info.site).toBe('Cargando sitio…');
   });
 
   it('asks for a site in the orbit when the URL names none', () => {
     const info = describeMission({ data: null, selected: null }, '');
     expect(info.site).toBe('Por elegir en la órbita');
-    expect(info.landing).toBe('Cargando fecha de aterrizaje…');
+  });
+
+  it('shows the default plan, launching 4.5 days before, while nothing says otherwise', () => {
+    const info = describeMission({ data: null, selected: null }, '');
+    expect(info.launch).toBe('Despegue 5 ene 2027 · 12:00 UTC');
+    expect(info.landing).toBe('Llegada 10 ene 2027 · 00:00 UTC');
   });
 
   it('ignores a malformed landing parameter', () => {
-    expect(describeMission({ data: null, selected: null }, '?landing=mañana').landing).toBe('Cargando fecha de aterrizaje…');
+    expect(describeMission({ data: null, selected: null }, '?landing=mañana').landing).toBe('Llegada 10 ene 2027 · 00:00 UTC');
   });
 
   it('shows the requested catalog site and the loaded landing date once the data is in', () => {
     const info = describeMission({ data: data({ requestedSiteId: 'malapert-a' }), selected: null }, '?site=malapert-a');
-    expect(info).toEqual({ site: 'Malapert A (IM-1 Odysseus)', landing: 'Aterrizaje 10 ene 2027 · 00:00 UTC' });
+    expect(info).toEqual({ site: 'Malapert A (IM-1 Odysseus)', launch: 'Despegue 5 ene 2027 · 12:00 UTC', landing: 'Llegada 10 ene 2027 · 00:00 UTC' });
   });
 
   it('prefers the site picked in the ranking and follows a delayed landing date', () => {
     const delayed = data({ requestedSiteId: 'malapert-a', landingDate: new Date(Date.UTC(2027, 0, 31, 0, 0)) });
     const info = describeMission({ data: delayed, selected: picked('Mons Mouton (IM-2 Athena)') }, '');
     expect(info.site).toBe('Mons Mouton (IM-2 Athena)');
-    expect(info.landing).toBe('Aterrizaje 31 ene 2027 · 00:00 UTC');
+    expect(info.launch).toBe('Despegue 26 ene 2027 · 12:00 UTC');
+    expect(info.landing).toBe('Llegada 31 ene 2027 · 00:00 UTC');
   });
 });
 

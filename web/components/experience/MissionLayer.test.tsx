@@ -3,6 +3,7 @@ import { Profiler } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LunarApp, PhaseName } from '@/lib/engine/app';
 import type { PhaseHud, RunMode } from '@/lib/engine/hud';
+import type { RoomStatus } from '@/lib/sync/room-client';
 import MissionLayer from './MissionLayer';
 
 const NBSP = String.fromCharCode(160);
@@ -11,17 +12,18 @@ afterEach(cleanup);
 
 interface Fake {
   app: LunarApp;
-  state: { phase: PhaseName; mode: RunMode; hud: PhaseHud; muted: boolean };
+  state: { phase: PhaseName; mode: RunMode; hud: PhaseHud; muted: boolean; room: RoomStatus };
   ran: string[];
 }
 
 function fakeApp(hud: PhaseHud, phase: PhaseName = 'launch'): Fake {
-  const state = { phase, mode: 'running' as RunMode, hud, muted: false };
+  const state = { phase, mode: 'running' as RunMode, hud, muted: false, room: 'open' as RoomStatus };
   const ran: string[] = [];
   const app = {
     get phase() { return { name: state.phase, controlHud: () => state.hud }; },
     run: { get mode() { return state.mode; } },
     audio: { get muted() { return state.muted; }, setMuted: (v: boolean) => { state.muted = v; } },
+    room: { get status() { return state.room; }, send: vi.fn() },
     data: null,
     selected: null,
     setPaused: vi.fn((v: boolean) => { state.mode = v ? 'paused' : 'running'; }),
@@ -31,9 +33,9 @@ function fakeApp(hud: PhaseHud, phase: PhaseName = 'launch'): Fake {
   return { app, state, ran };
 }
 
-const room = { code: 'ABCD', isHost: true, onJoin: vi.fn() };
-const mount = (fake: Fake, vr: 'checking' | 'yes' | 'no' = 'no') =>
-  render(<MissionLayer app={fake.app} vr={vr} onEnterVR={vi.fn()} room={room} />);
+const room = { code: 'ABCD', isHost: true, onJoin: vi.fn(), onLeave: vi.fn() };
+const mount = (fake: Fake, vr: 'checking' | 'yes' | 'no' = 'no', over: Partial<React.ComponentProps<typeof MissionLayer>> = {}) =>
+  render(<MissionLayer app={fake.app} vr={vr} onEnterVR={vi.fn()} room={room} {...over} />);
 const tick = (ms = 150) => act(() => { vi.advanceTimersByTime(ms); });
 
 const launchHud = (over: Partial<PhaseHud> = {}): PhaseHud => ({
@@ -60,11 +62,59 @@ describe('MissionLayer', () => {
     expect(items[0]!.textContent).toContain('(completada)');
   });
 
-  it('links to Mission Control from the header and from the mission block', async () => {
+  it('drops the visible brand but keeps TOUCHDOWN as the page heading for screen readers', async () => {
     mount(fakeApp(launchHud()));
     await tick();
-    expect(screen.getByRole('link', { name: 'Mission Control' }).getAttribute('href')).toBe('/mission-control/');
-    expect(screen.getByRole('link', { name: 'Cambiar fecha o sitio' }).getAttribute('href')).toBe('/mission-control/');
+    const h1 = screen.getByRole('heading', { level: 1, name: 'TOUCHDOWN' });
+    expect(h1.className).toContain('sr');
+    expect(screen.queryByText('La misión, paso a paso')).toBeNull();
+  });
+
+  it('makes Mission Control a button, not a link, and keeps a link to the analysis in the mission block', async () => {
+    mount(fakeApp(launchHud()));
+    await tick();
+    expect(screen.queryByRole('link', { name: 'Mission Control' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Mission Control' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Análisis de sitios y fechas' }).getAttribute('href')).toBe('/mission-control/');
+    expect(screen.queryByRole('link', { name: 'Cambiar fecha o sitio' })).toBeNull();
+  });
+
+  it('shows the real plan in the mission block: launch, arrival and the room code in a box', async () => {
+    mount(fakeApp(launchHud()));
+    await tick();
+    const block = screen.getByRole('region', { name: 'Misión' });
+    expect(within(block).getByText('Despegue 5 ene 2027 · 12:00 UTC')).toBeTruthy();
+    expect(within(block).getByText('Llegada 10 ene 2027 · 00:00 UTC')).toBeTruthy();
+    expect(within(block).getByText('Código Mission Control')).toBeTruthy();
+    expect(within(block).getByTestId('room-code').textContent).toBe('ABCD');
+    expect(screen.queryByText('Unirse a otra sala')).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Código de sala' })).toBeNull();
+  });
+
+  it('before the launch starts: Cambiar lanzamiento reopens the planner and the analysis link is hidden', async () => {
+    const onPlanning = vi.fn();
+    mount(fakeApp(launchHud({ waiting: true, primary: { id: 'start', label: 'Comenzar despegue', run: vi.fn() } })), 'no', { onPlanning });
+    await tick();
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar lanzamiento' }));
+    expect(onPlanning).toHaveBeenCalledWith(true);
+    expect(screen.queryByRole('link', { name: 'Análisis de sitios y fechas' })).toBeNull();
+  });
+
+  it('after the launch has started Cambiar lanzamiento is gone and the analysis link is back', async () => {
+    const fake = fakeApp(launchHud({ waiting: true }));
+    mount(fake);
+    await tick();
+    expect(screen.getByRole('button', { name: 'Cambiar lanzamiento' })).toBeTruthy();
+    fake.state.hud = launchHud({ waiting: false });
+    await tick();
+    expect(screen.queryByRole('button', { name: 'Cambiar lanzamiento' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Análisis de sitios y fechas' })).toBeTruthy();
+  });
+
+  it('never offers Cambiar lanzamiento outside the launch', async () => {
+    mount(fakeApp(launchHud({ waiting: true }), 'orbit'));
+    await tick();
+    expect(screen.queryByRole('button', { name: 'Cambiar lanzamiento' })).toBeNull();
   });
 
   it('shows the phase figure, caption, progress and readouts', async () => {
@@ -106,7 +156,8 @@ describe('MissionLayer', () => {
     expect(screen.getByText('fase de órbita y ranking')).toBeTruthy();
     const items = within(screen.getByRole('list', { name: 'Fases de la misión' })).getAllByRole('listitem');
     expect(items.some((li) => li.getAttribute('aria-current') === 'step')).toBe(false);
-    expect(screen.getByRole('link', { name: 'Volver a Mission Control' }).getAttribute('href')).toBe('/mission-control/');
+    const card = screen.getByRole('region', { name: 'Misión detenida' });
+    expect(within(card).getByRole('link', { name: 'Análisis de sitios y fechas' }).getAttribute('href')).toBe('/mission-control/');
 
     fireEvent.click(screen.getByRole('button', { name: 'Reiniciar desde el despegue' }));
     await tick();

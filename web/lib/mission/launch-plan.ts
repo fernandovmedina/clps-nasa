@@ -96,3 +96,9 @@ export function withLandingParam(href: string, landing: Date): string {
 export function currentLanding(data: Pick<MissionData, 'landingDate'> | null, search: string): Date {
   return data?.landingDate ?? readLandingParams(new URLSearchParams(search), ANY_RANGE)?.landing ?? DEFAULT_LANDING;
 }
+
+/** The crew sees the planner first; the dev phase shortcut, the VR preview and a monitor skip it. */
+export function opensPlanner(search: string, isHost: boolean): boolean {
+  const params = new URLSearchParams(search);
+  return isHost && !params.has('phase') && params.get('vr') !== 'preview';
+}

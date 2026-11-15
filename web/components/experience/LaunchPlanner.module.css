@@ -1,0 +1,43 @@
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.figures { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0; }
+.figure { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 12px; background: rgba(250, 249, 245, 0.06);
+  border: 0.5px solid rgba(250, 249, 245, 0.12); min-width: 0; }
+.figure dt { font-size: 12px; font-weight: 500; color: var(--dim); }
+.figure dd { margin: 0; }
+.figure .value { font-size: 18px; font-weight: 600; line-height: 1.25; }
+.figure .hint { font-size: 12px; color: var(--soft); }
+.pending { padding: 14px; border-radius: 12px; background: rgba(250, 249, 245, 0.06); border: 0.5px solid rgba(250, 249, 245, 0.12);
+  font-size: 14px; color: var(--soft); }
+
+.sites { display: flex; flex-direction: column; gap: 8px; }
+.sites h3 { font-size: 13px; font-weight: 600; }
+.sites ol { display: flex; flex-direction: column; gap: 6px; }
+.sites li { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 12px; border-radius: 8px; background: rgba(250, 249, 245, 0.06); }
+.rank { width: 18px; text-align: right; color: var(--dim); font-size: 13px; }
+.name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.score { font-size: 15px; font-weight: 700; }
+.badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; background: #EFE3B5; color: var(--slate);
+  font-size: 12px; font-weight: 600; white-space: nowrap; }
+.badge[data-tone='ok'] { background: #CBE8D1; }
+.badge[data-tone='bad'] { background: #F4CBC3; }
+.note { font-size: 12px; color: var(--dim); }
+
+.codeBox { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px 16px; border-radius: 12px; border: 1px dashed var(--accent); }
+.codeBox h3 { font-size: 12px; font-weight: 600; color: var(--soft); }
+.code { font-size: 32px; font-weight: 700; line-height: 1.1; letter-spacing: 0.08em; color: var(--accent); }
+.codeBox p { font-size: 13px; color: var(--soft); }
+.codeBox em { font-style: normal; color: var(--ink); font-weight: 600; }
+
+.footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.footer a { display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 600; }
+
+@media (max-width: 1023.98px) {
+  .figures { grid-template-columns: 1fr; }
+  .code { font-size: 28px; }
+  .footer { flex-direction: column-reverse; align-items: stretch; }
+  .footer a { justify-content: center; }
+}
+@media (max-width: 380px) {
+  .fields { grid-template-columns: 1fr; }
+}

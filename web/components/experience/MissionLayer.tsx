@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LunarApp } from '@/lib/engine/app';
 import type { CapcomController } from '@/lib/capcom/controller';
 import { PHASE_LABELS, PHASE_ORDER, collectActions } from '@/lib/engine/hud';
 import { CapcomButton, CapcomCaption } from './Capcom';
 import Controls from './Controls';
+import FollowMissionDialog from './FollowMissionDialog';
+import FollowPill from './FollowPill';
 import { CheckIcon, SoundIcon } from './icons';
+import LaunchPlanner from './LaunchPlanner';
 import { announce, describeMission } from './mission';
-import RoomControls from './RoomControls';
+import MissionBlock from './MissionBlock';
 import SidePanel from './SidePanel';
 import StatusPanel from './StatusPanel';
 import { useHudSnapshot, type HudSnapshot } from './useHudSnapshot';
@@ -18,9 +21,12 @@ interface Props {
   app: LunarApp | null;
   vr: 'checking' | 'yes' | 'no';
   onEnterVR: () => void;
-  room: { code: string; isHost: boolean; onJoin: (code: string) => boolean };
+  room: { code: string; isHost: boolean; onJoin: (code: string) => boolean; onLeave: () => void };
   /** Voice assistant; absent when switched off with ?capcom=0. */
   capcom?: CapcomController | null;
+  /** The launch planner is open. Held by the parent: this layer unmounts while the headset is on. */
+  planning?: boolean;
+  onPlanning?: (open: boolean) => void;
 }
 
 const NO_VR = 'VR no disponible aquí · ábrelo en el navegador del Quest (HTTPS)';
@@ -31,13 +37,14 @@ const IDLE: HudSnapshot = {
   muted: false,
   hud: null,
   mission: describeMission({ data: null, selected: null }, ''),
+  room: 'connecting',
 };
 
 /** DOM control layer over the 3D scene: phases, mission, the phase's own data and the run controls. */
-export default function MissionLayer({ app, vr, onEnterVR, room, capcom }: Props) {
+export default function MissionLayer({ app, vr, onEnterVR, room, capcom, planning = false, onPlanning }: Props) {
   const { snap, refresh } = useHudSnapshot(app);
   const view = snap ?? IDLE;
-  const { phase, mode, muted, hud, mission } = view;
+  const { phase, mode, muted, hud, mission, room: roomStatus } = view;
   const stopped = mode === 'stopped';
   const paused = mode === 'paused';
   const current = PHASE_ORDER.indexOf(phase);
@@ -80,28 +87,45 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom }: Props
   const soundOn = !muted && !stopped;
   const canVR = vr === 'yes';
 
+  const follow = !room.isHost;
+  const [following, setFollowing] = useState(false);
+  const prelaunch = phase === 'launch' && hud?.waiting === true && !stopped;
+  const planner = planning && !follow && app !== null;
+  const closePlanner = useCallback(() => onPlanning?.(false), [onPlanning]);
+  const closeFollowing = useCallback(() => setFollowing(false), []);
+  const waitingMonitor = follow && prelaunch;
+  const controlsHud = planner && hud?.primary ? { ...hud, primary: { ...hud.primary, disabled: true } } : hud;
+
   return (
     <div className={styles.layer} data-mode={mode} data-phase={phase}>
-      <header className={styles.header}>
-        <h1 className={styles.brand}>TOUCHDOWN<span>La misión, paso a paso</span></h1>
+      <header className={styles.header} data-follow={follow ? '' : undefined}>
+        <h1 className={styles.sr}>TOUCHDOWN</h1>
+        {follow && <FollowPill code={room.code} room={roomStatus} />}
         <div className={styles.headerActions}>
           {capcom && <CapcomButton controller={capcom} />}
           <button type="button" className={styles.iconBtn} aria-label="Sonido" aria-pressed={soundOn} disabled={stopped} onClick={toggleSound}>
             <SoundIcon muted={!soundOn} />
           </button>
-          <a className={styles.btn} href="/mission-control/">Mission Control</a>
-          <button
-            type="button"
-            className={styles.btn}
-            data-vr={canVR ? 'yes' : 'no'}
-            aria-disabled={!canVR}
-            aria-describedby={canVR ? undefined : 'vr-unavailable'}
-            title={canVR ? undefined : NO_VR}
-            onClick={canVR ? onEnterVR : undefined}
-          >
-            Entrar en VR
-          </button>
-          {!canVR && <span id="vr-unavailable" className={styles.sr}>{NO_VR}</span>}
+          {follow ? (
+            <button type="button" className={styles.btn} onClick={room.onLeave}>Salir</button>
+          ) : (
+            <>
+              <button type="button" className={styles.btn} aria-haspopup="dialog" onClick={() => setFollowing(true)}>Mission Control</button>
+              <button
+                type="button"
+                className={styles.btn}
+                data-vr={canVR ? 'yes' : 'no'}
+                disabled={planner}
+                aria-disabled={!canVR}
+                aria-describedby={canVR ? undefined : 'vr-unavailable'}
+                title={canVR ? undefined : NO_VR}
+                onClick={canVR ? onEnterVR : undefined}
+              >
+                Entrar en VR
+              </button>
+              {!canVR && <span id="vr-unavailable" className={styles.sr}>{NO_VR}</span>}
+            </>
+          )}
         </div>
       </header>
 
@@ -118,15 +142,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom }: Props
             );
           })}
         </ol>
-        <section className={styles.mission} aria-label="Misión">
-          <h2>Misión</h2>
-          <p className={styles.site}>{mission.site}</p>
-          <p className={styles.date}>{mission.landing}</p>
-          <div className={styles.missionLinks}>
-            <a href="/mission-control/">Cambiar fecha o sitio</a>
-            <RoomControls code={room.code} isHost={room.isHost} onJoin={room.onJoin} />
-          </div>
-        </section>
+        <MissionBlock mission={mission} code={room.code} follow={follow} room={roomStatus} prelaunch={prelaunch} onChangeLaunch={() => onPlanning?.(true)} />
       </div>
 
       {hud && !stopped && (
@@ -136,10 +152,18 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom }: Props
       )}
 
       <div className={styles.bottom}>
-        <StatusPanel phase={phase} mode={mode} hud={hud} frozen={paused} onAct={act} />
+        {waitingMonitor && hud ? (
+          <section className={styles.status} role="status" aria-label="Estado de la misión">
+            <p className={styles.figureRow}><span className={styles.figure} data-testid="figure">{hud.figure.value}</span></p>
+            {hud.detail && <p className={styles.detail}>{hud.detail}</p>}
+            <p className={styles.small}>Modo seguimiento: los controles de la misión los tiene la tripulación.</p>
+          </section>
+        ) : (
+          <StatusPanel phase={phase} mode={mode} hud={hud} frozen={paused} onAct={act} />
+        )}
         {capcom && <CapcomCaption controller={capcom} />}
-        {!stopped && (
-          <Controls mode={mode} hud={hud} pauseRef={pauseButton} onTogglePause={togglePause} onStop={stop} onAct={act} />
+        {!stopped && !waitingMonitor && (
+          <Controls mode={mode} hud={controlsHud} pauseRef={pauseButton} onTogglePause={togglePause} onStop={stop} onAct={act} />
         )}
       </div>
 
@@ -148,11 +172,14 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom }: Props
           <h2 id="stopped-title">Misión detenida</h2>
           <p>La simulación se detuvo en la fase de {PHASE_LABELS[phase].toLowerCase()} y el sonido está apagado. La fecha y el sitio elegidos se conservan.</p>
           <button ref={restartButton} type="button" className={styles.btn} data-variant="primary" onClick={restart}>Reiniciar desde el despegue</button>
-          <a className={styles.btn} href="/mission-control/">Volver a Mission Control</a>
+          <a className={styles.btn} href="/mission-control/">Análisis de sitios y fechas</a>
         </section>
       )}
 
       <div className={styles.sr} role="status" aria-live="polite" aria-atomic="true">{announced.text}</div>
+
+      {planner && <LaunchPlanner app={app} code={room.code} onClose={closePlanner} suspendEscape={following} />}
+      {following && <FollowMissionDialog code={room.code} onJoin={room.onJoin} onClose={closeFollowing} />}
     </div>
   );
 }

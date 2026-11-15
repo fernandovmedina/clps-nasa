@@ -15,11 +15,25 @@ const figure = (page: Page) => page.getByTestId('figure')
 const currentStep = (page: Page) => page.locator('[aria-current="step"]')
 const start = (page: Page) => page.getByRole('button', { name: 'Comenzar despegue' })
 
+const planner = (page: Page) => page.getByRole('dialog', { name: 'Planifica tu lanzamiento' })
+const followDialog = (page: Page) => page.getByRole('dialog', { name: 'Seguir una misión' })
+
+/** The crew's first screen: confirms the plan as it is once the mission data is in, so the launch can begin. */
+async function confirmPlan(page: Page) {
+  const dialog = planner(page)
+  await expect(dialog).toBeVisible()
+  const confirm = dialog.getByRole('button', { name: 'Confirmar lanzamiento' })
+  await expect(confirm).toBeEnabled({ timeout: 60_000 })
+  await confirm.click()
+  await expect(dialog).toHaveCount(0)
+}
+
 async function openLaunch(page: Page, query = '') {
   await page.goto(`/${query}`)
   test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
   await expect(page.getByRole('list', { name: 'Fases de la misión' })).toBeVisible()
-  await expect(start(page)).toBeVisible({ timeout: 30_000 })
+  await confirmPlan(page)
+  await expect(start(page)).toBeEnabled({ timeout: 30_000 })
 }
 
 async function reachOrbit(page: Page) {
@@ -28,7 +42,7 @@ async function reachOrbit(page: Page) {
   await expect(page.getByRole('button', { name: 'Preconfirmar punto' })).toBeEnabled({ timeout: 120_000 })
 }
 
-test('the team experience mounts its canvas at / without console errors and links to Mission Control', async ({ page }) => {
+test('the team experience mounts its canvas at / without console errors and offers the site analysis and Mission Control', async ({ page }) => {
   const errors: string[] = []
   const failed: string[] = []
   page.on('console', (m) => {
@@ -51,7 +65,10 @@ test('the team experience mounts its canvas at / without console errors and link
     await expect(page.locator('canvas')).toHaveCount(1)
     await expect(page.getByRole('list', { name: 'Fases de la misión' })).toBeVisible()
     await expect(currentStep(page)).toContainText('Despegue')
-    await expect(page.getByRole('link', { name: 'Mission Control' })).toHaveAttribute('href', '/mission-control/')
+    await expect(page.getByRole('button', { name: 'Mission Control' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Mission Control' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { level: 1, name: 'TOUCHDOWN' })).toHaveCount(1)
+    await expect(page.getByText('La misión, paso a paso')).toHaveCount(0)
     await page.waitForTimeout(1500)
     await expect(shownError).toHaveCount(0)
     expect(errors).toEqual([])
@@ -60,9 +77,11 @@ test('the team experience mounts its canvas at / without console errors and link
   }
   expect(failed.filter((path) => !OPTIONAL_TEXTURES.includes(path))).toEqual([])
 
-  const link = page.getByRole('link', { name: 'Cambiar fecha o sitio' })
+  const link = planner(page).getByRole('link', { name: 'Análisis detallado de sitios y fechas' })
   await expect(link).toHaveAttribute('href', '/mission-control/')
-  await link.click()
+  await expect(link).toHaveAttribute('target', '_blank')
+  await expect(link).toHaveAttribute('rel', /noopener/)
+  await page.goto('/mission-control/')
   await expect(page).toHaveURL(/\/mission-control\/(\?.*)?$/)
   await expect(page.locator('main')).toHaveAttribute('aria-busy', 'false')
 })
@@ -132,7 +151,7 @@ test('Pausar freezes the big figure for three seconds and Reanudar makes it move
 test('Detener shows the stopped card and Reiniciar desde el despegue goes back to a waiting launch', async ({ page }) => {
   test.setTimeout(300_000)
   await openLaunch(page, '?speed=4&landing=2027-01-24T12:00:00Z&site=malapert-a')
-  await expect(page.getByText('Aterrizaje 24 ene 2027 · 12:00 UTC')).toBeVisible()
+  await expect(page.getByText('Llegada 24 ene 2027 · 12:00 UTC')).toBeVisible()
   await start(page).click()
   await expect(figure(page)).toHaveText(/^T/, { timeout: 30_000 })
 
@@ -140,7 +159,7 @@ test('Detener shows the stopped card and Reiniciar desde el despegue goes back t
   await expect(page.getByRole('heading', { name: 'Misión detenida' })).toBeVisible()
   await expect(currentStep(page)).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Pausar' })).toHaveCount(0)
-  await expect(page.getByRole('link', { name: 'Volver a Mission Control' })).toHaveAttribute('href', '/mission-control/')
+  await expect(page.getByRole('region', { name: 'Misión detenida' }).getByRole('link', { name: 'Análisis de sitios y fechas' })).toHaveAttribute('href', '/mission-control/')
   const restart = page.getByRole('button', { name: 'Reiniciar desde el despegue' })
   await expect(restart).toBeFocused()
 
@@ -149,7 +168,7 @@ test('Detener shows the stopped card and Reiniciar desde el despegue goes back t
   await expect(currentStep(page)).toContainText('Despegue')
   await expect(start(page)).toBeVisible()
   await expect(page.getByRole('button', { name: 'Pausar' })).toBeDisabled()
-  await expect(page.getByText('Aterrizaje 24 ene 2027 · 12:00 UTC')).toBeVisible()
+  await expect(page.getByText('Llegada 24 ene 2027 · 12:00 UTC')).toBeVisible()
   await expect(page.getByText('Malapert A (IM-1 Odysseus)', { exact: true })).toBeVisible({ timeout: 60_000 })
 })
 
@@ -201,7 +220,7 @@ test('once the data is loaded, a paused mission does not make React render: no c
     }
   })
   await openLaunch(page, '?speed=4')
-  await expect(page.getByText('Aterrizaje 10 ene 2027 · 00:00 UTC')).toBeVisible({ timeout: 90_000 })
+  await expect(page.getByText('Llegada 10 ene 2027 · 00:00 UTC')).toBeVisible({ timeout: 90_000 })
   await start(page).click()
   await expect(figure(page)).toHaveText(/^T/, { timeout: 30_000 })
   await page.getByRole('button', { name: 'Pausar' }).click()
@@ -274,10 +293,9 @@ test.describe('narrow screens', () => {
   })
 })
 
-const HOST_ROLE = 'Tu cámara se transmite a quien se una con este código.'
-const MONITOR_ROLE = 'Estás viendo la cámara de quien generó este código.'
-const roomCode = (page: Page) => page.locator('summary code')
-const roomBox = (page: Page) => page.locator('details', { has: page.locator('summary code') })
+const roomCode = (page: Page) => page.getByTestId('room-code')
+const roomInUrl = (page: Page) => new URL(page.url()).searchParams.get('room')
+const followPill = (page: Page) => page.getByText(/Mission Control · siguiendo la misión/)
 
 async function openRoom(page: Page, query = '') {
   await page.setViewportSize({ width: 640, height: 480 })
@@ -286,28 +304,28 @@ async function openRoom(page: Page, query = '') {
   await expect(roomCode(page)).toHaveText(/^[A-Za-z0-9_-]{4,64}$/, { timeout: 30_000 })
 }
 
-async function openRoomBox(page: Page) {
-  const box = roomBox(page)
-  if (!(await box.evaluate((el) => (el as HTMLDetailsElement).open))) await box.locator('summary').click()
-  return box
-}
-
 async function expectRole(page: Page, role: 'host' | 'monitor') {
-  const box = await openRoomBox(page)
-  await expect(box.getByText(role === 'host' ? HOST_ROLE : MONITOR_ROLE)).toBeVisible()
-  await expect(box.getByText(role === 'host' ? MONITOR_ROLE : HOST_ROLE)).toHaveCount(0)
+  await expect(followPill(page)).toHaveCount(role === 'monitor' ? 1 : 0)
+  await expect(page.getByText('Código Mission Control', { exact: true })).toHaveCount(role === 'host' ? 1 : 0)
+  await expect(page.getByRole('region', { name: role === 'host' ? 'Misión' : 'Misión que sigues' })).toBeVisible()
 }
-
-const roomInUrl = (page: Page) => new URL(page.url()).searchParams.get('room')
 
 async function goThroughMissionControl(page: Page) {
-  await page.getByRole('link', { name: 'Cambiar fecha o sitio' }).click()
-  await expect(page).toHaveURL(/\/mission-control\//)
+  await page.goto('/mission-control/')
   const card = page.getByTestId('scenario-card').first()
   await expect(card).toBeVisible({ timeout: 60_000 })
   await card.getByRole('link', { name: 'Lanzar misión con esta fecha' }).click()
   await expect(page).toHaveURL(/\/\?landing=/)
   expect(new URL(page.url()).searchParams.get('landing')).toBe('2027-01-10T00:00:00Z')
+}
+
+async function followFromDialog(page: Page, code: string) {
+  await page.getByRole('button', { name: 'Mission Control' }).click()
+  const dialog = followDialog(page)
+  await expect(dialog).toBeVisible()
+  await dialog.getByLabel('Código de la misión').fill(code)
+  await dialog.getByRole('button', { name: 'Conectar' }).click()
+  return dialog
 }
 
 test('the host keeps the room and the host role after reloading', async ({ page }) => {
@@ -344,7 +362,7 @@ test('a monitor keeps the room and the monitor role after going through Mission 
   await expectRole(page, 'monitor')
 })
 
-test('opening a shared link in a fresh browser context makes a monitor of that room', async ({ browser }) => {
+test('opening a shared link in a fresh browser context makes a monitor of that room, with no planner', async ({ browser }) => {
   test.setTimeout(300_000)
   const context = await browser.newContext({ baseURL: test.info().project.use.baseURL, locale: 'es-MX', colorScheme: 'dark', viewport: { width: 1440, height: 900 } })
   try {
@@ -353,47 +371,47 @@ test('opening a shared link in a fresh browser context makes a monitor of that r
     await expect(roomCode(page)).toHaveText('ZZZZ')
     expect(roomInUrl(page)).toBe('ZZZZ')
     await expectRole(page, 'monitor')
+    await expect(planner(page)).toHaveCount(0)
+    await expect(page.getByTestId('figure')).toHaveText('En espera')
+    await expect(page.getByRole('button', { name: 'Comenzar despegue' })).toHaveCount(0)
   } finally {
     await context.close()
   }
 })
 
-test('as host, joining an invalid code or the own room shows an error and changes nothing', async ({ page }) => {
+test('as host, following an invalid code or the own room shows an error and changes nothing', async ({ page }) => {
   test.setTimeout(360_000)
   await openRoom(page)
   const code = (await roomCode(page).textContent()) ?? ''
-  const box = await openRoomBox(page)
-  await box.getByRole('button', { name: 'Unirse a otra sala' }).click()
-  const field = box.getByRole('textbox', { name: 'Código de sala' })
-  const join = box.getByRole('button', { name: 'Unirse', exact: true })
-  const alert = box.getByRole('alert')
+  await page.getByRole('button', { name: 'Mission Control' }).click()
+  const dialog = followDialog(page)
+  const field = dialog.getByLabel('Código de la misión')
+  const alert = dialog.getByRole('alert')
 
   for (const [typed, message] of [['AB CD', 'Código no válido'], ['AB.CD', 'Código no válido'], [code, 'Ya estás en esa sala']]) {
     await field.fill(typed!)
-    await join.click()
-    await expect(alert).toBeVisible()
+    await dialog.getByRole('button', { name: 'Conectar' }).click()
     await expect(alert).toHaveText(message!)
     await expect(field).toBeVisible()
     await expect(field).toHaveAttribute('aria-invalid', 'true')
     await expect(field).toHaveAccessibleDescription(message!)
-    await expect(roomCode(page)).toHaveText(code)
     expect(roomInUrl(page)).toBe(code)
-    await expect(box.getByText(HOST_ROLE)).toBeVisible()
   }
 
   await field.fill('QRST')
   await expect(alert).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(roomCode(page)).toHaveText(code)
+  await expectRole(page, 'host')
 })
 
-test('joining another room makes a monitor and it stays one after a reload', async ({ page }) => {
+test('following another room makes a monitor and it stays one after a reload; Salir gives a new code back', async ({ page }) => {
   test.setTimeout(360_000)
   await openRoom(page)
-  const box = await openRoomBox(page)
-  await box.getByRole('button', { name: 'Unirse a otra sala' }).click()
-  const field = box.getByRole('textbox', { name: 'Código de sala' })
-  await field.fill('QRST')
-  await box.getByRole('button', { name: 'Unirse', exact: true }).click()
-  await expect(field).toHaveCount(0)
+  const own = (await roomCode(page).textContent()) ?? ''
+  await followFromDialog(page, 'QRST')
+  await expect(followDialog(page)).toHaveCount(0)
   await expect(roomCode(page)).toHaveText('QRST')
   expect(roomInUrl(page)).toBe('QRST')
   await expectRole(page, 'monitor')
@@ -401,6 +419,91 @@ test('joining another room makes a monitor and it stays one after a reload', asy
   await page.reload()
   await expect(roomCode(page)).toHaveText('QRST', { timeout: 30_000 })
   await expectRole(page, 'monitor')
+
+  await page.getByRole('button', { name: 'Salir' }).click()
+  await expect(roomCode(page)).toHaveText(/^[A-Za-z0-9_-]{4,64}$/, { timeout: 30_000 })
+  await expect(roomCode(page)).not.toHaveText('QRST')
+  expect(roomInUrl(page)).not.toBe('QRST')
+  expect(roomInUrl(page)).not.toBe(own)
+  await expectRole(page, 'host')
+})
+
+test('the planner opens first: pick a date, see the plan change, confirm and begin the launch', async ({ page }) => {
+  test.setTimeout(300_000)
+  await page.goto('/?speed=4')
+  test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+
+  const dialog = planner(page)
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByLabel('Fecha de despegue')).toBeFocused()
+  await expect(start(page)).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Entrar en VR' })).toBeDisabled()
+
+  const confirm = dialog.getByRole('button', { name: 'Confirmar lanzamiento' })
+  await expect(confirm).toBeEnabled({ timeout: 60_000 })
+  await expect(dialog.getByLabel('Fecha de despegue')).toHaveValue('2027-01-05')
+  await expect(dialog.getByLabel('Hora de despegue (UTC)')).toHaveValue('12:00')
+  await expect(dialog.getByTestId('planner-arrival')).toHaveText('10 ene 2027 · 00:00 UTC')
+  const sites = dialog.getByRole('list', { name: 'Mejores sitios para esa llegada' }).getByRole('listitem')
+  await expect(sites).toHaveCount(3)
+  const before = await sites.allTextContents()
+
+  await dialog.getByLabel('Fecha de despegue').fill('2027-04-20')
+  await expect(dialog.getByTestId('planner-arrival')).toHaveText('25 abr 2027 · 00:00 UTC')
+  expect(await sites.allTextContents()).not.toEqual(before)
+
+  await dialog.getByLabel('Fecha de despegue').fill('2028-06-01')
+  await expect(dialog.getByRole('alert')).toContainText('1 ene 2028 · 00:00 UTC')
+  await expect(confirm).toBeDisabled()
+
+  await dialog.getByLabel('Fecha de despegue').fill('2027-01-20')
+  await expect(confirm).toBeEnabled()
+  await confirm.click()
+  await expect(dialog).toHaveCount(0)
+  expect(new URL(page.url()).searchParams.get('landing')).toBe('2027-01-25T00:00:00Z')
+
+  const block = page.getByRole('region', { name: 'Misión' })
+  await expect(block.getByText('Despegue 20 ene 2027 · 12:00 UTC')).toBeVisible()
+  await expect(block.getByText('Llegada 25 ene 2027 · 00:00 UTC')).toBeVisible()
+  await expect(figure(page)).toHaveText('Listo')
+  await expect(page.getByText(/Mission Control puede conectarse con el código/)).toBeVisible()
+  await expect(block.getByRole('link', { name: 'Análisis de sitios y fechas' })).toHaveCount(0)
+
+  await block.getByRole('button', { name: 'Cambiar lanzamiento' }).click()
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByLabel('Fecha de despegue')).toHaveValue('2027-01-20')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  expect(new URL(page.url()).searchParams.get('landing')).toBe('2027-01-25T00:00:00Z')
+
+  await start(page).click()
+  await expect(figure(page)).toHaveText(/^T/, { timeout: 30_000 })
+  await expect(block.getByRole('button', { name: 'Cambiar lanzamiento' })).toHaveCount(0)
+  await expect(block.getByRole('link', { name: 'Análisis de sitios y fechas' })).toBeVisible()
+})
+
+test('the Mission Control dialog exists, validates the code and cancels with Escape', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.goto('/')
+  test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+  await expect(planner(page)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Mission Control' }).click()
+  const dialog = followDialog(page)
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'Seguir una misión' })).toBeVisible()
+  const field = dialog.getByLabel('Código de la misión')
+  await expect(field).toBeFocused()
+  await expect(field).toHaveAttribute('autocomplete', 'off')
+
+  await field.fill('no valido')
+  await page.keyboard.press('Enter')
+  await expect(dialog.getByRole('alert')).toHaveText('Código no válido')
+  await expect(dialog).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(planner(page)).toBeVisible()
 })
 
 test('CAPCOM: the talk button is in the header with its accessible name, hint and keyboard shortcut', async ({ page }) => {

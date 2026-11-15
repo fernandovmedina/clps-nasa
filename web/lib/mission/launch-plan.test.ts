@@ -1,8 +1,4 @@
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { trackFromFile, type EphemerisFile, type HorizonFile, type SitesFile } from '@touchdown/core';
 import {
   DEFAULT_LANDING,
   TRANSIT_DAYS,
@@ -15,28 +11,16 @@ import {
   launchFromLanding,
   launchInputs,
   launchRange,
+  opensPlanner,
   parseLaunchInputs,
   topSites,
   withLandingParam,
 } from './launch-plan';
 import { evaluateSites } from './scoring';
-import type { SiteInput } from './sites';
+import { realMissionData } from './test-data';
 
 const iso = (s: string) => new Date(s);
 const RANGE = { start: iso('2026-11-01T00:00:00Z'), end: iso('2028-01-01T00:00:00Z') };
-
-const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../public/data');
-const read = <T>(relative: string): T => JSON.parse(readFileSync(resolve(dataDir, relative), 'utf8')) as T;
-
-function realSites(): SiteInput[] {
-  const catalog = read<SitesFile>('sites.json');
-  return catalog.sites.map((s) => ({
-    id: s.id, name: s.name, lat: s.lat, lon: s.lon, elevationKm: s.elevation_m / 1000, slopeDeg: 6.5, note: s.notes,
-    track: trackFromFile(read<EphemerisFile>(`ephemeris/${s.id}.json`)),
-    horizon: read<HorizonFile>(`horizons/${s.id}.json`),
-    hasTerrain: s.has_terrain, horizonSource: s.horizon_source, ephemerisSource: s.ephemeris_source,
-  }));
-}
 
 describe('transit', () => {
   it('assumes a direct transit of 4.5 days', () => {
@@ -163,7 +147,7 @@ describe('currentLanding', () => {
 });
 
 describe('topSites', () => {
-  const sites = realSites();
+  const sites = realMissionData().sites;
 
   it('returns three sites in exactly the order the orbit ranking has', () => {
     for (const day of ['2027-01-10T00:00:00Z', '2027-02-01T12:00:00Z', '2026-11-20T00:00:00Z', '2027-06-15T18:00:00Z']) {
@@ -192,5 +176,28 @@ describe('topSites', () => {
 
   it('throws outside the ephemeris, which is why callers check the range first', () => {
     expect(() => topSites(sites, iso('2030-01-01T00:00:00Z'))).toThrow(RangeError);
+  });
+});
+
+describe('opensPlanner', () => {
+  it('opens for the crew on a plain visit, with a room or a landing in the URL', () => {
+    expect(opensPlanner('', true)).toBe(true);
+    expect(opensPlanner('?room=ABCD&landing=2027-01-24T12:00:00Z', true)).toBe(true);
+    expect(opensPlanner('?vr=other', true)).toBe(true);
+  });
+
+  it('does not open with the ?phase= shortcut, whatever the phase', () => {
+    expect(opensPlanner('?phase=orbit', true)).toBe(false);
+    expect(opensPlanner('?room=ABCD&phase=launch', true)).toBe(false);
+    expect(opensPlanner('?phase=', true)).toBe(false);
+  });
+
+  it('does not open in the VR preview', () => {
+    expect(opensPlanner('?vr=preview', true)).toBe(false);
+  });
+
+  it('does not open for Mission Control', () => {
+    expect(opensPlanner('', false)).toBe(false);
+    expect(opensPlanner('?room=ZZZZ', false)).toBe(false);
   });
 });

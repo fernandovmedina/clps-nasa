@@ -8,11 +8,12 @@ import { PovPhase } from '@/lib/phases/pov';
 import { LandingPhase } from '@/lib/phases/landing';
 import { TransmitPhase } from '@/lib/phases/transmit';
 import { PHASE_ORDER } from '@/lib/engine/hud';
+import { opensPlanner } from '@/lib/mission/launch-plan';
 import { loadMissionData } from '@/lib/mission/sites';
 import { CapcomController } from '@/lib/capcom/controller';
 import { installCapcomDebug } from '@/lib/capcom/debug';
 import { mountCapcomVrPanel } from '@/lib/capcom/vr-panel';
-import { readSavedRoom, resolveInitialRoom, saveRoom, type RoomSession } from '@/lib/sync/room-session';
+import { clearSavedRoom, readSavedRoom, resolveInitialRoom, saveRoom, type RoomSession } from '@/lib/sync/room-session';
 import MissionLayer from './experience/MissionLayer';
 import styles from './LunarExperience.module.css';
 
@@ -55,6 +56,7 @@ export default function LunarExperience() {
   const [error, setError] = useState<string | null>(null);
   const [roomCode, setRoomCode] = useState('');
   const [isHost, setIsHost] = useState(true);
+  const [planning, setPlanning] = useState(false);
 
   useEffect(() => {
     const el = mount.current;
@@ -67,6 +69,7 @@ export default function LunarExperience() {
     const { room: initialRoom, isHost: initialIsHost } = startRoom(params);
     setRoomCode(initialRoom);
     setIsHost(initialIsHost);
+    setPlanning(opensPlanner(window.location.search, initialIsHost));
     const app = new LunarApp(el, {
       // ⬇️ Replace loadMissionData with your real fetches (JPL Horizons, LOLA, your API)
       loadData: loadMissionData,
@@ -140,10 +143,17 @@ export default function LunarExperience() {
     return true;
   };
 
+  const leaveRoom = () => {
+    clearSavedRoom();
+    // A full load, not a client navigation: the page has to start over to hand out a new room code.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign('/');
+  };
+
   return (
     <div className={styles.root}>
       <div ref={mount} className={styles.canvas} />
-      {!inVR && !preview && <MissionLayer app={app} vr={xr} onEnterVR={enterVR} capcom={capcom} room={{ code: roomCode, isHost, onJoin: joinRoom }} />}
+      {!inVR && !preview && <MissionLayer app={app} vr={xr} onEnterVR={enterVR} capcom={capcom} room={{ code: roomCode, isHost, onJoin: joinRoom, onLeave: leaveRoom }} planning={planning} onPlanning={setPlanning} />}
       {error && <div role="alert" className={styles.error}>{error}</div>}
     </div>
   );
