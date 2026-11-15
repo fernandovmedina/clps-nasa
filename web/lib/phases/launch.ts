@@ -2,12 +2,14 @@ import * as THREE from 'three';
 import type { LunarApp, Phase } from '../engine/app';
 import type { LoopControl } from '../engine/audio';
 import { Panel, UI, roundRect } from '../engine/panel';
-import { Particles, starField } from '../engine/particles';
+import { starField } from '../engine/particles';
 import { earthTexture, glowTexture } from '../engine/textures';
 import { createMoon } from '../engine/moon';
-import { clamp01, damp, lerp, rand, smooth } from '../engine/util';
+import { clamp01, damp, disposeTree, lerp, rand, smooth } from '../engine/util';
 import { clearSurface } from './surface-world';
 import { disposeObject, loadRocketModel } from './rocket-model';
+import { LaunchEnvironment, rocketShadowProxy } from './launch-environment';
+import { LaunchExhaust } from './launch-exhaust';
 import { MEAN_MOON_DISTANCE_KM, earthMoonDistanceKm } from './launch-telemetry';
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -21,6 +23,7 @@ const HUD_DIST = 1.45;
 const HUD_W = 1.15;
 const HUD_H = (HUD_W * 360) / 1400;
 const COUNT_W = (HUD_W * 480) / 1400;
+const HEMI_DAY = 0.8;
 
 /* ---------------- models ---------------- */
 function buildRocket() {
@@ -49,30 +52,6 @@ function buildRocket() {
   return { group: g, nozzles: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(-1.85, 0.5, 0), new THREE.Vector3(1.85, 0.5, 0)] };
 }
 
-function buildPad() {
-  const g = new THREE.Group();
-  const M = (c: number, o: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, metalness: 0.1, ...o });
-  const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
-  const concrete = M(0xa8a59c), steel = M(0x6c7480, { metalness: 0.4, roughness: 0.6 }), deck = M(0x4a4d52);
-  add(new THREE.CylinderGeometry(45, 48, 0.6, 64), concrete, 0, 0.3, 0);
-  add(new THREE.BoxGeometry(14, 3, 11), deck, 0, 2.1, 0);
-  add(new THREE.BoxGeometry(3, 34, 3), steel, 7.5, 20.6, 0);
-  const lattice = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(3.05, 34, 3.05, 1, 14, 1)), new THREE.LineBasicMaterial({ color: 0x2a2f36 }));
-  lattice.position.set(7.5, 20.6, 0); g.add(lattice);
-  add(new THREE.BoxGeometry(5.2, 0.5, 1.1), steel, 4.4, 24.1, 0);
-  add(new THREE.BoxGeometry(5.2, 0.5, 1.1), steel, 4.4, 14.6, 0);
-  const red = new THREE.MeshBasicMaterial({ color: 0xff3020 });
-  for (const [x, z] of [[-20, 14], [18, -16], [-14, -22]]) {
-    add(new THREE.CylinderGeometry(0.3, 0.5, 46, 8), steel, x, 23, z);
-    add(new THREE.SphereGeometry(0.6, 8, 8), red, x, 46.4, z);
-  }
-  add(new THREE.CylinderGeometry(4, 4, 6, 24), concrete, -38, 22, 26);
-  add(new THREE.CylinderGeometry(0.6, 0.6, 19, 8), steel, -38, 9.5, 26);
-  add(new THREE.BoxGeometry(60, 90, 45), M(0xdcdcd8), -260, 44, -380);
-  add(new THREE.BoxGeometry(40, 18, 30), M(0xc9c9c3), -200, 8, -330);
-  return g;
-}
-
 /* ---------------- phase ---------------- */
 export class LaunchPhase implements Phase {
   readonly name = 'launch' as const;
@@ -88,29 +67,32 @@ export class LaunchPhase implements Phase {
 
   private rocket: THREE.Group; private nozzles: THREE.Vector3[]; private closed = false;
   private curve: THREE.CatmullRomCurve3; private curveLen: number; private travelUnits: number;
-  private flame: Particles; private smoke: Particles;
+  private env: LaunchEnvironment; private exhaust: LaunchExhaust; private shadowProxy: THREE.Mesh; private earthTex = earthTexture();
   private flameLight = new THREE.PointLight(0xff8a3c, 0, 120, 1.4);
-  private hemi = new THREE.HemisphereLight(0xcfe3ff, 0x4a4a36, 1.1);
+  private hemi = new THREE.HemisphereLight(0xcfe3ff, 0x4a4a36, HEMI_DAY);
   private stars = starField();
   private sunSprite: THREE.Sprite; private sunDir = new THREE.Vector3(-0.3, 0.2, 0.93).normalize();
   private atmo: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
-  private bg = new THREE.Color(0x86b6e6); private day = new THREE.Color(0x86b6e6); private space = new THREE.Color(0x000004);
-  private padCam = new THREE.Vector3(34, 9, 46);
+  private padCam = new THREE.Vector3(44, 9, 30);
   private hud: Panel; private count: Panel; private dock = new THREE.Group();
+  private motion = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  private reduceMotion = this.motion?.matches ?? false;
+  private onMotion = (e: MediaQueryListEvent) => { this.reduceMotion = e.matches; };
   private rumble: LoopControl | null = null; private wind: LoopControl | null = null; private crackle: LoopControl | null = null;
 
   constructor(private app: LunarApp) {
     clearSurface();
     app.flags.clear(); app.selected = null; app.ranking = []; app.data = null;
+    this.motion?.addEventListener('change', this.onMotion);
     const sc = this.scene;
-    sc.background = this.bg;
-    sc.fog = new THREE.Fog(this.bg.clone(), 300, 2600);
-    sc.add(this.hemi);
-    const sun = new THREE.DirectionalLight(0xfff3e0, 2.4);
-    sun.position.copy(this.sunDir).multiplyScalar(1000);
-    sc.add(sun, sun.target, this.flameLight);
+    this.env = new LaunchEnvironment(EARTH_R, this.sunDir);
+    sc.background = this.env.horizon;
+    sc.fog = new THREE.Fog(this.env.horizon.clone(), 30, 260);
+    sc.add(this.hemi, this.env.group, this.flameLight);
 
-    const earth = new THREE.Mesh(new THREE.SphereGeometry(EARTH_R, 256, 128), new THREE.MeshStandardMaterial({ map: earthTexture(), roughness: 0.95 }));
+    const earth = new THREE.Mesh(new THREE.SphereGeometry(EARTH_R, 256, 128), new THREE.MeshStandardMaterial({
+      map: this.earthTex, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4,
+    }));
     earth.position.copy(EARTH_C); earth.rotation.z = Math.PI / 2; sc.add(earth);
     this.atmo = new THREE.Mesh(new THREE.SphereGeometry(EARTH_R * 1.025, 128, 64), new THREE.ShaderMaterial({
       uniforms: { opacity: { value: 0 } },
@@ -120,16 +102,18 @@ export class LaunchPhase implements Phase {
     }));
     this.atmo.position.copy(EARTH_C); sc.add(this.atmo);
 
-    sc.add(buildPad());
     const r = buildRocket(); this.rocket = r.group; this.nozzles = r.nozzles; sc.add(this.rocket);
     loadRocketModel(this.rocket).then((model) => {
       if (!model) return;
       if (this.closed) { disposeObject(model); return; }
-      for (const child of [...this.rocket.children]) { this.rocket.remove(child); disposeObject(child); }
+      for (const child of [...this.rocket.children]) { if (child === this.shadowProxy) continue; this.rocket.remove(child); disposeObject(child); }
+      model.traverse((o) => { o.castShadow = false; o.receiveShadow = false; });
       this.rocket.add(model);
       const spread = model.userData.baseRadius * 0.5;
       this.nozzles[1].x = -spread; this.nozzles[2].x = spread;
     });
+    this.shadowProxy = rocketShadowProxy(23.5, 1);
+    this.rocket.add(this.shadowProxy);
 
     const moon = createMoon(MOON_R, app.moonTex, 128);
     moon.position.copy(MOON_C); sc.add(moon);
@@ -139,10 +123,8 @@ export class LaunchPhase implements Phase {
     this.sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xfff1d0, transparent: true, opacity: 0, fog: false, depthWrite: false, blending: THREE.AdditiveBlending }));
     this.sunSprite.scale.setScalar(900); sc.add(this.sunSprite);
 
-    this.smoke = new Particles(1800, glow, false);
-    this.flame = new Particles(2600, glow, true);
-    this.smoke.points.renderOrder = 1; this.flame.points.renderOrder = 2;
-    sc.add(this.smoke.points, this.flame.points);
+    this.exhaust = new LaunchExhaust(glow, this.flameLight, 0.6);
+    sc.add(this.exhaust.group);
 
     const P0 = new THREE.Vector3(0, 3.8, 0);
     const end = MOON_C.clone().add(new THREE.Vector3(-0.15, -1, 0.45).normalize().multiplyScalar(MOON_R + 45));
@@ -179,8 +161,13 @@ export class LaunchPhase implements Phase {
   }
 
   exit() {
-    this.closed = true; disposeObject(this.rocket);
+    this.closed = true;
+    this.motion?.removeEventListener('change', this.onMotion);
+    this.scene.remove(this.app.rig);
     this.hud.dispose(); this.count.dispose(); this.dock.removeFromParent();
+    this.exhaust.dispose(); this.env.dispose();
+    disposeObject(this.rocket);
+    disposeTree(this.scene); this.earthTex.dispose();
     this.rumble?.stop(); this.wind?.stop(); this.crackle?.stop();
   }
 
@@ -256,7 +243,7 @@ export class LaunchPhase implements Phase {
     const s = this.s;
     const pos = this.curve.getPointAt(s), tan = this.curve.getTangentAt(s);
     this.rocket.position.copy(pos);
-    if (!app.isXR && t > T_IGN && t < T_LIFT + 2.5) {
+    if (!app.isXR && !this.reduceMotion && t > T_IGN && t < T_LIFT + 2.5) {
       const k = 0.07 * thrust * (1 - smooth(T_LIFT + 1, T_LIFT + 2.5, t));
       this.rocket.position.x += rand(-k, k); this.rocket.position.z += rand(-k, k);
     }
@@ -270,50 +257,8 @@ export class LaunchPhase implements Phase {
     const vel = tan.clone().multiplyScalar(this.speed * this.curveLen);
     const back = tan.clone().negate();
 
-    if (thrust > 0.01) {
-      const rate = thrust * 700 * dt;
-      for (const nz of this.nozzles) {
-        const w = nz.clone().applyMatrix4(this.rocket.matrixWorld);
-        const big = nz.x === 0 ? 1 : 0.8;
-        for (let i = 0, n = Math.floor(rate + Math.random()); i < n; i++) {
-          const sp = (30 + Math.random() * 18) * (0.5 + 0.5 * thrust);
-          this.flame.emit({
-            x: w.x + rand(-0.25, 0.25), y: w.y + rand(-0.25, 0.25), z: w.z + rand(-0.25, 0.25),
-            vx: back.x * sp + rand(-3, 3) + vel.x * 0.55, vy: back.y * sp + rand(-3, 3) + vel.y * 0.55, vz: back.z * sp + rand(-3, 3) + vel.z * 0.55,
-            life: rand(0.18, 0.42) * (0.6 + 0.4 * thrust), drag: 1.5, lift: 0, s0: 2.4 * big, s1: 4.2 * big, a: 0.55,
-            c0: [1, 0.93, 0.75], c1: [1, 0.32, 0.08],
-          });
-        }
-      }
-    }
-    if (t > T_IGN && alt < 80) {
-      const n = Math.floor(160 * dt * (1 - alt / 80) + Math.random());
-      for (let i = 0; i < n; i++) {
-        const sx = Math.random() < 0.5 ? -1 : 1, gg = rand(0.85, 1);
-        this.smoke.emit({
-          x: sx * 8, y: 1.5, z: rand(-3, 3), vx: sx * rand(10, 26), vy: rand(1, 5), vz: rand(-7, 7),
-          life: rand(4, 6.5), drag: 0.55, lift: 1.4, s0: 5, s1: rand(22, 34), a: 0.5,
-          c0: [gg, 0.86 * gg, 0.72 * gg], c1: [0.62, 0.62, 0.64],
-        });
-      }
-    }
-    if (alt > 6 && alt < 900 && thrust > 0.25) {
-      const fade = 1 - smooth(300, 900, alt);
-      const w = this.nozzles[0].clone().applyMatrix4(this.rocket.matrixWorld);
-      for (let i = 0, n = Math.floor(90 * dt + Math.random()); i < n; i++) {
-        const f = Math.random();
-        this.smoke.emit({
-          x: w.x - vel.x * dt * f, y: w.y - vel.y * dt * f, z: w.z - vel.z * dt * f,
-          vx: back.x * 6 + rand(-1.5, 1.5), vy: back.y * 6 + rand(-1.5, 1.5), vz: back.z * 6 + rand(-1.5, 1.5),
-          life: rand(2.5, 3.8), drag: 0.8, lift: 0.4, s0: 3, s1: rand(14, 22), a: 0.4 * fade,
-          c0: [0.95, 0.9, 0.85], c1: [0.7, 0.72, 0.76],
-        });
-      }
-    }
-    const scale = app.pointScale();
-    this.flame.update(dt, scale); this.smoke.update(dt, scale);
-    this.flameLight.position.copy(this.rocket.position).addScaledVector(back, 3);
-    this.flameLight.intensity = thrust * (900 + Math.random() * 300) * (1 - smooth(200, 600, alt) * 0.9);
+    const camPos = new THREE.Vector3().setFromMatrixPosition(app.camera.matrixWorld);
+    this.exhaust.update({ dt, t, ignited: t > T_IGN, thrust, alt, scale: app.pointScale(), rocket: this.rocket, nozzles: this.nozzles, back, vel });
 
     // sky → space
     const sky = smooth(30, 900, alt);
@@ -323,10 +268,10 @@ export class LaunchPhase implements Phase {
     const grounded = t > T_IGN && alt < 140;
     if (grounded && !this.crackle) this.crackle = app.audio.loop('liftoff_crackle');
     else if (!grounded && this.crackle) { this.crackle.stop(); this.crackle = null; }
-    this.bg.copy(this.day).lerp(this.space, sky);
+    this.env.update(camPos, alt, sky, app.isXR);
     const fog = this.scene.fog as THREE.Fog;
-    fog.color.copy(this.bg); fog.near = lerp(250, 40000, sky); fog.far = lerp(2600, 60000, sky);
-    this.hemi.intensity = lerp(1.1, 0.12, sky);
+    fog.color.copy(this.env.horizon); fog.near = lerp(30, 40000, sky); fog.far = lerp(260, 60000, sky);
+    this.hemi.intensity = lerp(HEMI_DAY, 0.12, sky);
     (this.stars.material as THREE.PointsMaterial).opacity = smooth(250, 1200, alt);
     this.atmo.material.uniforms.opacity.value = smooth(80, 700, alt) * 0.9;
 
@@ -345,9 +290,12 @@ export class LaunchPhase implements Phase {
     const w = smooth(0.004, 0.05, s);
     const eye = this.padCam.clone().lerp(chase, w);
     const look = pos.clone().addScaledVector(UP, 9).lerp(chaseLook, w);
+    if (!app.isXR && !this.reduceMotion && t > T_IGN) {
+      const tremor = 0.3 * thrust * (1 - smooth(T_LIFT + 1, T_LIFT + 2.5, t));
+      look.x += tremor * Math.sin(t * 47); look.y += tremor * Math.sin(t * 61 + 1); look.z += tremor * Math.sin(t * 53 + 2);
+    }
     app.setView(eye, look, { rate: 3 });
 
-    const camPos = new THREE.Vector3().setFromMatrixPosition(app.camera.matrixWorld);
     this.stars.position.copy(camPos);
     this.sunSprite.position.copy(camPos).addScaledVector(this.sunDir, 12000);
     this.sunSprite.material.opacity = smooth(300, 1200, alt);
