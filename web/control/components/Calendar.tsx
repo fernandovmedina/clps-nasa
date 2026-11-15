@@ -55,7 +55,7 @@ function Legend({ firstLanding, shiftedLanding }: { firstLanding: string; shifte
       {shiftedLanding && (
         <li className="num flex items-center gap-2">
           <svg width="14" height="20" viewBox="0 0 14 20" aria-hidden="true">
-            <path d="M7 2l6 6-6 6-6-6z" fill="none" stroke="var(--label)" strokeWidth="2" />
+            <path d="M7 2l6 6-6 6-6-6z" fill="none" stroke="var(--accent)" strokeWidth="2" />
           </svg>
           {t('calendarDelayed')}: {shiftedLanding}
         </li>
@@ -135,7 +135,7 @@ export function Calendar({ scenario, siteName, delayDays, onPick }: Props) {
   let body: React.ReactNode
   if (site.status === 'error' || cal.status === 'error') {
     body = (
-      <div role="alert" className="grid gap-3 rounded-control border border-line-strong p-4">
+      <div role="alert" className="grid gap-3 rounded-control border border-line-strong bg-raised p-4">
         <p>{t('loadError', { site: siteName })}</p>
         <button type="button" className="btn btn-outline justify-self-start" onClick={site.status === 'error' ? retrySite : retryCal}>
           {t('retry')}
@@ -197,7 +197,7 @@ export function Calendar({ scenario, siteName, delayDays, onPick }: Props) {
                 return (
                   <g key={tick.ms}>
                     <line x1={x} x2={x} y1={TOP + 4} y2={HEIGHT - 6} stroke="var(--line)" strokeWidth={0.5} />
-                    <text x={x + 4} y={TOP + 14} fontSize={14} fill="var(--label-2)">
+                    <text x={x + 4} y={TOP + 14} fontSize={12} fill="var(--label-2)">
                       {tick.index > 0 && january ? formatMonthYear(tick.ms, locale) : formatMonth(tick.ms, locale)}
                     </text>
                   </g>
@@ -224,8 +224,8 @@ export function Calendar({ scenario, siteName, delayDays, onPick }: Props) {
               </g>
               {shiftedText && (
                 <g>
-                  <line x1={marker(landingMs + delayDays * DAY_MS)} x2={marker(landingMs + delayDays * DAY_MS)} y1={TOP + LABEL_H - 4} y2={HEIGHT - 6} stroke="var(--label)" strokeWidth={2} strokeDasharray="4 3" />
-                  <path d={`M${marker(landingMs + delayDays * DAY_MS)} ${TOP - 6}l6 6-6 6-6-6z`} fill="var(--bg-elevated)" stroke="var(--label)" strokeWidth={2} />
+                  <line x1={marker(landingMs + delayDays * DAY_MS)} x2={marker(landingMs + delayDays * DAY_MS)} y1={TOP + LABEL_H - 4} y2={HEIGHT - 6} stroke="var(--accent)" strokeWidth={2} strokeDasharray="4 3" />
+                  <path d={`M${marker(landingMs + delayDays * DAY_MS)} ${TOP - 6}l6 6-6 6-6-6z`} fill="var(--bg-elevated)" stroke="var(--accent)" strokeWidth={2} />
                 </g>
               )}
             </svg>
@@ -259,7 +259,7 @@ export function Calendar({ scenario, siteName, delayDays, onPick }: Props) {
   }
 
   return (
-    <section className="card grid gap-4 p-5" aria-labelledby="calendar-title" data-testid="calendar">
+    <section className="card grid gap-4 p-6" aria-labelledby="calendar-title" data-testid="calendar">
       <div className="grid gap-1">
         <h2 id="calendar-title" className="text-title">
           {t('calendar')}

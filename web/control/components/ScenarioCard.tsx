@@ -72,7 +72,7 @@ function CardSkeleton() {
 
 function Notice({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div role="alert" className="grid gap-3 rounded-control border border-line-strong bg-field p-4">
+    <div role="alert" className="grid gap-3 rounded-control border border-line-strong bg-raised p-4">
       <p className="text-body">{children}</p>
       {action}
     </div>
@@ -202,24 +202,24 @@ export function ScenarioCard(props: Props) {
 
     body = (
       <>
-        <div className="grid gap-5 @md:grid-cols-[minmax(0,1fr)_minmax(0,232px)]">
-          <div className="grid content-start gap-5">
+        <div className="grid gap-6 @md:grid-cols-[minmax(0,1fr)_minmax(0,256px)]">
+          <div className="grid content-start gap-6">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <StatusPill status={response.status} />
-              <p className="num text-heading" data-testid="score">
+              <p className="num text-title" data-testid="score">
                 <span className="sr-only">{t('score')}: </span>
                 {t('scoreValue', { n: response.score })}
               </p>
             </div>
             <div className="grid gap-1">
-              <p className="flex items-center gap-2 text-caption text-label-2">
+              <p className="flex items-center gap-2 text-label text-label-2">
                 <Sun size={16} aria-hidden="true" style={{ color: 'var(--sun)' }} />
                 {t('solarElevation')} · {t('atCursor')}
               </p>
               <p className="num text-display" data-testid="sun-elevation">
                 {bodies ? `${fmt(bodies.sun.el)}°` : '–'}
               </p>
-              <p className="num text-body text-label-2">
+              <p className="num text-caption text-label-2">
                 {t('solarAzimuth')} {bodies ? `${fmt(bodies.sun.az)}°` : '–'} · {sunState}
               </p>
             </div>
@@ -231,7 +231,7 @@ export function ScenarioCard(props: Props) {
               <span className="text-label-2">{earthState}</span>
             </div>
           </div>
-          <div className="grid content-start gap-2">
+          <div className="slate grid content-start gap-3 rounded-[10px] p-4">
             <SkyDiagram
               horizon={data.horizon}
               samples={samples}
@@ -242,7 +242,7 @@ export function ScenarioCard(props: Props) {
               title={t('skyTitle', { site: siteTitle })}
               desc={desc.sky}
             />
-            <ul className="grid gap-1 text-caption text-label-2">
+            <ul className="grid gap-1 text-label font-normal text-label-2">
               <li className="flex items-center gap-2">
                 <span aria-hidden="true" className="h-3 w-3 shrink-0 rounded-full border border-line-strong bg-field" />
                 {t('skyLegendSky')}
@@ -268,7 +268,7 @@ export function ScenarioCard(props: Props) {
 
         {showDelta && original?.ok && (
           <div className="grid gap-2" role="group" aria-label={t('frontOriginal')} data-testid="deltas">
-            <p className="text-caption text-label-2">{t('frontOriginal')}</p>
+            <p className="text-label text-label-2">{t('frontOriginal')}</p>
             <div className="grid grid-cols-1 gap-2 @md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
               <Delta label={t('deltaScore')} value={response.score - original.response.score} prominent />
               <StatusChange label={t('statusChange')} from={original.response.status} to={response.status} />
@@ -306,9 +306,9 @@ export function ScenarioCard(props: Props) {
           )}
         </ul>
 
-        <section className="grid min-w-0 grid-cols-1 gap-3" aria-label={t('panorama')}>
+        <section className="slate grid min-w-0 grid-cols-1 gap-3 rounded-[10px] p-4" aria-label={t('panorama')}>
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-            <h3 className="text-heading">{t('panorama')}</h3>
+            <h3 className="text-caption font-semibold">{t('panorama')}</h3>
             <p className="flex items-center gap-4 text-caption text-label-2">
               <span className="flex items-center gap-2">
                 <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
@@ -335,7 +335,7 @@ export function ScenarioCard(props: Props) {
         </section>
 
         <section className="grid min-w-0 grid-cols-1 gap-3" aria-label={t('timeline')}>
-          <h3 className="text-heading">{t('timeline')}</h3>
+          <h3 className="text-label text-label-2">{t('timeline')}</h3>
           <Timeline
             windows={response.windows}
             landingMs={ok.landingMs}
@@ -361,8 +361,8 @@ export function ScenarioCard(props: Props) {
 
   return (
     <article
-      className="card @container grid min-w-0 grid-cols-1 content-start gap-5 p-5"
-      style={selected && multiple ? { boxShadow: '0 0 0 1px var(--label-2)' } : undefined}
+      className="card @container grid min-w-0 grid-cols-1 content-start gap-6 p-6"
+      style={selected && multiple ? { outline: '1px solid var(--label-2)' } : undefined}
       aria-labelledby={`card-title-${index}`}
       data-testid="scenario-card"
       data-selected={selected}
@@ -371,7 +371,7 @@ export function ScenarioCard(props: Props) {
         <div className="flex items-start gap-3">
           <button
             type="button"
-            className="btn btn-outline shrink-0 px-0 font-semibold"
+            className="btn btn-outline shrink-0 px-0"
             aria-pressed={selected}
             aria-label={t('selectScenario', { letter })}
             onClick={props.onSelect}
@@ -406,12 +406,12 @@ export function ScenarioCard(props: Props) {
           </div>
         </div>
         {data && (
-          <ul className="flex flex-wrap gap-2 text-caption">
-            <li className="rounded-full border border-line-strong px-3 py-1">
+          <ul className="flex flex-wrap gap-2 text-label">
+            <li className="rounded-full border-[0.5px] border-line-strong px-2.5 py-1">
               {data.info.horizonSource === 'lola' ? t('sourceLola') : t('sourceSpherical')}
             </li>
-            {data.info.approx && <li className="rounded-full border border-line-strong px-3 py-1">{t('approximate')}</li>}
-            {selected && multiple && <li className="rounded-full bg-raised px-3 py-1">{t('selected')}</li>}
+            {data.info.approx && <li className="rounded-full border-[0.5px] border-line-strong px-2.5 py-1">{t('approximate')}</li>}
+            {selected && multiple && <li className="rounded-full bg-selected px-2.5 py-1">{t('selected')}</li>}
           </ul>
         )}
         <div className="grid grid-cols-1 gap-3 @sm:grid-cols-[minmax(0,1fr)_112px]">

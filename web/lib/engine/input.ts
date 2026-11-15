@@ -89,8 +89,8 @@ export class Input {
     return this.cast();
   }
   private cast(): Hit | null {
-    const targets = this.app.phase?.targets;
-    if (!targets?.length) return null;
+    const targets = [...(this.app.phase?.targets ?? []), ...this.app.globalTargets];
+    if (!targets.length) return null;
     const hits = this.ray.intersectObjects(targets, true);
     for (const h of hits) {
       let o: THREE.Object3D | null = h.object;
