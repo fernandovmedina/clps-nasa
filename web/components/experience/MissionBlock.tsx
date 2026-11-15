@@ -1,4 +1,3 @@
-import type { RoomStatus } from '@/lib/sync/room-client';
 import type { MissionInfo } from './mission';
 import styles from './MissionLayer.module.css';
 
@@ -7,19 +6,19 @@ interface Props {
   code: string;
   /** Mission Control: follows someone else's mission instead of flying its own. */
   follow: boolean;
-  room: RoomStatus;
+  roomOpen: boolean;
   /** The launch has not started: the plan can still change. */
   prelaunch: boolean;
   onChangeLaunch: () => void;
 }
 
 /** The "Misión" block of the left rail, for the crew and for the monitor that follows them. */
-export default function MissionBlock({ mission, code, follow, room, prelaunch, onChangeLaunch }: Props) {
+export default function MissionBlock({ mission, code, follow, roomOpen, prelaunch, onChangeLaunch }: Props) {
   if (follow) {
     return (
       <section className={styles.mission} aria-label="Misión que sigues">
         <h2>Misión que sigues</h2>
-        {room === 'open' ? (
+        {roomOpen ? (
           <>
             <p className={styles.site}>{mission.site}</p>
             <p className={styles.date}>{mission.launch}</p>

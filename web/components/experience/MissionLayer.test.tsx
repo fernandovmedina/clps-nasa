@@ -236,6 +236,27 @@ describe('MissionLayer', () => {
 });
 
 describe('MissionLayer rendering cost', () => {
+  it('does not re-render when the socket flips between connecting and closed, as it does with no server', async () => {
+    const fake = fakeApp(launchHud());
+    let commits = 0;
+    render(
+      <Profiler id="layer" onRender={() => { commits++; }}>
+        <MissionLayer app={fake.app} vr="no" onEnterVR={vi.fn()} room={room} />
+      </Profiler>,
+    );
+    fake.state.room = 'closed';
+    await tick();
+    const settled = commits;
+    for (const status of ['connecting', 'closed', 'connecting', 'closed'] as const) {
+      fake.state.room = status;
+      await tick(2000);
+    }
+    expect(commits).toBe(settled);
+    fake.state.room = 'open';
+    await tick();
+    expect(commits).toBe(settled + 1);
+  });
+
   it('does not re-render while nothing it paints changes, however often it polls', async () => {
     const fake = fakeApp(launchHud());
     let commits = 0;

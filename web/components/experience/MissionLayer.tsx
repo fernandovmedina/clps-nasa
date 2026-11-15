@@ -37,14 +37,14 @@ const IDLE: HudSnapshot = {
   muted: false,
   hud: null,
   mission: describeMission({ data: null, selected: null }, ''),
-  room: 'connecting',
+  roomOpen: false,
 };
 
 /** DOM control layer over the 3D scene: phases, mission, the phase's own data and the run controls. */
 export default function MissionLayer({ app, vr, onEnterVR, room, capcom, planning = false, onPlanning }: Props) {
   const { snap, refresh } = useHudSnapshot(app);
   const view = snap ?? IDLE;
-  const { phase, mode, muted, hud, mission, room: roomStatus } = view;
+  const { phase, mode, muted, hud, mission, roomOpen } = view;
   const stopped = mode === 'stopped';
   const paused = mode === 'paused';
   const current = PHASE_ORDER.indexOf(phase);
@@ -100,7 +100,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
     <div className={styles.layer} data-mode={mode} data-phase={phase}>
       <header className={styles.header} data-follow={follow ? '' : undefined}>
         <h1 className={styles.sr}>TOUCHDOWN</h1>
-        {follow && <FollowPill code={room.code} room={roomStatus} />}
+        {follow && <FollowPill code={room.code} open={roomOpen} />}
         <div className={styles.headerActions}>
           {capcom && <CapcomButton controller={capcom} />}
           <button type="button" className={styles.iconBtn} aria-label="Sonido" aria-pressed={soundOn} disabled={stopped} onClick={toggleSound}>
@@ -142,7 +142,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
             );
           })}
         </ol>
-        <MissionBlock mission={mission} code={room.code} follow={follow} room={roomStatus} prelaunch={prelaunch} onChangeLaunch={() => onPlanning?.(true)} />
+        <MissionBlock mission={mission} code={room.code} follow={follow} roomOpen={roomOpen} prelaunch={prelaunch} onChangeLaunch={() => onPlanning?.(true)} />
       </div>
 
       {hud && !stopped && (
