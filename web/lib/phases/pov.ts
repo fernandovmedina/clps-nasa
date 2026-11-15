@@ -1,11 +1,17 @@
 import * as THREE from 'three';
+import type { ClientMessage, MarkerKind } from '@touchdown/core';
 import type { LunarApp, Phase } from '../engine/app';
 import { Panel, UI, roundRect, statusColor } from '../engine/panel';
 import { evaluateSites, fmtHours, skyPosAt, type SiteMetrics } from '../mission/scoring';
 import type { RoomEvent } from '../sync/room-client';
+import { MarkerField } from './markers';
 import { defaultMission } from './orbit';
 import { SpyView } from './spy-view';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
+
+const MARKER_KINDS: [MarkerKind, string][] = [
+  ['rock', '🪨 Roca'], ['slope', '⛰ Pendiente'], ['shadow', '🌑 Sombra'], ['other', '⚠ Otro'],
+];
 
 const CAM_SEND_INTERVAL_S = 1 / 10; // 10 Hz - tiny payload (7 numbers), see core/src/room.ts cam_update
 
@@ -34,6 +40,11 @@ export class PovPhase implements Phase {
   private camPos = new THREE.Vector3();
   private camQuat = new THREE.Quaternion();
   private camScale = new THREE.Vector3();
+  private markerField: MarkerField;
+  /** Host-only: where they're currently looking on the ground, for "mark risk here". */
+  private groundRay = new THREE.Raycaster();
+  private aimPoint: THREE.Vector3 | null = null;
+  private reticle: THREE.Mesh;
 
   constructor(private app: LunarApp) {
     this.m = ensureSelection(app);
@@ -52,8 +63,18 @@ export class PovPhase implements Phase {
     }
 
     this.info = new Panel(1024, 1240, 0.66, (p, g) => this.drawInfo(p, g));
-    this.actions = new Panel(1024, 760, 0.56, (p, g) => this.drawActions(p, g));
+    // Taller for the host: an extra row of "mark risk" buttons below the usual actions.
+    this.actions = new Panel(1024, app.isHost ? 860 : 760, 0.56, (p, g) => this.drawActions(p, g));
     this.targets.push(this.info.mesh, this.actions.mesh);
+
+    this.markerField = new MarkerField(this.scene, this.m.site.id, (x, z) => this.world.heightAt(x, z));
+    this.reticle = new THREE.Mesh(
+      new THREE.RingGeometry(0.9, 1.15, 28),
+      new THREE.MeshBasicMaterial({ color: UI.ok, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
+    );
+    this.reticle.rotation.x = -Math.PI / 2;
+    this.reticle.visible = false;
+    this.scene.add(this.reticle);
   }
 
   enter() {
@@ -66,11 +87,16 @@ export class PovPhase implements Phase {
     this.app.setView(this.eye, look, { snap: true, rate: 3 });
     this.app.room.setListener((msg: RoomEvent) => this.handleRoom(msg));
     this.syncSpy();
+    this.markerField.sync(this.app.markers);
   }
 
   exit() {
     this.app.room.setListener(null);
     this.info.dispose(); this.actions.dispose(); this.spy?.dispose();
+    this.markerField.dispose();
+    this.reticle.removeFromParent();
+    this.reticle.geometry.dispose();
+    (this.reticle.material as THREE.Material).dispose();
   }
 
   /** Faces the rig's eye point, same convention as Panel.place(). */
@@ -98,6 +124,10 @@ export class PovPhase implements Phase {
    * right now) - jump straight to that site instead of being stuck watching a stale/frozen view.
    */
   private handleRoom(msg: RoomEvent) {
+    this.app.applyMarkerEvent(msg);
+    if (msg.type === 'state' || msg.type === 'marker_add' || msg.type === 'marker_remove') {
+      this.markerField.sync(this.app.markers);
+    }
     if (msg.type === 'cam_update' && !this.app.isHost && msg.site_id !== this.m.site.id) {
       const target = this.app.ranking.find((r) => r.site.id === msg.site_id);
       if (target) { this.app.selected = target; this.app.goTo('pov', 0.5, 0.8); }
@@ -106,21 +136,47 @@ export class PovPhase implements Phase {
     this.spy?.handleRoomEvent(msg, this.app.time);
   }
 
+  /** Host-only: drops a marker at the current aim point and applies it locally right
+   *  away - the Worker never echoes a message back to the socket that sent it. */
+  private placeMarker(kind: MarkerKind) {
+    if (!this.app.isHost || !this.aimPoint) return;
+    const msg: ClientMessage = {
+      type: 'marker_add',
+      id: crypto.randomUUID(),
+      site_id: this.m.site.id,
+      x_m: this.aimPoint.x,
+      y_m: -this.aimPoint.z, // contract: north = +y_m; this world's north = -z
+      kind,
+    };
+    this.app.room.send(msg);
+    this.app.applyMarkerEvent(msg);
+    this.markerField.sync(this.app.markers);
+  }
+
   update(dt: number, t: number) {
     this.syncSpy();
     this.world.update(dt, t);
     this.app.setView(this.eye, this.world.lz.clone().add(new THREE.Vector3(0, 3, 0)), { rate: 3 });
     this.info.update(); this.actions.update();
 
-    if (this.app.isHost && t - this.lastCamSentAt > CAM_SEND_INTERVAL_S) {
-      this.lastCamSentAt = t;
+    if (this.app.isHost) {
       this.app.camera.updateMatrixWorld();
       this.app.camera.matrixWorld.decompose(this.camPos, this.camQuat, this.camScale);
-      this.app.room.send({
-        type: 'cam_update', site_id: this.m.site.id,
-        px: this.camPos.x, py: this.camPos.y, pz: this.camPos.z,
-        qx: this.camQuat.x, qy: this.camQuat.y, qz: this.camQuat.z, qw: this.camQuat.w,
-      });
+      const dir = new THREE.Vector3(0, 0, -1).transformDirection(this.app.camera.matrixWorld);
+      this.groundRay.set(this.camPos, dir);
+      const hit = this.groundRay.intersectObjects(this.world.groundMeshes, false)[0] ?? null;
+      this.aimPoint = hit ? hit.point.clone() : null;
+      this.reticle.visible = !!this.aimPoint;
+      if (this.aimPoint) this.reticle.position.set(this.aimPoint.x, this.aimPoint.y + 0.06, this.aimPoint.z);
+
+      if (t - this.lastCamSentAt > CAM_SEND_INTERVAL_S) {
+        this.lastCamSentAt = t;
+        this.app.room.send({
+          type: 'cam_update', site_id: this.m.site.id,
+          px: this.camPos.x, py: this.camPos.y, pz: this.camPos.z,
+          qx: this.camQuat.x, qy: this.camQuat.y, qz: this.camQuat.z, qw: this.camQuat.w,
+        });
+      }
     }
     if (this.spy) {
       this.spy.update(t, this.app.renderer, [
@@ -196,5 +252,14 @@ export class PovPhase implements Phase {
     g.fillText('marca la zona donde alunizarás.', 48, 306);
     p.button(g, 'confirm', 48, 380, 928, 110, 'Confirmar alunizaje', () => this.app.goTo('landing', 0.8, 1.0));
     p.button(g, 'back', 48, 520, 928, 96, 'Elegir otro sitio', () => this.app.goTo('orbit', 0.7, 1.0), 'ghost');
+
+    if (this.app.isHost) {
+      g.font = `600 24px ${UI.font}`; g.fillStyle = UI.dim;
+      g.fillText('Marcar riesgo donde estás mirando (anillo verde)', 48, 668);
+      const gap = 16, bw = (928 - gap * 3) / 4, bh = 80, y = 696;
+      MARKER_KINDS.forEach(([kind, label], i) => {
+        p.button(g, `mark-${kind}`, 48 + i * (bw + gap), y, bw, bh, label, () => this.placeMarker(kind), 'ghost');
+      });
+    }
   }
 }

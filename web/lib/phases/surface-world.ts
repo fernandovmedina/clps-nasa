@@ -49,6 +49,8 @@ export class SurfaceWorld {
   readonly sunPos: THREE.Vector3; readonly earthPos: THREE.Vector3;
   readonly sunVisible: number; readonly earthVisible: boolean;
   readonly lzMarker = new THREE.Group();
+  /** Far + near ground meshes, for the risk-marker aim raycast in pov.ts. */
+  readonly groundMeshes: THREE.Mesh[] = [];
   readonly lander: THREE.Group;
   readonly dish: THREE.Object3D;
   readonly solarPanels: THREE.Mesh[] = [];
@@ -104,6 +106,7 @@ export class SurfaceWorld {
     const near = this.terrainMesh(NEAR_SIZE, 260, nearC, tex, 12, 0, false);
     near.castShadow = true; near.receiveShadow = true; far.receiveShadow = true;
     sc.add(far, near);
+    this.groundMeshes.push(far, near);
 
     // roughness inside the LZ (std-dev of heights, r = 20 m)
     const hs: number[] = [];
