@@ -38,6 +38,7 @@ export class RoomClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
   private listener: Listener | null = null;
+  private watcher: Listener | null = null;
   private onStatus: ((s: RoomStatus) => void) | null = null;
   private onRoomChange: ((room: string) => void) | null = null;
   /**
@@ -67,6 +68,15 @@ export class RoomClient {
   /** Only one phase listens at a time - whichever is currently entered. */
   setListener(fn: Listener | null) {
     this.listener = fn;
+    if (fn && this.lastState) fn(this.lastState);
+  }
+
+  /** The room as this client knows it now: the last snapshot with every message since applied. */
+  get snapshot(): RoomState | null { return this.lastState; }
+
+  /** A second listener, independent of the phase's: sees every event and the snapshot on registering, and survives setRoom. */
+  setWatcher(fn: Listener | null) {
+    this.watcher = fn;
     if (fn && this.lastState) fn(this.lastState);
   }
 
@@ -143,6 +153,7 @@ export class RoomClient {
       if (type === 'state') this.lastState = data as RoomState;
       else if (this.lastState) this.lastState = reduceRoom(this.lastState, data as ClientMessage);
       this.listener?.(data as RoomEvent);
+      this.watcher?.(data as RoomEvent);
     };
     ws.onclose = () => {
       this.setStatus('closed');
