@@ -105,6 +105,30 @@ export function solarCellTexture() {
   return srgb(new THREE.CanvasTexture(c));
 }
 
+export const COCKPIT_TEXTURE_URL = '/textures/cockpit/cockpit-360.jpg';
+
+let _cockpit: THREE.Texture | null = null;
+/**
+ * 360° equirectangular photo of the capsule interior (landing.ts wraps it on an inside-out
+ * sphere around the viewer). Falls back to a flat panel if the image fails to load.
+ */
+export function cockpitTexture() {
+  if (_cockpit) return _cockpit;
+  const tex = srgb(new THREE.TextureLoader().load(COCKPIT_TEXTURE_URL, undefined, undefined, () => {
+    tex.image = cockpitFallbackCanvas();
+    tex.needsUpdate = true;
+  }));
+  return (_cockpit = tex);
+}
+
+function cockpitFallbackCanvas() {
+  const [c, g] = canvas(1024, 512);
+  g.fillStyle = '#3a3d42'; g.fillRect(0, 0, 1024, 512);
+  g.fillStyle = '#8a9099';
+  for (let y = 40; y < 512; y += 90) g.fillRect(0, y, 1024, 4);
+  return c;
+}
+
 const loader = new THREE.TextureLoader();
 /** Loads an image texture; resolves null (instead of throwing) if the file is missing. */
 export function tryLoad(url: string): Promise<THREE.Texture | null> {
