@@ -472,10 +472,11 @@ describe('CapcomController language', () => {
 
   it('stops listening to the language after dispose', () => {
     const t = setup();
-    const seen = vi.fn();
-    t.controller.subscribe(seen);
-    t.controller.dispose();
+    const publish = vi.spyOn(t.controller as unknown as { publish: () => void }, 'publish');
     setLang('en', { persist: false });
-    expect(seen).not.toHaveBeenCalled();
+    expect(publish).toHaveBeenCalledTimes(1);
+    t.controller.dispose();
+    setLang('es', { persist: false });
+    expect(publish).toHaveBeenCalledTimes(1);
   });
 });
