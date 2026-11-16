@@ -12,6 +12,7 @@ import layer from './MissionLayer.module.css';
 import styles from './ControlRoom.module.css';
 
 const MAX_EVENTS = 8;
+const DEMO_LABEL = 'Demo · falla simulada del motor';
 
 /** What the log watches: it adds an entry for each of these that changes. */
 interface Seen { phase: HudSnapshot['phase']; mode: HudSnapshot['mode']; roomOpen: boolean; started: boolean; plan: string; site: string }
@@ -195,11 +196,18 @@ export default function ControlRoom({ view, code, log, capcom, soundOn, soundDis
           {site ? (
             <>
               <p className={styles.siteName}>{site.name}</p>
-              <p className={styles.figureRow}>
-                <span className={styles.score}>{site.score}</span>
-                <span className={styles.caption}>de 100</span>
-                <span className={styles.badge} data-tone={STATUS_TONES[site.status]}>{STATUS_LABELS[site.status]}</span>
-              </p>
+              {site.demo ? (
+                <p className={styles.figureRow}><span className={styles.caption}>{DEMO_LABEL}</span></p>
+              ) : (
+                <>
+                  {site.note && <p className={styles.caption}>{site.note}</p>}
+                  <p className={styles.figureRow}>
+                    <span className={styles.score}>{site.score}</span>
+                    <span className={styles.caption}>de 100</span>
+                    <span className={styles.badge} data-tone={STATUS_TONES[site.status]}>{STATUS_LABELS[site.status]}</span>
+                  </p>
+                </>
+              )}
               <dl className={styles.pairs}>
                 <div><dt>Sol · elevación</dt><dd>{site.sunElevation}°</dd></div>
                 <div><dt>Tierra · elevación</dt><dd>{site.earthElevation}°</dd></div>
@@ -220,9 +228,15 @@ export default function ControlRoom({ view, code, log, capcom, soundOn, soundDis
               {ranking.map((r) => (
                 <li key={r.id}>
                   <span className={styles.rank}>{r.rank}</span>
-                  <span className={styles.rankName}>{r.name}</span>
-                  <span className={styles.rankScore}>{r.score}</span>
-                  <span className={styles.badge} data-tone={STATUS_TONES[r.status]}>{STATUS_LABELS[r.status]}</span>
+                  <span className={styles.rankName}>{r.name}{!r.demo && r.note ? ` · ${r.note}` : ''}</span>
+                  {r.demo ? (
+                    <span className={styles.caption}>{DEMO_LABEL}</span>
+                  ) : (
+                    <>
+                      <span className={styles.rankScore}>{r.score}</span>
+                      <span className={styles.badge} data-tone={STATUS_TONES[r.status]}>{STATUS_LABELS[r.status]}</span>
+                    </>
+                  )}
                 </li>
               ))}
             </ol>

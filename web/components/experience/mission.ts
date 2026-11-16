@@ -4,7 +4,7 @@ import { readLandingParams } from '@/lib/mission/landing-param';
 import { currentLanding, formatPlanDate, launchFromLanding } from '@/lib/mission/launch-plan';
 import { earthMoonDistanceKm } from '@/lib/phases/launch-telemetry';
 import { fmtHours, type SiteMetrics } from '@/lib/mission/scoring';
-import type { MissionData } from '@/lib/mission/sites';
+import { rankingNote, type MissionData } from '@/lib/mission/sites';
 
 export interface MissionInfo { site: string; launch: string; landing: string }
 
@@ -64,6 +64,15 @@ export interface SiteSummary {
   /** Hours (or days) until the Sun / the Earth set, from the landing. */
   sunHours: string;
   earthHours: string;
+  /** NO CAER: a demo case, not a site; it has no score or status to show. */
+  demo?: boolean;
+  /** Contrast label for sites outside the south pole. */
+  note?: string;
+}
+
+function extras(m: SiteMetrics): { demo?: true; note?: string } {
+  const note = rankingNote(m.site);
+  return { ...(m.site.crash ? { demo: true as const } : {}), ...(note && !m.site.crash ? { note } : {}) };
 }
 
 export function summarizeSite(m: SiteMetrics | null): SiteSummary | null {
@@ -77,13 +86,14 @@ export function summarizeSite(m: SiteMetrics | null): SiteSummary | null {
     earthVisible: m.earth.aboveHorizon > 0,
     sunHours: fmtHours(m.hoursToSunset),
     earthHours: fmtHours(m.hoursToEarthset),
+    ...extras(m),
   };
 }
 
-export interface RankSummary { id: string; rank: number; name: string; score: number; status: SiteStatus }
+export interface RankSummary { id: string; rank: number; name: string; score: number; status: SiteStatus; demo?: boolean; note?: string }
 
 export function summarizeRanking(ranking: SiteMetrics[], count = 5): RankSummary[] {
-  return ranking.slice(0, count).map((m) => ({ id: m.site.id, rank: m.rank, name: m.site.name, score: Math.round(m.score), status: m.status }));
+  return ranking.slice(0, count).map((m) => ({ id: m.site.id, rank: m.rank, name: m.site.name, score: Math.round(m.score), status: m.status, ...extras(m) }));
 }
 
 /** Earth-Moon distance (km) at the landing, rounded to the km so the snapshot only changes when the plan does. */
