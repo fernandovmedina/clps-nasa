@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setLang } from '@/lib/i18n';
 import { Narrator } from './narration';
+import { NARRATION_LINES, NARRATION_LINES_EN } from './narration-lines';
 
 class FakeUtterance {
   onstart: (() => void) | null = null;
@@ -398,5 +400,142 @@ describe('Narrator.sayAndWait', () => {
       await expect(narrator.sayAndWait('welcome')).resolves.toBe('silent');
       narrator.dispose();
     });
+  });
+});
+
+describe('Narrator in English', () => {
+  const utterances: FakeUtterance[] = [];
+  const played: string[] = [];
+  const fetched: string[] = [];
+
+  class ClipAudio {
+    preload = '';
+    currentTime = 0;
+    paused = true;
+    onended: (() => void) | null = null;
+    constructor(readonly src: string) {}
+    play() { this.paused = false; played.push(this.src); return Promise.resolve(); }
+    pause() { this.paused = true; }
+  }
+
+  type Clips = Record<string, { file: string; text: string; durationMs: number }>;
+  const EN_WELCOME: Clips = { welcome: { file: 'welcome.wav', text: NARRATION_LINES_EN.welcome, durationMs: 6000 } };
+  const ES_WELCOME: Clips = { welcome: { file: 'welcome.wav', text: NARRATION_LINES.welcome, durationMs: 7000 } };
+
+  /** One manifest per URL; a missing one answers like a 404. */
+  function stubManifests(byUrl: Record<string, Clips>) {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      fetched.push(url);
+      const clips = byUrl[url];
+      return { ok: !!clips, json: async () => ({ voiceId: 'v', modelId: 'm', clips }) };
+    }));
+  }
+
+  beforeEach(() => {
+    utterances.length = 0;
+    played.length = 0;
+    fetched.length = 0;
+    vi.stubGlobal('Audio', ClipAudio);
+    vi.stubGlobal('SpeechSynthesisUtterance', FakeUtterance);
+    vi.stubGlobal('speechSynthesis', {
+      getVoices: () => [],
+      addEventListener() {},
+      removeEventListener() {},
+      cancel() {},
+      speak: (u: FakeUtterance) => { utterances.push(u); u.onend?.(); },
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('keeps the English script aligned with the Spanish one and the Spanish text untouched', () => {
+    expect(Object.keys(NARRATION_LINES_EN)).toEqual(Object.keys(NARRATION_LINES));
+    expect(NARRATION_LINES.welcome).toBe('Bienvenido a TOUCHDOWN. Soy el burrito espacial, tu guía. Vamos a elegir dónde y cuándo alunizar en el polo sur de la Luna.');
+    expect(NARRATION_LINES_EN.welcome).toBe("Welcome to TOUCHDOWN. I'm Burrito, your space donkey guide. Let's choose where and when to land at the Moon's south pole.");
+  });
+
+  it('loads the English manifest only and plays the English clip from /audio/narration/en/', async () => {
+    setLang('en', { persist: false });
+    stubManifests({ '/audio/narration/en/manifest.json': EN_WELCOME, '/audio/narration/manifest.json': ES_WELCOME });
+    const narrator = new Narrator();
+    await narrator.ready;
+    expect(fetched).toEqual(['/audio/narration/en/manifest.json']);
+    narrator.say('welcome');
+    expect(played).toEqual(['/audio/narration/en/welcome.wav']);
+    expect(utterances).toEqual([]);
+    narrator.dispose();
+  });
+
+  it('falls back to English browser TTS (en-US) when the clip is missing', async () => {
+    setLang('en', { persist: false });
+    stubManifests({ '/audio/narration/en/manifest.json': {} });
+    const narrator = new Narrator();
+    await narrator.ready;
+    narrator.say('liftoff');
+    await vi.waitFor(() => expect(utterances.map((u) => u.text)).toEqual(['Liftoff confirmed.']));
+    expect(utterances[0]!.lang).toBe('en-US');
+    expect(played).toEqual([]);
+    narrator.dispose();
+  });
+
+  it('falls back to English TTS when the English manifest text does not match the script', async () => {
+    setLang('en', { persist: false });
+    stubManifests({ '/audio/narration/en/manifest.json': { welcome: { file: 'welcome.wav', text: 'Old wording.', durationMs: 1 } } });
+    const narrator = new Narrator();
+    await narrator.ready;
+    narrator.say('welcome');
+    expect(played).toEqual([]);
+    await vi.waitFor(() => expect(utterances.map((u) => u.text).join(' ')).toContain("I'm Burrito, your space donkey guide."));
+    narrator.dispose();
+  });
+
+  it('never plays the Spanish clip in English even when only the Spanish manifest exists', async () => {
+    setLang('en', { persist: false });
+    stubManifests({ '/audio/narration/manifest.json': ES_WELCOME });
+    const narrator = new Narrator();
+    await narrator.ready;
+    narrator.say('welcome');
+    expect(played).toEqual([]);
+    await vi.waitFor(() => expect(utterances.length).toBeGreaterThan(0));
+    expect(utterances.every((u) => u.lang === 'en-US')).toBe(true);
+    narrator.dispose();
+  });
+
+  it('sayAndWait reports "ended" through English TTS and speaks the English text', async () => {
+    setLang('en', { persist: false });
+    stubManifests({ '/audio/narration/en/manifest.json': {} });
+    const narrator = new Narrator();
+    await narrator.ready;
+    await expect(narrator.sayAndWait('liftoff')).resolves.toBe('ended');
+    expect(utterances.map((u) => u.text)).toEqual(['Liftoff confirmed.']);
+    narrator.dispose();
+  });
+
+  it('follows a language change after construction: loads the other manifest once and picks text and audio by language', async () => {
+    stubManifests({ '/audio/narration/en/manifest.json': EN_WELCOME, '/audio/narration/manifest.json': ES_WELCOME });
+    const narrator = new Narrator();
+    await narrator.ready;
+    narrator.say('welcome');
+    expect(played).toEqual(['/audio/narration/welcome.wav']);
+
+    setLang('en', { persist: false });
+    await vi.waitFor(() => expect(fetched).toContain('/audio/narration/en/manifest.json'));
+    await new Promise((r) => setTimeout(r, 0));
+    narrator.say('welcome');
+    expect(played).toEqual(['/audio/narration/welcome.wav', '/audio/narration/en/welcome.wav']);
+
+    setLang('es', { persist: false });
+    setLang('en', { persist: false });
+    expect(fetched.filter((u) => u.endsWith('/en/manifest.json'))).toHaveLength(1);
+    narrator.dispose();
+  });
+
+  it('stops listening to language changes once disposed', async () => {
+    stubManifests({ '/audio/narration/manifest.json': ES_WELCOME, '/audio/narration/en/manifest.json': EN_WELCOME });
+    const narrator = new Narrator();
+    await narrator.ready;
+    narrator.dispose();
+    setLang('en', { persist: false });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fetched).toEqual(['/audio/narration/manifest.json']);
   });
 });

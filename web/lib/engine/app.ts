@@ -14,7 +14,8 @@ import type { SiteMetrics } from '../mission/scoring';
 import { RoomClient, type RoomEvent, type RoomStatus } from '../sync/room-client';
 import { PhaseFollow } from '../sync/phase-follow';
 import { reduceRoom, type Marker } from '@touchdown/core';
-import { subscribe as subscribeLang } from '../i18n';
+import { subscribe as subscribeLang, t as tr } from '../i18n';
+import { enginePanelsDict } from '../i18n/dicts/engine-panels';
 
 export interface Phase {
   readonly name: PhaseName;
@@ -175,7 +176,7 @@ export class LunarApp {
     // so it never floats over whatever panel the user is looking at.
     this.exitPanel = new Panel(640, 220, 0.26, (p, g) => {
       p.frame(g);
-      p.button(g, 'exit-vr', 20, 20, 600, 180, '✕ Salir de VR', () => this.exitVR());
+      p.button(g, 'exit-vr', 20, 20, 600, 180, tr(enginePanelsDict, 'exitVr'), () => this.exitVR());
     });
     this.exitPanel.place(-0.53, this.eyeHeight - 0.56, -0.92);
     this.exitPanel.mesh.visible = false;
@@ -241,7 +242,7 @@ export class LunarApp {
   get isXR() { return this.renderer.xr.isPresenting; }
 
   async enterVR() {
-    if (!navigator.xr) throw new Error('WebXR no disponible en este navegador');
+    if (!navigator.xr) throw new Error(tr(enginePanelsDict, 'webxrUnavailable'));
     const session = await navigator.xr.requestSession('immersive-vr', {
       optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
     });
