@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import type { RunMode, PhaseHud } from '../engine/hud';
-import { PHASE_LABELS, PHASE_ORDER, STATUS_LABELS, fmtLanding, fmtLatLon } from '../engine/hud';
+import { PHASE_ORDER, fmtLatLon } from '../engine/hud';
+import { t } from '@/lib/i18n';
+import { phasesCommonDict as C } from '@/lib/i18n/dicts/phases-common';
+import { phasesLandingDict as D } from '@/lib/i18n/dicts/phases-landing';
+import { isEn, landingDate, phaseLabel, statusLabel } from './phases-format';
 import { Panel, UI, roundRect, statusColor } from '../engine/panel';
 import { fmtHours, type SiteMetrics } from '../mission/scoring';
 
@@ -52,7 +56,8 @@ export const CONSOLE_SLOTS: Record<ConsoleId, ConsoleSlot> = {
 
 const CONSOLE_IDS = Object.keys(CONSOLE_SLOTS) as ConsoleId[];
 const LIVE_IDS = ['mission', 'telemetry', 'phases', 'site'] as const;
-const TELEMETRY_LABELS = ['Velocidad de descenso', 'Combustible', 'Luz de contacto'];
+/** Posición, en `hud.side.items` de la fase, de la velocidad de descenso, el combustible y la luz de contacto (no se buscan por rótulo: el rótulo cambia con el idioma). */
+const TELEMETRY_ITEMS = [0, 2, 3];
 
 /** What the console needs from the engine; LunarApp satisfies it. */
 export interface ConsoleHost {
@@ -85,26 +90,26 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 function readViews(host: ConsoleHost, hud: PhaseHud): Views {
   const m = host.selected;
-  const landing = host.data ? fmtLanding(host.data.landingDate) : '';
+  const landing = host.data ? landingDate(host.data.landingDate) : '';
   const index = PHASE_ORDER.indexOf('landing');
   const items = hud.side.kind === 'readouts' ? hud.side.items : [];
   return {
     mission: {
       index,
       total: PHASE_ORDER.length,
-      label: PHASE_LABELS.landing,
+      label: phaseLabel('landing'),
       figure: { value: hud.figure.value, caption: hud.figure.caption },
       progress: hud.progress ? { value: round2(hud.progress.value), text: hud.progress.text ?? '' } : null,
       site: m?.site.name ?? '',
-      landing: landing ? `Aterrizaje ${landing}` : '',
+      landing: landing ? t(D, 'con.landing', { date: landing }) : '',
     },
     telemetry: {
-      items: TELEMETRY_LABELS.flatMap((label) => {
-        const it = items.find((i) => i.label === label);
+      items: TELEMETRY_ITEMS.flatMap((at) => {
+        const it = items[at];
         return it ? [{ label: it.label, value: it.value }] : [];
       }),
     },
-    phases: { current: index, labels: PHASE_ORDER.map((p) => PHASE_LABELS[p]), site: m?.site.name ?? '', landing },
+    phases: { current: index, labels: PHASE_ORDER.map((p) => phaseLabel(p)), site: m?.site.name ?? '', landing },
     site: siteView(m),
   };
 }
@@ -115,11 +120,11 @@ function siteView(m: SiteMetrics | null): SiteView {
     name: m.site.name,
     coords: fmtLatLon(m.site.lat, m.site.lon),
     rows: [
-      { label: 'Sol · elevación / azimut', value: `${m.sun.elevation.toFixed(1)}° / ${m.sun.azimuth.toFixed(0)}°` },
-      { label: 'Puesta de sol en', value: m.sun.aboveHorizon > -0.27 ? fmtHours(m.hoursToSunset) : 'en sombra' },
-      { label: 'Ocaso de la Tierra en', value: m.earth.aboveHorizon > 0 ? fmtHours(m.hoursToEarthset) : 'sin enlace' },
-      { label: 'Disco solar visible', value: `${m.powerPct} %` },
-      { label: 'Viabilidad', value: `${Math.round(m.score)}/100 · ${STATUS_LABELS[m.status]}`, color: statusColor(m.status) },
+      { label: t(D, 'con.sun'), value: `${m.sun.elevation.toFixed(1)}° / ${m.sun.azimuth.toFixed(0)}°` },
+      { label: t(D, 'con.sunset'), value: m.sun.aboveHorizon > -0.27 ? fmtHours(m.hoursToSunset) : t(C, 'shadow') },
+      { label: t(D, 'con.earthset'), value: m.earth.aboveHorizon > 0 ? fmtHours(m.hoursToEarthset) : t(C, 'noLink') },
+      { label: t(D, 'con.disk'), value: isEn() ? `${m.powerPct}%` : `${m.powerPct} %` },
+      { label: t(D, 'con.viability'), value: `${Math.round(m.score)}/100 · ${statusLabel(m.status)}`, color: statusColor(m.status) },
     ],
   };
 }
@@ -213,24 +218,24 @@ function drawControl(p: Panel, g: Ctx, host: ConsoleHost) {
   surface(g, W, H);
   const pad = 24, inner = W - pad * 2, mode = host.run.mode;
   if (mode === 'stopped') {
-    text(g, 'Misión detenida', pad, 70, 600, 40, UI.text);
-    button(p, g, 'restart', pad, 104, inner, 180, 'Reiniciar desde el despegue', () => host.restart(), { cta: true });
-    button(p, g, 'exit', pad, 308, inner, 140, 'Salir de VR', () => host.exitVR());
+    text(g, t(D, 'con.stopped'), pad, 70, 600, 40, UI.text);
+    button(p, g, 'restart', pad, 104, inner, 180, t(D, 'con.restart'), () => host.restart(), { cta: true });
+    button(p, g, 'exit', pad, 308, inner, 140, t(D, 'con.exit'), () => host.exitVR());
     return;
   }
   const paused = mode === 'paused';
-  text(g, 'Control de la misión', pad, 62, 500, 36, UI.dim);
+  text(g, t(D, 'con.title'), pad, 62, 500, 36, UI.dim);
   const half = (inner - 14) / 2;
-  button(p, g, 'pause', pad, 90, half, 164, paused ? 'Reanudar' : 'Pausar', () => host.setPaused(!paused), { cta: paused, icon: paused ? 'play' : 'pause' });
-  button(p, g, 'stop', pad + half + 14, 90, half, 164, 'Detener', () => host.stop(), { icon: 'stop' });
-  button(p, g, 'exit', pad, 276, inner, 150, 'Salir de VR', () => host.exitVR());
+  button(p, g, 'pause', pad, 90, half, 164, t(D, paused ? 'con.resume' : 'con.pause'), () => host.setPaused(!paused), { cta: paused, icon: paused ? 'play' : 'pause' });
+  button(p, g, 'stop', pad + half + 14, 90, half, 164, t(D, 'con.stop'), () => host.stop(), { icon: 'stop' });
+  button(p, g, 'exit', pad, 276, inner, 150, t(D, 'con.exit'), () => host.exitVR());
 }
 
 function drawMission(g: Ctx, v: MissionView) {
   const { px: [W, H] } = CONSOLE_SLOTS.mission;
   surface(g, W, H);
   const pad = 34, inner = W - pad * 2;
-  text(g, `Fase ${v.index + 1} de ${v.total} · ${v.label}`, pad, 84, 600, 40, UI.text);
+  text(g, t(D, 'con.phase', { n: v.index + 1, total: v.total, label: v.label }), pad, 84, 600, 40, UI.text);
   let x = W - pad;
   for (let i = v.total - 1; i >= 0; i--) {
     const r = i === v.index ? 15 : 11;
@@ -269,7 +274,7 @@ function drawPhases(g: Ctx, v: PhasesView) {
   const { px: [W, H] } = CONSOLE_SLOTS.phases;
   surface(g, W, H);
   const pad = 26;
-  text(g, 'Fases de la misión', pad, 54, 500, 26, UI.dim);
+  text(g, t(D, 'con.phases'), pad, 54, 500, 26, UI.dim);
   v.labels.forEach((label, i) => {
     const cy = 92 + i * 44;
     if (i < v.current) dot(g, pad + 12, cy, 10, UI.ok);
@@ -278,7 +283,7 @@ function drawPhases(g: Ctx, v: PhasesView) {
     text(g, label, pad + 42, cy + 9, i === v.current ? 700 : 500, 28, i > v.current ? UI.dim : UI.text);
   });
   hairline(g, pad, 322, W - pad * 2);
-  text(g, 'Misión', pad, 362, 500, 26, UI.dim);
+  text(g, t(D, 'con.mission'), pad, 362, 500, 26, UI.dim);
   const lines = wrap(g, v.site, 600, 28, W - pad * 2, 2);
   lines.forEach((l, i) => text(g, l, pad, 398 + i * 34, 600, 28, UI.text));
   if (v.landing) text(g, v.landing, pad, 398 + lines.length * 34 + 4, 500, 26, UI.dim);
@@ -288,7 +293,7 @@ function drawSite(g: Ctx, v: SiteView) {
   const { px: [W, H] } = CONSOLE_SLOTS.site;
   surface(g, W, H);
   const pad = 26;
-  text(g, 'Datos del sitio', pad, 54, 500, 26, UI.dim);
+  text(g, t(D, 'con.siteData'), pad, 54, 500, 26, UI.dim);
   const lines = wrap(g, v.name, 600, 30, W - pad * 2, 2);
   lines.forEach((l, i) => text(g, l, pad, 94 + i * 36, 600, 30, UI.text));
   let y = 94 + lines.length * 36 - 2;
@@ -315,6 +320,7 @@ export class CabinConsole {
   private mode: RunMode;
   private lastRefresh = -Infinity;
   private mounted = false;
+  private disposed = false;
 
   constructor(private host: ConsoleHost, private readHud: () => PhaseHud) {
     this.views = readViews(host, readHud());
@@ -338,6 +344,15 @@ export class CabinConsole {
 
   private keysOf(v: Views) {
     return { mission: JSON.stringify(v.mission), telemetry: JSON.stringify(v.telemetry), phases: JSON.stringify(v.phases), site: JSON.stringify(v.site) };
+  }
+
+  /** El idioma cambió: las vistas se leen de nuevo (el HUD de la fase ya viene en el idioma nuevo) y los cinco paneles se repintan. */
+  onLangChange() {
+    if (this.disposed) return;
+    this.views = readViews(this.host, this.readHud());
+    this.keys = this.keysOf(this.views);
+    this.lastRefresh = performance.now();
+    for (const id of CONSOLE_IDS) this.panels[id].invalidate();
   }
 
   /** Puts the panels on the cabin wall and makes the control panel reachable by the rays even while paused. */
@@ -371,6 +386,7 @@ export class CabinConsole {
   }
 
   dispose() {
+    this.disposed = true;
     if (this.mounted) {
       const at = this.host.globalTargets.indexOf(this.panels.control.mesh);
       if (at >= 0) this.host.globalTargets.splice(at, 1);

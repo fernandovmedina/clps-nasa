@@ -71,3 +71,50 @@ test('standing on Nobile Rim 2 the real terrain reads: the lower half of the vie
   expect(median).toBeGreaterThan(0.02)
   expect(errors).toEqual([])
 })
+
+test('standing on Nobile Rim 2, switching to EN rewrites the HUD and the 3D labels (Earth hidden by terrain · 5.7°)', async ({ page }) => {
+  test.setTimeout(300_000)
+  // Las fichas del 3D son canvas, no DOM: se registra todo texto que el mundo pinta para leerlo desde la prueba.
+  await page.addInitScript(() => {
+    const seen: string[] = []
+    ;(window as unknown as { __painted: string[] }).__painted = seen
+    const original = CanvasRenderingContext2D.prototype.fillText
+    CanvasRenderingContext2D.prototype.fillText = function (this: CanvasRenderingContext2D, text: string, ...rest: number[]) {
+      seen.push(String(text))
+      return (original as (...a: unknown[]) => void).call(this, text, ...rest)
+    } as typeof original
+  })
+  await page.goto(`/?speed=20&landing=2027-01-10T00:00:00Z&site=${SITE}`)
+  test.skip(!(await page.evaluate(() => Boolean(document.createElement('canvas').getContext('webgl2')))), 'WebGL unavailable in this browser')
+
+  const skip = page.getByRole('button', { name: /^(Saltar|Skip)$/ })
+  const vr = page.getByRole('button', { name: /Explorar la misión|Explore the mission/ })
+  await expect(skip.or(vr).first()).toBeVisible({ timeout: 30_000 })
+  await skip.click({ timeout: 2000 }).catch(() => {})
+  await vr.click()
+
+  const confirm = page.getByRole('dialog').getByRole('button', { name: /Confirmar lanzamiento|Confirm launch/ })
+  await expect(confirm).toBeEnabled({ timeout: 60_000 })
+  await confirm.click()
+  await page.getByRole('button', { name: /Comenzar despegue|Start launch/ }).click({ timeout: 60_000 })
+  const preconfirm = page.getByRole('button', { name: /Preconfirmar punto|Preconfirm site/ })
+  await expect(preconfirm).toBeEnabled({ timeout: 150_000 })
+  await preconfirm.click()
+  await expect(page.getByText('Arrastra para mirar alrededor')).toBeVisible({ timeout: 60_000 })
+  await page.waitForTimeout(3000)
+
+  await page.getByRole('group', { name: 'Idioma' }).getByRole('button', { name: 'EN' }).click()
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  await expect(page.getByText('Drag to look around')).toBeVisible()
+  await expect(page.getByText(/5\.69° below the LOLA horizon/)).toBeVisible()
+  await expect(page.getByText(/hidden from the surface · needs a relay/)).toBeVisible()
+  await expect(page.getByText('Approx. temperature')).toBeVisible()
+  await expect(page.getByText('58/100 · Marginal')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Look at the Sun' })).toBeEnabled()
+  await expect(page.getByText('Arrastra para mirar alrededor')).toHaveCount(0)
+
+  // La ficha 3D se vuelve a pintar con el idioma nuevo (el mundo ya existía en español).
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __painted: string[] }).__painted.includes('Earth hidden by terrain · 5.7°')), { timeout: 10_000 }).toBe(true)
+  const painted = await page.evaluate(() => (window as unknown as { __painted: string[] }).__painted)
+  expect(painted).toEqual(expect.arrayContaining(['LOLA horizon', 'SUN', 'EARTH', 'LANDING SITE']))
+})

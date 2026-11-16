@@ -4,15 +4,20 @@ import type { LunarApp, Phase, RenderStyle } from '../engine/app';
 import { Panel, RENDER, UI, roundRect, statusColor, statusDot } from '../engine/panel';
 import { evaluateSites, fmtHours, skyPosAt, type SiteMetrics, type SkyPos } from '../mission/scoring';
 import type { RoomEvent } from '../sync/room-client';
-import { MarkerField } from './markers';
+import { MarkerField, markerLabel } from './markers';
 import { defaultMission } from './orbit';
 import { SpyView } from './spy-view';
 import { horizonName, surfaceFor, type SurfaceWorld } from './surface-world';
-import { STATUS_LABELS, fmtPercent, fmtSigned, type PhaseHud } from '../engine/hud';
+import { fmtSigned, type PhaseHud } from '../engine/hud';
+import { t } from '@/lib/i18n';
+import { phasesCommonDict as C } from '@/lib/i18n/dicts/phases-common';
+import { phasesPovDict as D } from '@/lib/i18n/dicts/phases-pov';
+import { percent, statusLabel } from './phases-format';
 
-const MARKER_KINDS: [MarkerKind, string][] = [
-  ['rock', '🪨 Roca'], ['slope', '⛰ Pendiente'], ['shadow', '🌑 Sombra'], ['other', '⚠ Otro'],
-];
+const MARKER_GLYPHS: [MarkerKind, string][] = [['rock', '🪨'], ['slope', '⛰'], ['shadow', '🌑'], ['other', '⚠']];
+
+/** Los cuatro tipos de riesgo con su rótulo en el idioma de este momento: «🪨 Roca» / «🪨 Rock». */
+const markerKinds = (): [MarkerKind, string][] => MARKER_GLYPHS.map(([kind, glyph]) => [kind, `${glyph} ${markerLabel(kind)}`]);
 
 const CAM_SEND_INTERVAL_S = 1 / 10; // 10 Hz - tiny payload (7 numbers), see core/src/room.ts cam_update
 
@@ -27,30 +32,32 @@ export function ensureSelection(app: LunarApp): SiteMetrics {
 export function skyElevationText(sky: SkyPos, site: { horizonSource: string }) {
   const value = `${fmtSigned(sky.elevation, 2)}°`;
   const horizon = sky.elevation - sky.aboveHorizon;
-  const side = sky.aboveHorizon >= 0 ? 'sobre' : 'bajo';
-  const detail = `de elevación · ${fmtSigned(Math.abs(sky.aboveHorizon), 2)}° ${side} el horizonte ${horizonName(site)} (${fmtSigned(horizon, 2)}°)`;
+  const side = t(D, sky.aboveHorizon >= 0 ? 'above' : 'below');
+  const detail = t(D, 'sky.detail', { a: fmtSigned(Math.abs(sky.aboveHorizon), 2), side, h: horizonName(site), b: fmtSigned(horizon, 2) });
   return { value, detail, full: `${value} ${detail}` };
 }
 
 /** «Tierra sobre el horizonte LOLA», o «geométrico» si el sitio solo tiene horizonte esférico. */
-export const skyHorizonLabel = (body: 'Sol' | 'Tierra', site: { horizonSource: string }) => `${body} sobre el horizonte ${horizonName(site)}`;
+export const skyHorizonLabel = (body: 'Sol' | 'Tierra', site: { horizonSource: string }) => t(D, 'sky.horizonLabel', { body: t(C, body === 'Sol' ? 'sun' : 'earth'), h: horizonName(site) });
 
 /** Etiqueta corta de la temperatura, la misma en el panel 3D y en el HUD. */
-export const TEMPERATURE_LABEL = 'Temperatura aprox.';
+export const TEMPERATURE_LABEL = D.es.temp;
+/** Lo que se pinta: el mismo rótulo en el idioma actual (`TEMPERATURE_LABEL` queda como referencia en español). */
+export const temperatureLabel = () => t(D, 'temp');
 
 /** La Tierra «oculta» lo está vista desde la superficie; desde la altura (el descenso) todavía puede verse. */
-export const earthLinkText = (earthUp: boolean) => (earthUp ? 'enlace directo' : 'oculta desde la superficie · requiere relevo');
+export const earthLinkText = (earthUp: boolean) => t(D, earthUp ? 'link.direct' : 'link.hidden');
 
 /** El puntaje siempre como «94/100», igual que en el resto de la experiencia. */
 export const scoreText = (score: number) => `${Math.round(score)}/100`;
 
 /** Rótulo para sitios con heightmap RAW: el DEM es dato real, pero los cráteres menores y la textura del suelo son ilustrativos. */
-export const RAW_RELIEF_NOTE = 'Relieve: LOLA 80 m/px · cráteres menores y textura del suelo ilustrativos';
+export const RAW_RELIEF_NOTE = D.es['relief.raw'];
 
 /** Rótulo del relieve cercano: con RAW aclara qué es dato y qué es ilustrativo; sin RAW, que todo el relieve cercano es de relleno. */
 export function nearReliefNote(site: SiteMetrics['site']) {
-  if (site.hasTerrain) return RAW_RELIEF_NOTE;
-  return `Relieve cercano ilustrativo · horizonte ${site.horizonSource === 'lola' ? 'real LOLA' : 'esférico (aproximado)'}`;
+  if (site.hasTerrain) return t(D, 'relief.raw');
+  return t(D, 'relief.fill', { h: t(D, site.horizonSource === 'lola' ? 'relief.lola' : 'relief.sphere') });
 }
 
 export interface LookAngles { az: number; el: number }
@@ -173,6 +180,14 @@ export class PovPhase implements Phase {
     this.markerField.sync(this.app.markers);
   }
 
+  /** El idioma cambió: los dos paneles se repintan y las fichas del mundo, de los riesgos y del visor se rehacen en su mismo sprite. */
+  onLangChange() {
+    this.info.invalidate(); this.actions.invalidate();
+    this.world.relabel();
+    this.markerField.relabel();
+    this.spy?.relabel();
+  }
+
   exit() {
     this.app.room.setListener(null);
     this.world.setSiteViewLabels(false);
@@ -281,24 +296,24 @@ export class PovPhase implements Phase {
   private drawInfo(p: Panel, g: CanvasRenderingContext2D) {
     const m = this.m;
     p.frame(g);
-    g.font = `600 24px ${UI.mono}`; g.fillStyle = UI.accentText; g.fillText('VISTA DESDE EL SITIO · PRECONFIRMACIÓN', 48, 70);
+    g.font = `600 24px ${UI.mono}`; g.fillStyle = UI.accentText; g.fillText(t(D, 'info.eyebrow'), 48, 70);
     g.font = `700 46px ${UI.font}`; g.fillStyle = UI.text; g.fillText(m.site.name, 48, 128);
     g.font = `500 24px ${UI.mono}`; g.fillStyle = UI.dim;
     g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S ${m.site.lon.toFixed(2)}°  ·  ${this.app.data!.landingDate.toISOString().slice(0, 16).replace('T', ' ')} UTC`, 48, 166);
     const note = nearReliefNote(m.site);
     if (note) { statusDot(g, 56, 194, UI.warn); g.font = `500 22px ${UI.font}`; g.fillStyle = UI.text; g.fillText(note, 74, 200); }
 
-    const horizonOf = (s: SkyPos) => `${fmtSigned(s.aboveHorizon, 2)}° (horizonte ${fmtSigned(s.elevation - s.aboveHorizon, 2)}°)`;
+    const horizonOf = (s: SkyPos) => t(D, 'row.horizonOf', { a: fmtSigned(s.aboveHorizon, 2), b: fmtSigned(s.elevation - s.aboveHorizon, 2) });
     const rows: [string, string, string?][] = [
-      ['Sol · elevación / azimut', `${fmtSigned(m.sun.elevation, 2)}° / ${m.sun.azimuth.toFixed(0)}°`, UI.sun],
+      [t(D, 'row.sun'), `${fmtSigned(m.sun.elevation, 2)}° / ${m.sun.azimuth.toFixed(0)}°`, UI.sun],
       [skyHorizonLabel('Sol', m.site), horizonOf(m.sun)],
-      ['Tiempo hasta la puesta de sol', m.sun.aboveHorizon > -0.27 ? fmtHours(m.hoursToSunset) : 'en sombra'],
-      ['Tierra · elevación / azimut', `${fmtSigned(m.earth.elevation, 2)}° / ${m.earth.azimuth.toFixed(0)}°`, UI.earth],
+      [t(D, 'row.sunsetIn'), m.sun.aboveHorizon > -0.27 ? fmtHours(m.hoursToSunset) : t(C, 'shadow')],
+      [t(D, 'row.earth'), `${fmtSigned(m.earth.elevation, 2)}° / ${m.earth.azimuth.toFixed(0)}°`, UI.earth],
       [skyHorizonLabel('Tierra', m.site), horizonOf(m.earth)],
-      ['Ventana de comunicación', m.earth.aboveHorizon > 0 ? `${fmtHours(m.hoursToEarthset)} restantes` : 'requiere relevo'],
-      ['Disco solar visible', `${m.powerPct}%`],
-      [TEMPERATURE_LABEL, `${m.tempC.toFixed(0)} °C`],
-      ...(this.world.roughness === null ? [] : [['Rugosidad a 120 m (DEM LOLA)', `${this.world.roughness.toFixed(2)} m`] as [string, string]]),
+      [t(D, 'row.comms'), m.earth.aboveHorizon > 0 ? t(D, 'comms.left', { h: fmtHours(m.hoursToEarthset) }) : t(D, 'comms.relay')],
+      [t(D, 'row.disk'), `${m.powerPct}%`],
+      [temperatureLabel(), `${m.tempC.toFixed(0)} °C`],
+      ...(this.world.roughness === null ? [] : [[t(D, 'row.rough'), `${this.world.roughness.toFixed(2)} m`] as [string, string]]),
     ];
     rows.forEach(([k, v, c], i) => {
       const y = 236 + i * 56;
@@ -311,7 +326,7 @@ export class PovPhase implements Phase {
     const x0 = 80, x1 = 976, y0 = 760, y1 = 1150, lo = -4, hi = 9;
     const X = (i: number) => x0 + (i / (this.series.length - 1)) * (x1 - x0);
     const Y = (e: number) => y1 - ((Math.max(lo, Math.min(hi, e)) - lo) / (hi - lo)) * (y1 - y0);
-    g.font = `600 24px ${UI.mono}`; g.fillStyle = UI.dim; g.fillText('PRÓXIMOS 14 DÍAS · ELEVACIÓN (°)', 48, 735);
+    g.font = `600 24px ${UI.mono}`; g.fillStyle = UI.dim; g.fillText(t(D, 'chart.title'), 48, 735);
     roundRect(g, x0, y0, x1 - x0, y1 - y0, 10); g.fillStyle = UI.raised; g.fill();
     g.font = `500 20px ${UI.mono}`;
     for (let e = lo; e <= hi; e += 2) {
@@ -338,31 +353,31 @@ export class PovPhase implements Phase {
     g.fillStyle = UI.sunWash; g.fillRect(x0 + 470, y0 + 16, 16, 16);
     g.strokeStyle = UI.control; g.lineWidth = 1.5; g.strokeRect(x0 + 470, y0 + 16, 16, 16);
     g.fillStyle = UI.dim;
-    g.fillText('Sol', x0 + 38, y0 + 32);
-    g.fillText('Tierra', x0 + 136, y0 + 32);
-    g.fillText(`- - horizonte ${horizonName(m.site)}`, x0 + 240, y0 + 32);
-    g.fillText('iluminado', x0 + 494, y0 + 32);
+    g.fillText(t(C, 'sun'), x0 + 38, y0 + 32);
+    g.fillText(t(C, 'earth'), x0 + 136, y0 + 32);
+    g.fillText(t(D, 'legend.horizon', { h: horizonName(m.site) }), x0 + 240, y0 + 32);
+    g.fillText(t(D, 'legend.lit'), x0 + 494, y0 + 32);
   }
 
   private drawActions(p: Panel, g: CanvasRenderingContext2D) {
     const m = this.m, col = statusColor(m.status);
     p.frame(g);
-    g.font = `600 26px ${UI.font}`; g.fillStyle = UI.dim; g.fillText('Viabilidad del sitio', 48, 76);
+    g.font = `600 26px ${UI.font}`; g.fillStyle = UI.dim; g.fillText(t(D, 'act.title'), 48, 76);
     g.font = `800 104px ${UI.mono}`; g.fillStyle = col; g.fillText(scoreText(m.score), 48, 200);
-    g.font = `600 30px ${UI.font}`; g.fillStyle = UI.text; g.fillText(`#${m.rank} del ranking`, 560, 150);
+    g.font = `600 30px ${UI.font}`; g.fillStyle = UI.text; g.fillText(t(D, 'act.rank', { rank: m.rank }), 560, 150);
     g.font = `500 26px ${UI.font}`; g.fillStyle = UI.dim;
-    g.fillText('Mira a tu alrededor: el anillo verde', 48, 262);
-    g.fillText('marca la zona donde alunizarás.', 48, 298);
-    p.button(g, 'confirm', 48, 380, 928, 110, 'Confirmar alunizaje', () => this.app.goTo('landing', 0.8, 1.0));
-    p.button(g, 'back', 48, 520, 928, 96, 'Elegir otro sitio', () => this.app.goTo('orbit', 0.7, 1.0), 'ghost');
-    p.button(g, 'look-sun', 48, 636, 448, 84, 'Mirar al Sol', () => this.lookAtBody('sun'), 'ghost');
-    p.button(g, 'look-earth', 528, 636, 448, 84, 'Mirar a la Tierra', () => this.lookAtBody('earth'), 'ghost');
+    g.fillText(t(D, 'act.hint1'), 48, 262);
+    g.fillText(t(D, 'act.hint2'), 48, 298);
+    p.button(g, 'confirm', 48, 380, 928, 110, t(D, 'act.confirm'), () => this.app.goTo('landing', 0.8, 1.0));
+    p.button(g, 'back', 48, 520, 928, 96, t(D, 'act.back'), () => this.app.goTo('orbit', 0.7, 1.0), 'ghost');
+    p.button(g, 'look-sun', 48, 636, 448, 84, t(D, 'act.lookSun'), () => this.lookAtBody('sun'), 'ghost');
+    p.button(g, 'look-earth', 528, 636, 448, 84, t(D, 'act.lookEarth'), () => this.lookAtBody('earth'), 'ghost');
 
     if (this.app.isHost) {
       g.font = `600 24px ${UI.font}`; g.fillStyle = UI.dim;
-      g.fillText('Marcar riesgo donde estás mirando (anillo verde)', 48, 772);
+      g.fillText(t(D, 'act.markVr'), 48, 772);
       const gap = 16, bw = (928 - gap * 3) / 4, bh = 80, y = 800;
-      MARKER_KINDS.forEach(([kind, label], i) => {
+      markerKinds().forEach(([kind, label], i) => {
         p.button(g, `mark-${kind}`, 48 + i * (bw + gap), y, bw, bh, label, () => this.placeMarker(kind), 'ghost');
       });
     }
@@ -372,50 +387,50 @@ export class PovPhase implements Phase {
     const m = this.m;
     const lit = m.sun.aboveHorizon > -0.27;
     const earthUp = m.earth.aboveHorizon > 0;
-    const night = `La noche más larga de la misión dura ${fmtHours(m.longestDarkH)}.`;
+    const night = t(D, 'hud.night', { h: fmtHours(m.longestDarkH) });
     const sun = lit
-      ? `El Sol está ${fmtSigned(m.sun.aboveHorizon, 2)}° sobre el horizonte ${horizonName(m.site)} y se pone en ${fmtHours(m.hoursToSunset)}. ${night}`
-      : `El Sol está ${fmtSigned(Math.abs(m.sun.aboveHorizon), 2)}° bajo el horizonte ${horizonName(m.site)}. ${night}`;
+      ? t(D, 'hud.sunLit', { el: fmtSigned(m.sun.aboveHorizon, 2), h: horizonName(m.site), t: fmtHours(m.hoursToSunset), night })
+      : t(D, 'hud.sunDark', { el: fmtSigned(Math.abs(m.sun.aboveHorizon), 2), h: horizonName(m.site), night });
     const note = nearReliefNote(m.site);
     const sunText = skyElevationText(m.sun, m.site), earthText = skyElevationText(m.earth, m.site);
     return {
-      figure: { value: lit ? 'Iluminado' : 'En sombra', caption: 'Arrastra para mirar alrededor' },
+      figure: { value: t(D, lit ? 'fig.lit' : 'fig.dark'), caption: t(D, 'fig.caption') },
       detail: note ? `${sun} ${note}.` : sun,
       facts: [
-        { label: 'Noche más larga', value: fmtHours(m.longestDarkH) },
-        { label: 'Puntaje', value: `${scoreText(m.score)} · ${STATUS_LABELS[m.status]}` },
-        { label: 'Ventana de comunicación', value: earthUp ? `${fmtHours(m.hoursToEarthset)} restantes` : 'requiere relevo' },
+        { label: t(D, 'fact.dark'), value: fmtHours(m.longestDarkH) },
+        { label: t(D, 'fact.score'), value: `${scoreText(m.score)} · ${statusLabel(m.status)}` },
+        { label: t(D, 'row.comms'), value: earthUp ? t(D, 'comms.left', { h: fmtHours(m.hoursToEarthset) }) : t(D, 'comms.relay') },
       ],
       side: {
         kind: 'sky',
         blocks: [
           {
-            kind: 'sun', label: 'Sol · energía', value: sunText.value,
-            detail: `${sunText.detail} · azimut ${m.sun.azimuth.toFixed(0)}°`,
-            share: m.illumPct / 100, shareLabel: `Sol visible el ${Math.round(m.illumPct)} % de los 14 días`,
+            kind: 'sun', label: t(D, 'blk.sun'), value: sunText.value,
+            detail: t(D, 'blk.azimuth', { detail: sunText.detail, az: m.sun.azimuth.toFixed(0) }),
+            share: m.illumPct / 100, shareLabel: t(D, 'blk.sunShare', { n: Math.round(m.illumPct) }),
           },
           {
-            kind: 'earth', label: 'Tierra · comunicación', value: earthText.value,
+            kind: 'earth', label: t(D, 'blk.earth'), value: earthText.value,
             detail: `${earthText.detail} · ${earthLinkText(earthUp)}`,
-            share: m.earthPct / 100, shareLabel: `Tierra visible el ${Math.round(m.earthPct)} % de los 14 días`,
+            share: m.earthPct / 100, shareLabel: t(D, 'blk.earthShare', { n: Math.round(m.earthPct) }),
           },
         ],
         extras: [
-          { label: 'Disco solar visible', value: fmtPercent(m.powerPct) },
-          { label: TEMPERATURE_LABEL, value: `${fmtSigned(m.tempC, 0)} °C` },
-          ...(this.world.roughness === null ? [] : [{ label: 'Rugosidad a 120 m (DEM LOLA)', value: `${this.world.roughness.toFixed(2)} m` }]),
+          { label: t(D, 'row.disk'), value: percent(m.powerPct) },
+          { label: temperatureLabel(), value: `${fmtSigned(m.tempC, 0)} °C` },
+          ...(this.world.roughness === null ? [] : [{ label: t(D, 'row.rough'), value: `${this.world.roughness.toFixed(2)} m` }]),
         ],
         marks: this.app.isHost ? {
-          label: 'Marcar riesgo donde miras (anillo verde)',
-          options: MARKER_KINDS.map(([kind, text]) => ({ id: `mark-${kind}`, label: text.replace(/^\S+\s+/, ''), disabled: !this.aimPoint, run: () => this.placeMarker(kind) })),
+          label: t(D, 'act.markHud'),
+          options: MARKER_GLYPHS.map(([kind]) => ({ id: `mark-${kind}`, label: markerLabel(kind), disabled: !this.aimPoint, run: () => this.placeMarker(kind) })),
         } : undefined,
       },
       secondary: [
-        { id: 'look-sun', label: 'Mirar al Sol', run: () => this.lookAtBody('sun') },
-        { id: 'look-earth', label: 'Mirar a la Tierra', run: () => this.lookAtBody('earth') },
-        { id: 'back', label: 'Elegir otro sitio', run: () => this.app.goTo('orbit', 0.7, 1.0) },
+        { id: 'look-sun', label: t(D, 'act.lookSun'), run: () => this.lookAtBody('sun') },
+        { id: 'look-earth', label: t(D, 'act.lookEarth'), run: () => this.lookAtBody('earth') },
+        { id: 'back', label: t(D, 'act.back'), run: () => this.app.goTo('orbit', 0.7, 1.0) },
       ],
-      primary: { id: 'confirm', label: 'Iniciar descenso', run: () => this.app.goTo('landing', 0.8, 1.0) },
+      primary: { id: 'confirm', label: t(D, 'act.begin'), run: () => this.app.goTo('landing', 0.8, 1.0) },
     };
   }
 }

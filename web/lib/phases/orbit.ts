@@ -10,10 +10,14 @@ import { DEG, damp, latLonToVec3, smooth } from '../engine/util';
 import { globalDirAt } from '../mission/global-track';
 import type { RoomEvent } from '../sync/room-client';
 import { evaluateSites, fmtHours, type SiteMetrics } from '../mission/scoring';
-import { devFallbackMission, rankingNote, type MissionData, type RankRowExtras } from '../mission/sites';
+import { devFallbackMission, type MissionData, type RankRowExtras } from '../mission/sites';
 import { clearSurface } from './surface-world';
 import { paintPaperChip, paperLabel, paperStatusColor, type PaperLine } from './markers';
-import { STATUS_LABELS, STATUS_TONES, fmtPercent, fmtSigned, type HudRankRow, type PhaseHud } from '../engine/hud';
+import { STATUS_TONES, fmtSigned, type HudRankRow, type PhaseHud } from '../engine/hud';
+import { t } from '@/lib/i18n';
+import { phasesCommonDict } from '@/lib/i18n/dicts/phases-common';
+import { phasesOrbitDict as D } from '@/lib/i18n/dicts/phases-orbit';
+import { isEn, percent, rankNote, statusLabel } from './phases-format';
 
 const R = 1000;               // moon radius in scene units (1 u ≈ 1.74 km)
 const ORBIT_ALT = 150;
@@ -134,6 +138,8 @@ export function segmentHitsSphere(eye: THREE.Vector3, point: THREE.Vector3, radi
 }
 
 const scoreOf100 = (m: SiteMetrics) => `${Math.round(m.score)}/100`;
+/** La nota propia de un sitio: la del caso de demostración tiene versión en inglés; las demás vienen del dato y se muestran tal cual. */
+const siteNoteText = (site: SiteMetrics['site']) => (site.crash && isEn() ? t(D, 'demo.siteNote') : site.note);
 const shortName = (name: string) => (name.length > NAME_MAX_CHARS ? `${name.slice(0, NAME_MAX_CHARS - 1).trimEnd()}…` : name);
 
 /** Rows of the DOM ranking: HudRankRow plus the note that tells demo and contrast sites apart. */
@@ -161,7 +167,8 @@ export class OrbitPhase implements Phase {
   private baseDate: Date;
   private delayDays = 0;
   private maxDelayDays: number;
-  private rangeWarning: string | null = null;
+  /** La advertencia se guarda como dato y se escribe al pintar, para que siga el idioma. */
+  private rangeWarningData: { kind: 'range'; days: number; max: number } | { kind: 'fail'; days: number; msg: string } | null = null;
   private data: MissionData;
   private sunLight!: THREE.DirectionalLight;
   private sunSprite!: THREE.Sprite;
@@ -251,12 +258,27 @@ export class OrbitPhase implements Phase {
     return mk;
   }
 
+  /** La advertencia de rango en el idioma de este momento, o null. */
+  private get rangeWarning(): string | null {
+    const w = this.rangeWarningData;
+    if (!w) return null;
+    return w.kind === 'range'
+      ? t(D, 'warn.range', { days: `${w.days >= 0 ? '+' : ''}${w.days}`, max: this.maxDelayDays })
+      : t(D, 'warn.fail', { days: w.days, msg: w.msg });
+  }
+
+  /** El idioma cambió: se repintan las dos listas y se vuelven a hacer las fichas de los pines (texto y ancho nuevos). */
+  onLangChange() {
+    this.list.invalidate(); this.detail.invalidate();
+    for (const mk of this.markers) this.refreshPinLabels(mk);
+  }
+
   private makePinLabels(m: SiteMetrics) {
     const color = paperStatusColor(m.status === 'viable' ? 'viable' : m.status === 'marginal' ? 'marginal' : 'bad');
     const demo = !!m.site.crash;
-    const note = rankingNote(m.site);
+    const note = rankNote(m.site);
     const lines: PaperLine[] = [
-      { text: demo ? `#${m.rank} · DEMO` : `#${m.rank} · ${scoreOf100(m)}`, size: 52, weight: 800 },
+      { text: demo ? `#${m.rank} · ${t(D, 'demo')}` : `#${m.rank} · ${scoreOf100(m)}`, size: 52, weight: 800 },
       { text: shortName(m.site.name), size: 34 },
       ...(note ? note.split(' · ').map((part) => ({ text: part, size: 26, muted: true })) : []),
     ];
@@ -335,7 +357,7 @@ export class OrbitPhase implements Phase {
   private applyDelay(days: number, opts: { broadcast?: boolean } = {}) {
     if (days === this.delayDays) return;
     if (days > this.maxDelayDays || days < 0) {
-      this.rangeWarning = `${days >= 0 ? '+' : ''}${days} d fuera de rango · 0 a +${this.maxDelayDays} d con los datos precalculados`;
+      this.rangeWarningData = { kind: 'range', days, max: this.maxDelayDays };
       this.list.invalidate();
       return;
     }
@@ -345,12 +367,12 @@ export class OrbitPhase implements Phase {
     try {
       next = evaluateSites(this.data.sites, date);
     } catch (e) {
-      this.rangeWarning = `No se pudo calcular +${days} d: ${e instanceof Error ? e.message : String(e)}`;
+      this.rangeWarningData = { kind: 'fail', days, msg: e instanceof Error ? e.message : String(e) };
       this.list.invalidate();
       return;
     }
 
-    this.rangeWarning = null;
+    this.rangeWarningData = null;
     this.delayDays = days;
     this.date = date;
     this.data.landingDate = date; // downstream phases (pov.ts) read app.data.landingDate
@@ -522,15 +544,15 @@ export class OrbitPhase implements Phase {
   /* ---------------- panels ---------------- */
   private drawList(p: Panel, g: CanvasRenderingContext2D) {
     p.frame(g);
-    g.font = `700 40px ${UI.font}`; g.fillStyle = UI.text; g.fillText('Sitios evaluados', 48, 86);
+    g.font = `700 40px ${UI.font}`; g.fillStyle = UI.text; g.fillText(t(D, 'list.title'), 48, 86);
     this.drawRoomBadge(g);
     g.font = `500 26px ${UI.mono}`; g.fillStyle = this.delayDays ? UI.warn : UI.dim;
-    const delayTag = this.delayDays ? `  ·  retraso +${this.delayDays} d` : '';
-    g.fillText(`Alunizaje ${this.date.toISOString().slice(0, 16).replace('T', ' ')} UTC${delayTag}`, 48, 128);
+    const delayTag = this.delayDays ? t(D, 'list.delayTag', { n: this.delayDays }) : '';
+    g.fillText(`${t(D, 'list.landing', { date: this.date.toISOString().slice(0, 16).replace('T', ' ') })}${delayTag}`, 48, 128);
     const { revealed, total } = this.realCounts();
     g.font = `500 26px ${UI.mono}`;
     g.fillStyle = this.analysisDone ? UI.ok : UI.accentText;
-    g.fillText(this.analysisDone ? 'Ranking final · toca un sitio' : `Calculando óptimo… ${revealed}/${total}`, 48, 166);
+    g.fillText(this.analysisDone ? t(D, 'list.final') : t(D, 'list.computing', { revealed, total }), 48, 166);
 
     if (this.analysisDone) this.drawDelayRow(p, g);
 
@@ -546,12 +568,12 @@ export class OrbitPhase implements Phase {
       g.strokeStyle = col; g.lineWidth = 3; g.stroke();
       g.font = `800 30px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'center'; g.fillText(`${i + 1}`, 73, y + 58); g.textAlign = 'left';
       g.font = `600 32px ${UI.font}`; g.fillStyle = UI.text; g.fillText(m.site.name, 124, y + 44);
-      const note = rankingNote(m.site);
+      const note = rankNote(m.site);
       g.font = `500 22px ${UI.mono}`; g.fillStyle = m.site.crash ? UI.text : UI.dim;
       if (m.site.crash) g.fillText(note!, 150, y + 78);
-      else if (note) g.fillText(`${note}  ·  SOL ${m.illumPct.toFixed(0)}%  ·  TIERRA ${m.earthPct.toFixed(0)}%`, 124, y + 78);
-      else g.fillText(`SOL ${m.illumPct.toFixed(0)}%  ·  TIERRA ${m.earthPct.toFixed(0)}%  ·  AMBOS ${Math.round(m.breakdown.ops * 100)}%`, 124, y + 78);
-      g.font = `800 36px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right'; g.fillText(m.site.crash ? 'DEMO' : scoreOf100(m), 972, y + 60); g.textAlign = 'left';
+      else if (note) g.fillText(`${note}  ·  ${t(D, 'sun')} ${m.illumPct.toFixed(0)}%  ·  ${t(D, 'earth')} ${m.earthPct.toFixed(0)}%`, 124, y + 78);
+      else g.fillText(`${t(D, 'sun')} ${m.illumPct.toFixed(0)}%  ·  ${t(D, 'earth')} ${m.earthPct.toFixed(0)}%  ·  ${t(D, 'both')} ${Math.round(m.breakdown.ops * 100)}%`, 124, y + 78);
+      g.font = `800 36px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right'; g.fillText(m.site.crash ? t(D, 'demo') : scoreOf100(m), 972, y + 60); g.textAlign = 'left';
       if (this.delayDays) {
         const base = this.baseRanking.find((r) => r.site.id === m.site.id);
         if (base) {
@@ -574,7 +596,7 @@ export class OrbitPhase implements Phase {
   private drawRoomBadge(g: CanvasRenderingContext2D) {
     const status = this.app.room.status;
     const color = status === 'open' ? UI.ok : status === 'connecting' ? UI.warn : UI.idle;
-    const label = status === 'open' ? `sincronizado · sala "${this.app.room.room}"` : status === 'connecting' ? 'conectando…' : 'sin conexión (local)';
+    const label = status === 'open' ? t(D, 'room.open', { room: this.app.room.room }) : status === 'connecting' ? t(D, 'room.connecting') : t(D, 'room.offline');
     g.font = `600 20px ${UI.mono}`; g.textAlign = 'right';
     g.fillStyle = UI.dim; g.fillText(label, 950, 82);
     g.textAlign = 'left';
@@ -583,7 +605,7 @@ export class OrbitPhase implements Phase {
 
   /** Row of delay buttons: "the mission got delayed N days, what breaks?" */
   private drawDelayRow(p: Panel, g: CanvasRenderingContext2D) {
-    g.font = `500 22px ${UI.mono}`; g.fillStyle = UI.dim; g.fillText('SIMULAR RETRASO', 48, 196);
+    g.font = `500 22px ${UI.mono}`; g.fillStyle = UI.dim; g.fillText(t(D, 'delay.heading'), 48, 196);
     const y = 206, h = 56, gap = 12, w = (928 - gap * (DELAY_OPTIONS.length + 1)) / (DELAY_OPTIONS.length + 1);
     let x = 48;
     for (const days of DELAY_OPTIONS) {
@@ -600,12 +622,13 @@ export class OrbitPhase implements Phase {
       }
       x += w + gap;
     }
-    p.button(g, 'delay-reset', x, y, w, h, '↺ original', () => this.applyDelay(0), this.delayDays === 0 ? 'primary' : 'ghost');
+    p.button(g, 'delay-reset', x, y, w, h, t(D, 'delay.reset'), () => this.applyDelay(0), this.delayDays === 0 ? 'primary' : 'ghost');
 
-    if (this.rangeWarning) {
+    const warning = this.rangeWarning;
+    if (warning) {
       statusDot(g, 56, 274, UI.warn);
       g.font = `600 20px ${UI.mono}`; g.fillStyle = UI.text;
-      g.fillText(this.rangeWarning, 74, 280);
+      g.fillText(warning, 74, 280);
     }
   }
 
@@ -614,7 +637,7 @@ export class OrbitPhase implements Phase {
     const m = this.app.selected;
     if (!m) {
       g.font = `600 34px ${UI.font}`; g.fillStyle = UI.dim; g.textAlign = 'center';
-      g.fillText(this.analysisDone ? 'Toca un punto o una fila' : 'Analizando iluminación y enlace…', 512, 640);
+      g.fillText(this.analysisDone ? t(D, 'detail.pick') : t(D, 'detail.analyzing'), 512, 640);
       g.textAlign = 'left';
       return;
     }
@@ -625,31 +648,31 @@ export class OrbitPhase implements Phase {
       g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S  ${m.site.lon.toFixed(2)}°${m.site.lon >= 0 ? 'E' : 'W'}`, 48, 134);
       this.drawDemoDetail(p, g, m); return;
     }
-    g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S  ${m.site.lon.toFixed(2)}°${m.site.lon >= 0 ? 'E' : 'W'}  ·  elev. +${m.site.elevationKm.toFixed(1)} km`, 48, 134);
+    g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S  ${m.site.lon.toFixed(2)}°${m.site.lon >= 0 ? 'E' : 'W'}  ·  ${t(D, 'detail.elev', { km: m.site.elevationKm.toFixed(1) })}`, 48, 134);
     g.font = `800 96px ${UI.mono}`; g.fillStyle = col; g.fillText(`${Math.round(m.score)}`, 48, 250);
     const bigWidth = g.measureText(`${Math.round(m.score)}`).width;
     g.font = `700 36px ${UI.mono}`; g.fillText('/100', 48 + bigWidth + 8, 250);
-    g.font = `600 28px ${UI.font}`; g.fillStyle = UI.text; g.fillText(`Viabilidad · puesto #${m.rank} de ${this.realCounts().total}`, 400, 222);
+    g.font = `600 28px ${UI.font}`; g.fillStyle = UI.text; g.fillText(t(D, 'detail.viability', { rank: m.rank, total: this.realCounts().total }), 400, 222);
     if (this.delayDays) {
       const base = this.baseRanking.find((r) => r.site.id === m.site.id);
       if (base) {
         const d = Math.round(m.score - base.score);
         g.font = `700 26px ${UI.mono}`; g.fillStyle = d > 0 ? UI.ok : d < 0 ? UI.bad : UI.dim;
-        g.fillText(`antes ${scoreOf100(base)} → ahora ${scoreOf100(m)} · +${this.delayDays} d`, 400, 258);
+        g.fillText(t(D, 'detail.delta', { before: scoreOf100(base), now: scoreOf100(m), days: this.delayDays }), 400, 258);
       }
     }
 
     const rows: [string, string][] = [
-      ['Elevación solar', `${m.sun.elevation.toFixed(2)}°`],
-      ['Azimut solar', `${m.sun.azimuth.toFixed(0)}°`],
-      ['Iluminación (14 d)', `${m.illumPct.toFixed(0)}%`],
-      ['Puesta de sol en', m.sun.aboveHorizon > -0.27 ? fmtHours(m.hoursToSunset) : 'en sombra'],
-      ['Elevación Tierra', `${m.earth.elevation.toFixed(2)}°`],
-      ['Visibilidad Tierra', `${m.earthPct.toFixed(0)}%`],
-      ['Ocaso de la Tierra en', m.earth.aboveHorizon > 0 ? fmtHours(m.hoursToEarthset) : 'sin enlace'],
-      ['Sol + Tierra a la vez', `${Math.round(m.breakdown.ops * 100)}%`],
-      ['Noche más larga', fmtHours(m.longestDarkH)],
-      ['Disco solar visible', `${m.powerPct}%`],
+      [t(D, 'row.sunEl'), `${m.sun.elevation.toFixed(2)}°`],
+      [t(D, 'row.sunAz'), `${m.sun.azimuth.toFixed(0)}°`],
+      [t(D, 'row.illum'), `${m.illumPct.toFixed(0)}%`],
+      [t(D, 'row.sunset'), m.sun.aboveHorizon > -0.27 ? fmtHours(m.hoursToSunset) : t(phasesCommonDict, 'shadow')],
+      [t(D, 'row.earthEl'), `${m.earth.elevation.toFixed(2)}°`],
+      [t(D, 'row.earthVis'), `${m.earthPct.toFixed(0)}%`],
+      [t(D, 'row.earthset'), m.earth.aboveHorizon > 0 ? fmtHours(m.hoursToEarthset) : t(phasesCommonDict, 'noLink')],
+      [t(D, 'row.both'), `${Math.round(m.breakdown.ops * 100)}%`],
+      [t(D, 'row.dark'), fmtHours(m.longestDarkH)],
+      [t(D, 'row.disk'), `${m.powerPct}%`],
     ];
     rows.forEach(([k, v], i) => {
       const x = 48 + (i % 2) * 480, y = 310 + Math.floor(i / 2) * 96;
@@ -658,8 +681,8 @@ export class OrbitPhase implements Phase {
     });
 
     const bars: [string, number][] = [
-      ['Energía · 30%', m.breakdown.energy], ['Enlace Tierra · 25%', m.breakdown.comms],
-      ['Sol + Tierra · 30%', m.breakdown.ops], ['Continuidad · 15%', m.breakdown.continuity],
+      [t(D, 'bar.energy'), m.breakdown.energy], [t(D, 'bar.comms'), m.breakdown.comms],
+      [t(D, 'bar.ops'), m.breakdown.ops], [t(D, 'bar.continuity'), m.breakdown.continuity],
     ];
     bars.forEach(([k, v], i) => {
       const y = 820 + i * 52;
@@ -667,32 +690,34 @@ export class OrbitPhase implements Phase {
       roundRect(g, 300, y, 660, 16, 8); g.fillStyle = UI.lineStrong; g.fill();
       if (v > 0.01) { roundRect(g, 300, y, 660 * v, 16, 8); g.fillStyle = col; g.fill(); }
     });
-    const contrast = rankingNote(m.site);
+    const contrast = rankNote(m.site);
     if (contrast) { g.font = `600 24px ${UI.font}`; g.fillStyle = UI.warn; g.fillText(contrast, 48, 1076); }
-    if (m.site.note) { g.font = `italic 500 24px ${UI.font}`; g.fillStyle = UI.dim; g.fillText(m.site.note, 48, 1112); }
+    const siteNote = siteNoteText(m.site);
+    if (siteNote) { g.font = `italic 500 24px ${UI.font}`; g.fillStyle = UI.dim; g.fillText(siteNote, 48, 1112); }
     this.drawPreconfirm(p, g, m);
   }
 
   private drawPreconfirm(p: Panel, g: CanvasRenderingContext2D, m: SiteMetrics) {
     if (this.analysisDone) {
-      p.button(g, 'preconfirm', 48, 1150, 928, 100, 'Preconfirmar punto', () => {
+      p.button(g, 'preconfirm', 48, 1150, 928, 100, t(D, 'preconfirm'), () => {
         this.app.audio.play('ui_confirm');
         this.app.selected = m;
         this.app.room.send({ type: 'set_site', site_id: m.site.id }); // keeps room state in sync even when m was auto-selected (never went through select())
         this.app.goTo('pov', 0.8, 1.2);
       });
     } else {
-      g.font = `500 26px ${UI.font}`; g.fillStyle = UI.dim; g.fillText('Esperando el ranking final…', 48, 1210);
+      g.font = `500 26px ${UI.font}`; g.fillStyle = UI.dim; g.fillText(t(D, 'waitFinal'), 48, 1210);
     }
   }
 
   /** NO CAER lends its terrain and ephemeris from a real site: no score, readouts or bars of its own are drawn. */
   private drawDemoDetail(p: Panel, g: CanvasRenderingContext2D, m: SiteMetrics) {
-    g.font = `800 52px ${UI.font}`; g.fillStyle = statusColor(m.status); g.fillText('Caso de demostración', 48, 250);
-    g.font = `600 36px ${UI.font}`; g.fillStyle = UI.text; g.fillText('Falla simulada del motor', 48, 306);
+    g.font = `800 52px ${UI.font}`; g.fillStyle = statusColor(m.status); g.fillText(t(D, 'demo.title'), 48, 250);
+    g.font = `600 36px ${UI.font}`; g.fillStyle = UI.text; g.fillText(t(D, 'demo.sub'), 48, 306);
     g.font = `500 28px ${UI.font}`; g.fillStyle = UI.dim;
-    ['No es un sitio real: no tiene puntaje ni lecturas propias.', 'El descenso termina en impacto y la misión regresa a órbita.'].forEach((line, i) => g.fillText(line, 48, 380 + i * 42));
-    if (m.site.note) { g.font = `italic 500 24px ${UI.font}`; g.fillText(m.site.note, 48, 1112); }
+    [t(D, 'demo.l1'), t(D, 'demo.l2')].forEach((line, i) => g.fillText(line, 48, 380 + i * 42));
+    const siteNote = siteNoteText(m.site);
+    if (siteNote) { g.font = `italic 500 24px ${UI.font}`; g.fillText(siteNote, 48, 1112); }
     this.drawPreconfirm(p, g, m);
   }
 
@@ -708,39 +733,40 @@ export class OrbitPhase implements Phase {
       return {
         id: `site-${r.site.id}`, rank: r.rank, name: r.site.name, score: Math.round(r.score), status: r.status,
         selected: chosen?.site.id === r.site.id, delta: was ? Math.round(r.score - was.score) : undefined, run: () => this.select(r),
-        note: rankingNote(r.site), demo: r.site.crash || undefined,
+        note: rankNote(r.site), demo: r.site.crash || undefined,
       };
     });
 
-    let detail = 'Ranking final · elige un sitio de la lista o un pin de la escena';
-    if (this.rangeWarning) detail = this.rangeWarning;
-    else if (!done) detail = `Calculando óptimo… ${revealed}/${total}`;
-    else if (this.delayDays && m && base) detail = `Con +${this.delayDays} d de retraso: antes ${scoreOf100(base)} → ahora ${scoreOf100(m)}`;
-    const note = done && m && !this.rangeWarning ? rankingNote(m.site) : undefined;
-    if (note) detail = m!.site.crash ? `${note} · no es un sitio real, no tiene puntaje` : `${note} · ${detail}`;
+    let detail = t(D, 'hud.final');
+    const warning = this.rangeWarning;
+    if (warning) detail = warning;
+    else if (!done) detail = t(D, 'list.computing', { revealed, total });
+    else if (this.delayDays && m && base) detail = t(D, 'hud.delta', { days: this.delayDays, before: scoreOf100(base), now: scoreOf100(m) });
+    const note = done && m && !warning ? rankNote(m.site) : undefined;
+    if (note) detail = m!.site.crash ? t(D, 'hud.demoDetail', { note }) : `${note} · ${detail}`;
 
     const delays = [...DELAY_OPTIONS.map((days) => ({
       id: `delay-${days}`, label: `+${days} d`, pressed: this.delayDays === days, disabled: days > this.maxDelayDays, run: () => this.applyDelay(days),
-    })), { id: 'delay-reset', label: 'Original', pressed: this.delayDays === 0, run: () => this.applyDelay(0) }];
+    })), { id: 'delay-reset', label: t(D, 'delay.resetHud'), pressed: this.delayDays === 0, run: () => this.applyDelay(0) }];
 
     return {
       figure: done && m?.site.crash
-        ? { value: 'DEMO', caption: `${m.site.name} · falla simulada del motor` }
+        ? { value: t(D, 'demo'), caption: t(D, 'fig.demoCaption', { name: m.site.name }) }
         : done && m
-        ? { value: String(Math.round(m.score)), caption: `de 100 · ${m.site.name}`, badge: { label: STATUS_LABELS[m.status], tone: STATUS_TONES[m.status] } }
-        : { value: `${revealed} de ${total}`, caption: 'sitios evaluados' },
+        ? { value: String(Math.round(m.score)), caption: t(D, 'fig.of100', { name: m.site.name }), badge: { label: statusLabel(m.status), tone: STATUS_TONES[m.status] } }
+        : { value: t(D, 'fig.count', { revealed, total }), caption: t(D, 'fig.countCaption') },
       detail,
-      progress: done ? undefined : { value: total ? revealed / total : 0, label: 'Evaluación de sitios' },
+      progress: done ? undefined : { value: total ? revealed / total : 0, label: t(D, 'progress.label') },
       facts: done && m && !m.site.crash ? [
-        { label: 'Elevación solar', value: `${fmtSigned(m.sun.elevation, 2)}°` },
-        { label: 'Iluminación en 14 d', value: fmtPercent(m.illumPct) },
-        { label: 'Elevación de la Tierra', value: `${fmtSigned(m.earth.elevation, 2)}°` },
-        { label: 'Tierra visible', value: fmtPercent(m.earthPct) },
+        { label: t(D, 'fact.sunEl'), value: `${fmtSigned(m.sun.elevation, 2)}°` },
+        { label: t(D, 'fact.illum'), value: percent(m.illumPct) },
+        { label: t(D, 'fact.earthEl'), value: `${fmtSigned(m.earth.elevation, 2)}°` },
+        { label: t(D, 'fact.earthVis'), value: percent(m.earthPct) },
       ] : undefined,
-      toggles: done ? { label: 'Simular retraso', options: delays } : undefined,
-      side: { kind: 'ranking', title: 'Sitios evaluados', rows },
+      toggles: done ? { label: t(D, 'toggles.label'), options: delays } : undefined,
+      side: { kind: 'ranking', title: t(D, 'list.title'), rows },
       primary: {
-        id: 'preconfirm', label: 'Preconfirmar punto', disabled: !done || !m,
+        id: 'preconfirm', label: t(D, 'preconfirm'), disabled: !done || !m,
         run: () => {
           if (!m) return;
           this.app.audio.play('ui_confirm');

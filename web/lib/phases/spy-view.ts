@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { UI, roundRect, textLabel } from '../engine/panel';
 import type { RoomEvent } from '../sync/room-client';
+import { t } from '@/lib/i18n';
+import { phasesWorldDict as D } from '@/lib/i18n/dicts/phases-world';
 
 const RT_W = 640, RT_H = 480;
 const PANEL_W = 0.78; // was 0.46 - too small to read at a glance across the cabin
@@ -75,15 +77,32 @@ export class SpyView {
     this.mesh = new THREE.Group();
     this.mesh.add(this.bezelMesh, this.videoMesh);
 
-    this.label = textLabel([{ text: 'VISTA DEL INSPECTOR VR', size: 32, color: UI.text, weight: 800, mono: true }], LABEL_W);
+    this.label = textLabel(titleLines(), LABEL_W);
     this.label.position.y = h / 2 + BEZEL_M + 0.09;
     this.mesh.add(this.label);
 
-    this.liveBadge = textLabel([{ text: '● EN VIVO', size: 28, color: UI.ok, weight: 800, mono: true }], LABEL_W * 0.55);
-    this.noSignalBadge = textLabel([{ text: '● SIN SEÑAL', size: 28, color: UI.dim, weight: 800, mono: true }], LABEL_W * 0.55);
+    this.liveBadge = textLabel(liveLines(), LABEL_W * 0.55);
+    this.noSignalBadge = textLabel(noSignalLines(), LABEL_W * 0.55);
     this.liveBadge.position.set(0, -h / 2 - BEZEL_M - 0.075, 0);
     this.noSignalBadge.position.copy(this.liveBadge.position);
     this.mesh.add(this.liveBadge, this.noSignalBadge);
+  }
+
+  /** El idioma cambió: el título y las dos insignias se repintan en su mismo sprite (posición y visibilidad intactas). */
+  relabel() {
+    const swaps: [THREE.Sprite, ReturnType<typeof textLabel>][] = [
+      [this.label, textLabel(titleLines(), LABEL_W)],
+      [this.liveBadge, textLabel(liveLines(), LABEL_W * 0.55)],
+      [this.noSignalBadge, textLabel(noSignalLines(), LABEL_W * 0.55)],
+    ];
+    for (const [sprite, fresh] of swaps) {
+      const mat = sprite.material as THREE.SpriteMaterial;
+      mat.map?.dispose();
+      mat.map = (fresh.material as THREE.SpriteMaterial).map;
+      mat.needsUpdate = true;
+      sprite.scale.copy(fresh.scale);
+      fresh.material.dispose();
+    }
   }
 
   /** Feed a room event in; ignores anything that isn't a fresh cam_update for this site. */
@@ -192,6 +211,10 @@ function bezelMaterial(): THREE.MeshBasicMaterial {
   tex.colorSpace = THREE.SRGBColorSpace;
   return new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, depthWrite: false });
 }
+
+const titleLines = () => [{ text: t(D, 'spy.title'), size: 32, color: UI.text, weight: 800, mono: true }];
+const liveLines = () => [{ text: t(D, 'spy.live'), size: 28, color: UI.ok, weight: 800, mono: true }];
+const noSignalLines = () => [{ text: t(D, 'spy.noSignal'), size: 28, color: UI.dim, weight: 800, mono: true }];
 
 function disposeSpriteLike(obj: THREE.Mesh | THREE.Sprite) {
   const mat = obj.material as THREE.MeshBasicMaterial | THREE.SpriteMaterial;

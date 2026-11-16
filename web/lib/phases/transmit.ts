@@ -6,10 +6,14 @@ import { glowTexture } from '../engine/textures';
 import { clamp01, disposeTree, rand, smooth } from '../engine/util';
 import { ensureSelection } from './pov';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
-import { paperLabel } from './markers';
+import { paperLabel, relabelPaper } from './markers';
 import { controlHrefFor } from '../mission/control-link';
 import { earthRangeKmAt } from '../mission/global-track';
-import { fmtInt, fmtPercent, fmtSigned, signalDelayS, type HudReadout, type PhaseHud } from '../engine/hud';
+import { fmtSigned, signalDelayS, type HudReadout, type PhaseHud } from '../engine/hud';
+import { t } from '@/lib/i18n';
+import { phasesTransmitDict as D } from '@/lib/i18n/dicts/phases-transmit';
+import { phasesWorldDict as W } from '@/lib/i18n/dicts/phases-world';
+import { int, percent } from './phases-format';
 
 const TX_SECONDS = 14;
 
@@ -20,10 +24,10 @@ const TX_SECONDS = 14;
  */
 export function earthElevationText(elevation: number, aboveHorizon: number, source: 'lola' | 'spherical'): string {
   const value = `${fmtSigned(elevation, 2)}°`;
-  if (aboveHorizon > 0) return `${value} · visible`;
-  if (source === 'spherical') return `${value} · bajo el horizonte geométrico`;
-  if (elevation > 0) return `${value} · bajo el horizonte LOLA (${fmtSigned(elevation - aboveHorizon, 2)}°)`;
-  return `${value} · bajo el horizonte`;
+  if (aboveHorizon > 0) return t(D, 'el.visible', { v: value });
+  if (source === 'spherical') return t(D, 'el.sphere', { v: value });
+  if (elevation > 0) return t(D, 'el.lola', { v: value, h: fmtSigned(elevation - aboveHorizon, 2) });
+  return t(D, 'el.below', { v: value });
 }
 const LIGHT_TIME_S = 384400 / 299792.458;
 
@@ -58,13 +62,17 @@ function beam(from: THREE.Vector3, to: THREE.Vector3, rFrom: number, rTo: number
 
 const PACKETS_TOTAL = 4096;
 /** El satélite de relevo es un gráfico, no una posición calculada: el rótulo lo dice. */
-export const RELAY_LABEL = 'Relevo (posición ilustrativa)';
+export const RELAY_LABEL = W.es['relay.label'];
 
 /** «2 048 / 4 096», con el mismo formato de número que el DOM (el panel del visor usaba en-US: «4,096»). */
-export const packetsText = (sent: number) => `${fmtInt(sent * PACKETS_TOTAL)} / ${fmtInt(PACKETS_TOTAL)}`;
+export const packetsText = (sent: number) => `${int(sent * PACKETS_TOTAL)} / ${int(PACKETS_TOTAL)}`;
+
+const relayLines = () => [{ text: t(W, 'relay.label'), size: 40, weight: 700 }];
+
+const txStatus = (done: boolean, relay: boolean) => t(D, done ? 'tx.done' : relay ? 'tx.relay' : 'tx.direct');
 
 export function buildRelayLabel() {
-  return paperLabel([{ text: RELAY_LABEL, size: 40, weight: 700 }], 330, { pad: 14, name: 'label:relevo' });
+  return paperLabel(relayLines(), 330, { pad: 14, name: 'label:relevo' });
 }
 
 /** Phase 5 — successful landing: sunlight on the arrays, data beamed to Earth. */
@@ -84,6 +92,7 @@ export class TransmitPhase implements Phase {
   private eyeBase: THREE.Vector3; private perp: THREE.Vector3;
   private dishWorld = new THREE.Vector3();
   private relay: THREE.Vector3 | null = null;
+  private relayLabel: THREE.Sprite | null = null;
   private sent = 0;
   private chirpBin = -1;
   private uiT = 0;
@@ -119,6 +128,7 @@ export class TransmitPhase implements Phase {
       const sat = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xbfe6ff, blending: THREE.AdditiveBlending, depthWrite: false }));
       sat.position.copy(this.relay); sat.scale.setScalar(60); this.fx.add(sat);
       const satLabel = buildRelayLabel();
+      this.relayLabel = satLabel;
       satLabel.position.copy(this.relay).add(new THREE.Vector3(0, -110, 0));
       this.fx.add(satLabel);
     }
@@ -167,6 +177,13 @@ export class TransmitPhase implements Phase {
     this.app.rig.add(this.hud.mesh);
     this.hud.place(-0.84, 1.36, -1.45);
     this.app.setView(this.eyeBase, this.lookAt(), { snap: true, rate: 2 });
+  }
+
+  /** El idioma cambió: el panel se repinta y las fichas del mundo y del relevo se hacen de nuevo en su mismo sprite. */
+  onLangChange() {
+    this.hud.invalidate();
+    this.world.relabel();
+    if (this.relayLabel) relabelPaper(this.relayLabel, relayLines(), 330, { pad: 14 });
   }
 
   private lookAt() {
@@ -238,32 +255,32 @@ export class TransmitPhase implements Phase {
   private drawHud(p: Panel, g: CanvasRenderingContext2D) {
     const m = this.world.m, w = this.world;
     p.frame(g);
-    g.font = `800 64px ${UI.font}`; g.fillStyle = UI.ok; g.fillText('¡Alunizaje exitoso!', 48, 112);
+    g.font = `800 64px ${UI.font}`; g.fillStyle = UI.ok; g.fillText(t(D, 'hud.success'), 48, 112);
     g.font = `600 30px ${UI.font}`; g.fillStyle = UI.text; g.fillText(m.site.name, 48, 166);
     g.font = `500 24px ${UI.mono}`; g.fillStyle = UI.dim;
-    g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S ${m.site.lon.toFixed(2)}° · viabilidad ${Math.round(m.score)}/100`, 48, 204);
+    g.fillText(t(D, 'hud.viability', { lat: Math.abs(m.site.lat).toFixed(2), lon: m.site.lon.toFixed(2), score: Math.round(m.score) }), 48, 204);
 
     const done = this.sent >= 1;
     g.font = `700 30px ${UI.font}`; g.fillStyle = done ? UI.ok : UI.accentText;
-    g.fillText(done ? 'Telemetría recibida en la Tierra' : this.relay ? 'Transmitiendo vía satélite de relevo…' : 'Transmitiendo directo a la Tierra…', 48, 278);
+    g.fillText(txStatus(done, this.relay !== null), 48, 278);
     roundRect(g, 48, 300, 928, 14, 7); g.fillStyle = UI.lineStrong; g.fill();
     if (this.sent > 0.005) { roundRect(g, 48, 300, 928 * this.sent, 14, 7); g.fillStyle = UI.accent; g.fill(); }
     g.font = `700 26px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right'; g.fillText(`${Math.round(this.sent * 100)}%`, 976, 350); g.textAlign = 'left';
 
     const rows: [string, string][] = [
-      ['Enlace', this.relay ? 'Relevo orbital (Tierra bajo el horizonte)' : `Directo · Tierra a ${m.earth.elevation.toFixed(1)}°`],
-      ['Retardo de la señal', `${LIGHT_TIME_S.toFixed(2)} s`],
-      ['Paquetes enviados', packetsText(this.sent)],
-      ['Energía solar', w.sunVisible > 0.15 ? `${m.powerPct}% · Sol a ${m.sun.elevation.toFixed(1)}°` : 'En sombra · baterías'],
-      ['Ventana restante', m.earth.aboveHorizon > 0 ? `${Math.round(m.hoursToEarthset)} h de comunicación` : '—'],
+      [t(D, 'row.link'), this.relay ? t(D, 'link.relayVr') : t(D, 'link.directVr', { el: m.earth.elevation.toFixed(1) })],
+      [t(D, 'row.delay'), `${LIGHT_TIME_S.toFixed(2)} s`],
+      [t(D, 'row.packets'), packetsText(this.sent)],
+      [t(D, 'row.power'), w.sunVisible > 0.15 ? t(D, 'power.lit', { pct: m.powerPct, el: m.sun.elevation.toFixed(1) }) : t(D, 'power.dark')],
+      [t(D, 'row.window'), m.earth.aboveHorizon > 0 ? t(D, 'window.value', { h: Math.round(m.hoursToEarthset) }) : '—'],
     ];
     rows.forEach(([k, v], i) => {
       const y = 420 + i * 62;
       g.font = `500 26px ${UI.font}`; g.fillStyle = UI.dim; g.fillText(k, 48, y);
       g.font = `600 26px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right'; g.fillText(v, 976, y); g.textAlign = 'left';
     });
-    p.button(g, 'again', 48, 760, 440, 96, 'Repetir misión', () => this.app.goTo('launch', 1.0, 1.2), 'ghost');
-    p.button(g, 'other', 536, 760, 440, 96, 'Otro sitio', () => this.app.goTo('orbit', 0.8, 1.0));
+    p.button(g, 'again', 48, 760, 440, 96, t(D, 'again'), () => this.app.goTo('launch', 1.0, 1.2), 'ghost');
+    p.button(g, 'other', 536, 760, 440, 96, t(D, 'other'), () => this.app.goTo('orbit', 0.8, 1.0));
   }
 
   controlHud(): PhaseHud {
@@ -272,30 +289,30 @@ export class TransmitPhase implements Phase {
     const data = this.app.data;
     const rangeKm = data ? earthRangeKmAt(data.global, data.landingDate) : null;
     const items: HudReadout[] = [
-      { label: 'Enlace', value: this.relay ? 'Relevo orbital' : 'Directo con la Tierra' },
-      { label: 'Elevación de la Tierra', value: earthElevationText(m.earth.elevation, m.earth.aboveHorizon, m.site.horizonSource) },
+      { label: t(D, 'row.link'), value: this.relay ? t(D, 'link.relay') : t(D, 'link.direct') },
+      { label: t(D, 'row.earthEl'), value: earthElevationText(m.earth.elevation, m.earth.aboveHorizon, m.site.horizonSource) },
     ];
     if (rangeKm !== null) {
       items.push(
-        { label: 'Distancia Tierra–Luna', value: `${fmtInt(rangeKm)} km` },
-        { label: 'Retardo de la señal', value: `${signalDelayS(rangeKm).toFixed(2)} s` },
+        { label: t(D, 'row.distance'), value: `${int(rangeKm)} km` },
+        { label: t(D, 'row.delay'), value: `${signalDelayS(rangeKm).toFixed(2)} s` },
       );
     }
     return {
-      figure: { value: fmtPercent(this.sent * 100), caption: 'de la telemetría enviada', badge: { label: 'Alunizaje exitoso', tone: 'ok' } },
-      progress: { value: this.sent, label: 'Telemetría enviada' },
+      figure: { value: percent(this.sent * 100), caption: t(D, 'fig.caption'), badge: { label: t(D, 'fig.badge'), tone: 'ok' } },
+      progress: { value: this.sent, label: t(D, 'progress.label') },
       facts: [
-        { label: 'Paquetes enviados', value: packetsText(this.sent) },
-        { label: 'Energía solar', value: w.sunVisible > 0.15 ? `${m.powerPct} % · Sol a ${m.sun.elevation.toFixed(1)}°` : 'En sombra · baterías' },
-        { label: 'Ventana restante', value: m.earth.aboveHorizon > 0 ? `${Math.round(m.hoursToEarthset)} h de comunicación` : '—' },
+        { label: t(D, 'row.packets'), value: packetsText(this.sent) },
+        { label: t(D, 'row.power'), value: w.sunVisible > 0.15 ? t(D, 'power.litHud', { pct: m.powerPct, el: m.sun.elevation.toFixed(1) }) : t(D, 'power.dark') },
+        { label: t(D, 'row.window'), value: m.earth.aboveHorizon > 0 ? t(D, 'window.value', { h: Math.round(m.hoursToEarthset) }) : '—' },
       ],
-      detail: done ? 'Telemetría recibida en la Tierra' : this.relay ? 'Transmitiendo vía satélite de relevo…' : 'Transmitiendo directo a la Tierra…',
-      side: { kind: 'readouts', items, note: rangeKm !== null ? 'El retardo sale de la distancia real a la fecha de aterrizaje y la velocidad de la luz.' : undefined },
+      detail: txStatus(done, this.relay !== null),
+      side: { kind: 'readouts', items, note: rangeKm !== null ? t(D, 'note.delay') : undefined },
       secondary: [
-        { id: 'again', label: 'Repetir misión', run: () => this.app.goTo('launch', 1.0, 1.2) },
-        { id: 'other', label: 'Otro sitio', run: () => this.app.goTo('orbit', 0.8, 1.0) },
+        { id: 'again', label: t(D, 'again'), run: () => this.app.goTo('launch', 1.0, 1.2) },
+        { id: 'other', label: t(D, 'other'), run: () => this.app.goTo('orbit', 0.8, 1.0) },
       ],
-      primary: { id: 'report', label: 'Ver reporte en Mission Control', href: controlHrefFor(this.app, window.location.search) },
+      primary: { id: 'report', label: t(D, 'report'), href: controlHrefFor(this.app, window.location.search) },
     };
   }
 }
