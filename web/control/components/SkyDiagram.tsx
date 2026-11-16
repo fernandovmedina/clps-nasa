@@ -45,10 +45,13 @@ export function SkyDiagram({ horizon, samples, sun, earth, top, bottom, title, d
 
   const terrain = useMemo(() => {
     const n = horizon.horizon_deg.length
-    const pts = horizon.horizon_deg.map((el, i) => projectSky((i * 360) / n, el, top, bottom))
-    return `M${CENTER - RADIUS} ${CENTER}a${RADIUS} ${RADIUS} 0 1 0 ${2 * RADIUS} 0a${RADIUS} ${RADIUS} 0 1 0 ${-2 * RADIUS} 0ZM${pts
+    const pts = horizon.horizon_deg
+      .map((el, i) => projectSky((i * 360) / n, el, top, bottom))
       .map((p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`)
-      .join('L')}Z`
+      .join('L')
+    const outline = `M${pts}Z`
+    const disc = `M${CENTER - RADIUS} ${CENTER}a${RADIUS} ${RADIUS} 0 1 0 ${2 * RADIUS} 0a${RADIUS} ${RADIUS} 0 1 0 ${-2 * RADIUS} 0Z`
+    return { fill: `${disc}${outline}`, outline }
   }, [horizon, top, bottom])
 
   const runs = useMemo(() => {
@@ -86,7 +89,8 @@ export function SkyDiagram({ horizon, samples, sun, earth, top, bottom, title, d
       <title id={titleId}>{title}</title>
       <desc id={descId}>{desc}</desc>
       <circle cx={c} cy={c} r={RADIUS} fill="var(--bg-field)" stroke="var(--line-strong)" strokeWidth={1} />
-      <path d={terrain} fillRule="evenodd" fill="var(--terrain)" />
+      <path d={terrain.fill} fillRule="evenodd" fill="var(--terrain)" />
+      <path d={terrain.outline} fill="none" stroke="var(--terrain-line)" strokeWidth={1} strokeLinejoin="round" />
       {rings.map((v) => (
         <g key={v}>
           <circle

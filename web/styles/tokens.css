@@ -1,0 +1,44 @@
+/* Fuente única de tokens: un solo tema, «color papel». lib/ui/palette.ts repite estos valores y palette.test.ts exige que coincidan. */
+:root {
+  color-scheme: light;
+  --bg-base: #faf9f5;
+  --bg-surface: #faf9f5;
+  --bg-elevated: #faf9f5;
+  --bg-raised: #f0eee6;
+  --bg-field: #faf9f5;
+  --bg-selected: #e8e6dc;
+  --bg-pressed: #e8e6dc;
+  --bg-toggle-on: #faf9f5;
+  --label: #141413;
+  --label-2: #5e5d59;
+  --label-3: #6b6963;
+  --line: rgba(20, 20, 19, 0.14);
+  --line-strong: rgba(20, 20, 19, 0.28);
+  --control-border: #8a8880;
+  --scrim: rgba(20, 20, 19, 0.45);
+  --accent: #d6744f;
+  --on-accent: #141413;
+  --accent-text: #a64b2f;
+  --sun: #8f6b00;
+  --earth: #2a78d6;
+  --both: #558a42;
+  --viable: #558a42;
+  --marginal: #9b8223;
+  --idle: #8a8880;
+  --bad: #b3261e;
+  --viable-bg: #bcd1ca;
+  --marginal-bg: #efe3b5;
+  --bad-bg: #ebcece;
+  --on-status: #141413;
+  --terrain: #ddd5c0;
+  --terrain-line: #7a6e52;
+  --sky-bg: #f0eee6;
+  --sky-text: #141413;
+  --sky-text-2: #5e5d59;
+  --sky-grid: rgba(20, 20, 19, 0.12);
+  --sky-grid-strong: rgba(20, 20, 19, 0.25);
+  --sky-sun: #8f6b00;
+  --sky-earth: #2a78d6;
+  --sky-terrain: #ddd5c0;
+  --sky-terrain-line: #7a6e52;
+}

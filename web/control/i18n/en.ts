@@ -10,9 +10,6 @@ export const en: Dict = {
   language: 'Language',
   languageEs: 'Español',
   languageEn: 'English',
-  theme: 'Theme',
-  themeToLight: 'Switch to light theme',
-  themeToDark: 'Switch to dark theme',
 
   catalogTitle: 'Site catalog',
   searchLabel: 'Search sites',
