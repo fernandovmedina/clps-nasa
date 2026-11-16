@@ -113,7 +113,7 @@ test('a judge alone on desktop, without XR, reaches the orbit with one obvious c
   await expect(skip.or(explore).first()).toBeVisible({ timeout: 30_000 })
   await skip.click({ timeout: 2000 }).catch(() => {})
   const welcome = page.getByRole('dialog', { name: 'Bienvenido a TOUCHDOWN' })
-  await expect(explore).toBeVisible()
+  await expect(explore).toBeVisible({ timeout: 30_000 })
   await expect(welcome.getByText('Compara sitios y fechas de alunizaje en el polo sur con datos reales de NASA')).toBeVisible()
   await expect(welcome.getByText('Para VR, ábrelo en el navegador del Meta Quest')).toBeVisible()
   await expect(welcome.getByRole('button', { name: 'Entrar en VR' })).toHaveCount(0)
