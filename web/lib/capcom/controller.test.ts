@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CapcomController, type CapcomHost, type CapcomSnapshot, type SessionLike } from './controller';
 import type { CapcomEvent } from './types';
+import { CAPCOM_ACCESS_EXPIRES_AT } from './config';
+
+const AFTER_EXPIRY = new Date(Date.parse(CAPCOM_ACCESS_EXPIRES_AT) + 1000);
 
 const pcm = (...values: number[]) => new Int16Array(values);
 const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
@@ -280,7 +283,7 @@ describe('CapcomController', () => {
 
   it('the guest access ending while the page is open makes CAPCOM unavailable on the next press, without connecting', async () => {
     const t = setup();
-    vi.setSystemTime(new Date('2026-11-16T15:00:01Z'));
+    vi.setSystemTime(AFTER_EXPIRY);
     t.controller.press();
     expect(t.snap()).toMatchObject({ state: 'unavailable', message: 'CAPCOM no disponible', talking: false });
     expect(t.loadSession).not.toHaveBeenCalled();
@@ -289,13 +292,13 @@ describe('CapcomController', () => {
   it('a failed connection after the expiry is unavailable even when the error looks like a network one', async () => {
     const t = setup({ startError: new Error('Failed to fetch') });
     t.controller.press();
-    vi.setSystemTime(new Date('2026-11-16T15:00:01Z'));
+    vi.setSystemTime(AFTER_EXPIRY);
     await vi.advanceTimersByTimeAsync(0);
     expect(t.snap().state).toBe('unavailable');
   });
 
   it('is unavailable from the start once the guest access has expired', () => {
-    vi.setSystemTime(new Date('2026-11-16T15:00:01Z'));
+    vi.setSystemTime(AFTER_EXPIRY);
     const t = setup();
     expect(t.snap()).toMatchObject({ state: 'unavailable', message: 'CAPCOM no disponible' });
     t.controller.press();
