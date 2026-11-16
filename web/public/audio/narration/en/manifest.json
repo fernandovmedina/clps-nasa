@@ -1,5 +1,36 @@
 {
   "voiceId": "matthew",
   "modelId": "amazon.nova-2-sonic-v1:0",
-  "clips": {}
+  "clips": {
+    "launchStart": {
+      "file": "launchStart.wav",
+      "text": "Launch sequence started. Destination: the lunar south pole.",
+      "durationMs": 3432
+    },
+    "liftoff": {
+      "file": "liftoff.wav",
+      "text": "Liftoff confirmed.",
+      "durationMs": 1502
+    },
+    "leftAtmosphere": {
+      "file": "leftAtmosphere.wav",
+      "text": "We've cleared the atmosphere. Heading for the Moon.",
+      "durationMs": 2523
+    },
+    "lunarApproach": {
+      "file": "lunarApproach.wav",
+      "text": "Approaching the Moon. Preparing for orbital insertion.",
+      "durationMs": 2930
+    },
+    "siteCriteria": {
+      "file": "siteCriteria.wav",
+      "text": "I'm comparing each site on two things: how many hours of sunlight its panels receive, and how many hours it has Earth in view for a direct-to-Earth link. The real terrain at the pole decides both.",
+      "durationMs": 10505
+    },
+    "welcome": {
+      "file": "welcome.wav",
+      "text": "Welcome to TOUCHDOWN. I'm Burrito, your space donkey guide. Let's choose where and when to land at the Moon's south pole.",
+      "durationMs": 6371
+    }
+  }
 }
