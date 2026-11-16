@@ -38,6 +38,13 @@ function source(over: Partial<{ phase: PhaseName; mode: RunMode; hud: PhaseHud |
   };
 }
 
+const NO_CAER = metrics('no-caer', 'NO CAER', 2, 0, {
+  site: { id: 'no-caer', name: 'NO CAER', horizonSource: 'lola', hasTerrain: true, crash: true } as SiteMetrics['site'],
+  status: 'not_viable',
+});
+// NO CAER va en medio a propósito: si una herramienta lo deja pasar, se nota en el puesto y en el conteo.
+const WITH_DEMO = [RANKING[0]!, NO_CAER, RANKING[1]!, RANKING[2]!, RANKING[3]!];
+
 const tool = (src: MissionSource, name: string) => createMissionTools(src).find((t) => t.name === name)!;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tool outputs are free-form JSON
 const call = async (src: MissionSource, name: string, input: unknown = {}) => (await tool(src, name).run(input)) as Record<string, any>;
@@ -136,6 +143,66 @@ describe('mission tools', () => {
     expect(out.cambio_de_puntaje).toBeNull();
     expect(out.nota_retraso).toMatch(/órbita/);
     expect(await call({ ...source(), data: null }, 'datos_de_mision')).toMatchObject({ disponible: false });
+  });
+
+  describe('NO CAER is a simulated engine failure, never a real site', () => {
+    it('comparar_sitios skips it and sitios_evaluados counts only the real sites', async () => {
+      const out = await call(source({ ranking: WITH_DEMO }), 'comparar_sitios', { cantidad: 5 });
+      expect(out.mejores_sitios.map((s: { sitio: string }) => s.sitio)).not.toContain('NO CAER');
+      expect(out.mejores_sitios).toHaveLength(4);
+      expect(out.sitios_evaluados).toBe(4);
+    });
+
+    it('analisis_del_sitio by name says it is a demonstration case and lends no figures', async () => {
+      for (const sitio of ['NO CAER', 'no caer', 'no-caer']) {
+        const out = await call(source({ ranking: WITH_DEMO }), 'analisis_del_sitio', { sitio });
+        expect(out).toMatchObject({ sitio: 'NO CAER', es_caso_de_demostracion: true, es_sitio_real: false });
+        expect(out.resumen).toMatch(/demostración.*falla simulada del motor/);
+        for (const borrowed of ['puntaje_de_100', 'puesto_en_el_ranking', 'estado', 'sol', 'tierra', 'horizonte', 'temperatura_estimada_c']) expect(out).not.toHaveProperty(borrowed);
+      }
+    });
+
+    it('analisis_del_sitio with no parameter gives the same answer when NO CAER is the chosen one', async () => {
+      const out = await call(source({ ranking: WITH_DEMO, selected: NO_CAER }), 'analisis_del_sitio');
+      expect(out).toMatchObject({ es_caso_de_demostracion: true, es_el_sitio_elegido: true });
+      expect(out).not.toHaveProperty('sol');
+    });
+
+    it('the lists of possible sites never offer it', async () => {
+      const none = await call(source({ ranking: WITH_DEMO, selected: null }), 'analisis_del_sitio');
+      expect(none.sitios_del_catalogo).not.toContain('NO CAER');
+      const unknown = await call(source({ ranking: WITH_DEMO }), 'analisis_del_sitio', { sitio: 'Atlantis' });
+      expect(unknown.sitios_del_catalogo).toHaveLength(4);
+    });
+
+    it('datos_de_mision gives no score for it', async () => {
+      const out = await call(source({ ranking: WITH_DEMO, selected: NO_CAER }), 'datos_de_mision');
+      expect(out).toMatchObject({ puntaje_actual: null, cambio_de_puntaje: null });
+      expect(out.nota_sitio).toMatch(/demostración/);
+    });
+
+    it('estado_del_viaje counts only the real rows on screen', async () => {
+      const rows = [
+        { id: 'site-malapert-massif', rank: 1, name: 'Malapert Massif', score: 82, status: 'viable' as const, selected: false },
+        { id: 'site-no-caer', rank: 2, name: 'NO CAER', score: 0, status: 'not_viable' as const, selected: false, demo: true },
+      ];
+      const hud: PhaseHud = { figure: { value: '1', caption: 'x' }, side: { kind: 'ranking', title: 'Sitios evaluados', rows } };
+      expect((await call(source({ hud }), 'estado_del_viaje')).sitios_evaluados_en_pantalla).toBe(1);
+    });
+  });
+
+  it('estado_del_viaje marks the borrowed readings as a demo case when NO CAER is the chosen site', async () => {
+    const hud: PhaseHud = {
+      figure: { value: '2.1°', caption: 'Tierra sobre el horizonte' },
+      side: { kind: 'sky', blocks: [{ kind: 'earth', label: 'Tierra', value: '2.1°', detail: 'x', shareLabel: '40 %' } as never] },
+    };
+    const demo = await call(source({ phase: 'pov', hud, ranking: WITH_DEMO, selected: NO_CAER }), 'estado_del_viaje');
+    expect(demo.es_caso_de_demostracion).toBe(true);
+    expect(demo.nota_sitio).toMatch(/demostración/);
+    expect(demo.nota_sitio).toMatch(/Malapert Massif/);
+    const real = await call(source({ phase: 'pov', hud }), 'estado_del_viaje');
+    expect(real).not.toHaveProperty('es_caso_de_demostracion');
+    expect(real).not.toHaveProperty('nota_sitio');
   });
 
   it('never writes to the app', async () => {

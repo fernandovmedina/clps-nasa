@@ -1,83 +1,5 @@
 @import 'tailwindcss' source('..');
 
-:root {
-  color-scheme: light;
-  --bg-base: #faf9f5;
-  --bg-surface: #ffffff;
-  --bg-elevated: #ffffff;
-  --bg-raised: #f0eee6;
-  --bg-field: #ffffff;
-  --bg-selected: #e3dacc;
-  --bg-pressed: #e3dacc;
-  --bg-toggle-on: #ffffff;
-  --label: #141413;
-  --label-2: #5e5d59;
-  --label-3: #8a8880;
-  --line: rgba(31, 30, 29, 0.15);
-  --line-strong: rgba(31, 30, 29, 0.3);
-  --control-border: #8e8c85;
-  --scrim: rgba(20, 20, 19, 0.45);
-  --accent: #d97757;
-  --on-accent: #141413;
-  --accent-text: #a64b2f;
-  --sun: #9b8223;
-  --earth: #2a78d6;
-  --both: #558a42;
-  --viable: #558a42;
-  --marginal: #9b8223;
-  --idle: #8a8880;
-  --bad: #b3261e;
-  --viable-bg: #bcd1ca;
-  --marginal-bg: #efe3b5;
-  --bad-bg: #ebcece;
-  --on-status: #141413;
-  --terrain: #3d3d3a;
-  --terrain-line: #87867f;
-  --sky-bg: #141413;
-  --sky-text: #faf9f5;
-  --sky-text-2: #c2c0b6;
-  --sky-grid: rgba(250, 249, 245, 0.12);
-  --sky-grid-strong: rgba(250, 249, 245, 0.28);
-  --sky-control: rgba(250, 249, 245, 0.4);
-  --sky-sun: #e8c547;
-  --sky-earth: #8fb8e0;
-  --sky-terrain: #3d3d3a;
-  --sky-terrain-line: #87867f;
-}
-
-:root[data-theme='dark'] {
-  color-scheme: dark;
-  --bg-base: #141413;
-  --bg-surface: #1f1e1d;
-  --bg-elevated: #1f1e1d;
-  --bg-raised: #2b2a28;
-  --bg-field: #141413;
-  --bg-selected: #3a3732;
-  --bg-pressed: #3a3732;
-  --bg-toggle-on: #3a3732;
-  --label: #faf9f5;
-  --label-2: #b0aea5;
-  --label-3: #8a8880;
-  --line: rgba(250, 249, 245, 0.12);
-  --line-strong: rgba(250, 249, 245, 0.3);
-  --control-border: #7a786f;
-  --scrim: rgba(0, 0, 0, 0.55);
-  --accent: #d97757;
-  --on-accent: #141413;
-  --accent-text: #d97757;
-  --sun: #c9a82d;
-  --earth: #2a78d6;
-  --both: #558a42;
-  --viable: #558a42;
-  --marginal: #c9a82d;
-  --idle: #8a8880;
-  --bad: #f28b82;
-  --viable-bg: #bcd1ca;
-  --marginal-bg: #efe3b5;
-  --bad-bg: #ebcece;
-  --on-status: #141413;
-}
-
 @theme inline {
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --color-base: var(--bg-base);
@@ -255,33 +177,12 @@ body {
 }
 
 .slate {
-  --panel: var(--sky-bg);
-  --bg-base: var(--sky-bg);
-  --bg-surface: var(--sky-bg);
-  --bg-elevated: var(--sky-bg);
-  --bg-field: var(--sky-bg);
-  --bg-raised: rgba(250, 249, 245, 0.1);
-  --bg-selected: rgba(250, 249, 245, 0.18);
-  --bg-pressed: rgba(250, 249, 245, 0.18);
-  --label: var(--sky-text);
-  --label-2: var(--sky-text-2);
-  --line: var(--sky-grid);
-  --line-strong: var(--sky-grid-strong);
-  --control-border: var(--sky-control);
-  --sun: var(--sky-sun);
-  --earth: var(--sky-earth);
-  --terrain: var(--sky-terrain);
-  --terrain-line: var(--sky-terrain-line);
-  --accent-text: var(--accent);
-  background: var(--panel);
+  --bg-base: var(--bg-raised);
+  --bg-elevated: var(--bg-raised);
+  --bg-field: var(--bg-raised);
+  background: var(--bg-raised);
   color: var(--label);
-}
-
-:root[data-theme='dark'] .slate-banner {
-  --panel: #1f1e1d;
-  --bg-base: #1f1e1d;
-  --bg-surface: #1f1e1d;
-  --bg-elevated: #1f1e1d;
+  border: 0.5px solid var(--line-strong);
 }
 
 .skeleton {
@@ -343,50 +244,25 @@ body {
 }
 
 @media print {
-  :root,
-  :root[data-theme='light'],
-  :root[data-theme='dark'] {
-    color-scheme: light;
+  :root {
     --bg-base: #ffffff;
     --bg-surface: #ffffff;
     --bg-elevated: #ffffff;
-    --bg-raised: #f0eee6;
     --bg-field: #ffffff;
-    --label: #141413;
     --label-2: #3d3d3a;
     --line: rgba(0, 0, 0, 0.25);
     --line-strong: rgba(0, 0, 0, 0.45);
     --control-border: #5e5d59;
-    --accent-text: #a64b2f;
-    --sun: #9b8223;
-    --earth: #2a78d6;
-    --both: #558a42;
-    --viable: #558a42;
-    --marginal: #9b8223;
-    --idle: #8a8880;
-    --bad: #b3261e;
-    --terrain: #d6d4cb;
-    --terrain-line: #5e5d59;
   }
-  .slate,
-  :root[data-theme='dark'] .slate-banner {
-    --panel: #ffffff;
+  .slate {
     --bg-base: #ffffff;
-    --bg-surface: #ffffff;
     --bg-elevated: #ffffff;
     --bg-field: #ffffff;
-    --bg-raised: #f0eee6;
-    --label: #141413;
     --label-2: #3d3d3a;
     --line: rgba(0, 0, 0, 0.25);
     --line-strong: rgba(0, 0, 0, 0.45);
-    --control-border: #5e5d59;
-    --sun: #9b8223;
-    --earth: #2a78d6;
-    --terrain: #d6d4cb;
-    --terrain-line: #5e5d59;
-    --accent-text: #a64b2f;
-    border: 0.5px solid rgba(0, 0, 0, 0.25);
+    background: #ffffff;
+    border-color: rgba(0, 0, 0, 0.25);
   }
   .no-print {
     display: none !important;

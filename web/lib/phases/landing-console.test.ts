@@ -236,7 +236,9 @@ describe('CabinConsole content', () => {
     expect(t).toContain('8.8 d');
     expect(t).toContain('2.5 d');
     expect(t).toContain('71 %');
-    expect(t).toContain('72 · Marginal');
+    expect(t).toContain('72/100 · Marginal');
+    expect(t).toContain('Disco solar visible');
+    expect(t).not.toContain('Potencia solar');
   });
 });
 

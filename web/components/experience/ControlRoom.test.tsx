@@ -127,6 +127,29 @@ describe('ControlRoom', () => {
     expect(rows[0]!.textContent).toContain('Viable');
   });
 
+  it('shows NO CAER as a demo, with no score and no status, in the site card and in the ranking', async () => {
+    const demo = { ...metrics('no-caer', 3, 'NO CAER', 0, 'not_viable'), site: { id: 'no-caer', name: 'NO CAER', crash: true, region: undefined } };
+    const contrast = { ...metrics('equ', 2, 'Sitio ecuatorial', 40, 'marginal'), site: { id: 'equ', name: 'Sitio ecuatorial', region: 'equatorial' } };
+    const fake = fakeApp(flyingHud('1.0 km'), 'orbit');
+    fake.state.selected = demo;
+    fake.state.ranking = [metrics('s', 1, 'Shackleton Connecting Ridge', 95, 'viable'), contrast, demo];
+    mount(fake);
+    await tick();
+    const site = screen.getByRole('region', { name: 'Sitio' });
+    expect(within(site).getByText('NO CAER')).toBeTruthy();
+    expect(within(site).getByText('Demo · falla simulada del motor')).toBeTruthy();
+    expect(within(site).queryByText('No viable')).toBeNull();
+    expect(within(site).queryByText('de 100')).toBeNull();
+    expect(within(site).queryByText('0')).toBeNull();
+    const rows = within(screen.getByRole('region', { name: 'Ranking de sitios' })).getAllByRole('listitem');
+    expect(rows[2]!.textContent).toContain('NO CAER');
+    expect(rows[2]!.textContent).toContain('Demo · falla simulada del motor');
+    expect(rows[2]!.textContent).not.toContain('No viable');
+    expect(rows[2]!.textContent).not.toMatch(/\b0\b/);
+    expect(rows[1]!.textContent).toContain('Contraste · ecuatorial');
+    expect(rows[1]!.textContent).toContain('Marginal');
+  });
+
   it('says the site is still to choose before the orbit', async () => {
     mount(fakeApp(waitingHud()));
     await tick();

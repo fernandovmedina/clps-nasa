@@ -6,10 +6,25 @@ import { glowTexture } from '../engine/textures';
 import { clamp01, disposeTree, rand, smooth } from '../engine/util';
 import { ensureSelection } from './pov';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
+import { paperLabel } from './markers';
+import { controlHrefFor } from '../mission/control-link';
 import { earthRangeKmAt } from '../mission/global-track';
 import { fmtInt, fmtPercent, fmtSigned, signalDelayS, type HudReadout, type PhaseHud } from '../engine/hud';
 
 const TX_SECONDS = 14;
+
+/**
+ * Earth's elevation and why it is or is not visible. The terrain horizon is the
+ * elevation minus how far the Earth is above it (the LOLA mask at that azimuth);
+ * a spherical horizon is the geometric 0°.
+ */
+export function earthElevationText(elevation: number, aboveHorizon: number, source: 'lola' | 'spherical'): string {
+  const value = `${fmtSigned(elevation, 2)}°`;
+  if (aboveHorizon > 0) return `${value} · visible`;
+  if (source === 'spherical') return `${value} · bajo el horizonte geométrico`;
+  if (elevation > 0) return `${value} · bajo el horizonte LOLA (${fmtSigned(elevation - aboveHorizon, 2)}°)`;
+  return `${value} · bajo el horizonte`;
+}
 const LIGHT_TIME_S = 384400 / 299792.458;
 
 /** Animated energy beam between two points (additive, flowing stripes toward `to`). */
@@ -39,6 +54,17 @@ function beam(from: THREE.Vector3, to: THREE.Vector3, rFrom: number, rTo: number
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
   mesh.frustumCulled = false; mesh.renderOrder = 5;
   return { mesh, mat, dir, len: L, from: from.clone() };
+}
+
+const PACKETS_TOTAL = 4096;
+/** El satélite de relevo es un gráfico, no una posición calculada: el rótulo lo dice. */
+export const RELAY_LABEL = 'Relevo (posición ilustrativa)';
+
+/** «2 048 / 4 096», con el mismo formato de número que el DOM (el panel del visor usaba en-US: «4,096»). */
+export const packetsText = (sent: number) => `${fmtInt(sent * PACKETS_TOTAL)} / ${fmtInt(PACKETS_TOTAL)}`;
+
+export function buildRelayLabel() {
+  return paperLabel([{ text: RELAY_LABEL, size: 40, weight: 700 }], 330, { pad: 14, name: 'label:relevo' });
 }
 
 /** Phase 5 — successful landing: sunlight on the arrays, data beamed to Earth. */
@@ -92,6 +118,9 @@ export class TransmitPhase implements Phase {
       this.beams.push(beam(this.relay, earthSpot, 4, 260, 0x7fd0ff, 60, 600));
       const sat = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xbfe6ff, blending: THREE.AdditiveBlending, depthWrite: false }));
       sat.position.copy(this.relay); sat.scale.setScalar(60); this.fx.add(sat);
+      const satLabel = buildRelayLabel();
+      satLabel.position.copy(this.relay).add(new THREE.Vector3(0, -110, 0));
+      this.fx.add(satLabel);
     }
     this.beams.forEach((b) => this.fx.add(b.mesh));
 
@@ -212,19 +241,19 @@ export class TransmitPhase implements Phase {
     g.font = `800 64px ${UI.font}`; g.fillStyle = UI.ok; g.fillText('¡Alunizaje exitoso!', 48, 112);
     g.font = `600 30px ${UI.font}`; g.fillStyle = UI.text; g.fillText(m.site.name, 48, 166);
     g.font = `500 24px ${UI.mono}`; g.fillStyle = UI.dim;
-    g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S ${m.site.lon.toFixed(2)}° · viabilidad ${Math.round(m.score)}%`, 48, 204);
+    g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S ${m.site.lon.toFixed(2)}° · viabilidad ${Math.round(m.score)}/100`, 48, 204);
 
     const done = this.sent >= 1;
-    g.font = `700 30px ${UI.font}`; g.fillStyle = done ? UI.ok : UI.accent;
+    g.font = `700 30px ${UI.font}`; g.fillStyle = done ? UI.ok : UI.accentText;
     g.fillText(done ? 'Telemetría recibida en la Tierra' : this.relay ? 'Transmitiendo vía satélite de relevo…' : 'Transmitiendo directo a la Tierra…', 48, 278);
-    roundRect(g, 48, 300, 928, 14, 7); g.fillStyle = 'rgba(250,249,245,.14)'; g.fill();
+    roundRect(g, 48, 300, 928, 14, 7); g.fillStyle = UI.lineStrong; g.fill();
     if (this.sent > 0.005) { roundRect(g, 48, 300, 928 * this.sent, 14, 7); g.fillStyle = UI.accent; g.fill(); }
     g.font = `700 26px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right'; g.fillText(`${Math.round(this.sent * 100)}%`, 976, 350); g.textAlign = 'left';
 
     const rows: [string, string][] = [
       ['Enlace', this.relay ? 'Relevo orbital (Tierra bajo el horizonte)' : `Directo · Tierra a ${m.earth.elevation.toFixed(1)}°`],
       ['Retardo de la señal', `${LIGHT_TIME_S.toFixed(2)} s`],
-      ['Paquetes enviados', `${Math.round(this.sent * 4096).toLocaleString('en-US')} / 4,096`],
+      ['Paquetes enviados', packetsText(this.sent)],
       ['Energía solar', w.sunVisible > 0.15 ? `${m.powerPct}% · Sol a ${m.sun.elevation.toFixed(1)}°` : 'En sombra · baterías'],
       ['Ventana restante', m.earth.aboveHorizon > 0 ? `${Math.round(m.hoursToEarthset)} h de comunicación` : '—'],
     ];
@@ -244,7 +273,7 @@ export class TransmitPhase implements Phase {
     const rangeKm = data ? earthRangeKmAt(data.global, data.landingDate) : null;
     const items: HudReadout[] = [
       { label: 'Enlace', value: this.relay ? 'Relevo orbital' : 'Directo con la Tierra' },
-      { label: 'Elevación de la Tierra', value: `${fmtSigned(m.earth.elevation, 2)}° · ${w.earthVisible ? 'visible' : 'bajo el horizonte'}` },
+      { label: 'Elevación de la Tierra', value: earthElevationText(m.earth.elevation, m.earth.aboveHorizon, m.site.horizonSource) },
     ];
     if (rangeKm !== null) {
       items.push(
@@ -256,7 +285,7 @@ export class TransmitPhase implements Phase {
       figure: { value: fmtPercent(this.sent * 100), caption: 'de la telemetría enviada', badge: { label: 'Alunizaje exitoso', tone: 'ok' } },
       progress: { value: this.sent, label: 'Telemetría enviada' },
       facts: [
-        { label: 'Paquetes enviados', value: `${fmtInt(this.sent * 4096)} / 4 096` },
+        { label: 'Paquetes enviados', value: packetsText(this.sent) },
         { label: 'Energía solar', value: w.sunVisible > 0.15 ? `${m.powerPct} % · Sol a ${m.sun.elevation.toFixed(1)}°` : 'En sombra · baterías' },
         { label: 'Ventana restante', value: m.earth.aboveHorizon > 0 ? `${Math.round(m.hoursToEarthset)} h de comunicación` : '—' },
       ],
@@ -266,7 +295,7 @@ export class TransmitPhase implements Phase {
         { id: 'again', label: 'Repetir misión', run: () => this.app.goTo('launch', 1.0, 1.2) },
         { id: 'other', label: 'Otro sitio', run: () => this.app.goTo('orbit', 0.8, 1.0) },
       ],
-      primary: { id: 'report', label: 'Ver reporte en Mission Control', href: '/mission-control/' },
+      primary: { id: 'report', label: 'Ver reporte en Mission Control', href: controlHrefFor(this.app, window.location.search) },
     };
   }
 }

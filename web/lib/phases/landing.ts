@@ -10,7 +10,7 @@ import { surfaceFor, type SurfaceWorld } from './surface-world';
 import { fmtInt, fmtLatLon, fmtPercent, type PhaseHud } from '../engine/hud';
 
 const T_BRAKE = 17;     // end of the powered approach
-const T_TOUCH = 25.5;   // touchdown
+export const T_TOUCH = 25.5;   // touchdown
 const DECK = 3.0;       // cockpit floor height above the ground
 // Matches the feel of the old 0.2-per-frame smoothing at 60 fps, but frame-rate independent
 // (the 90 Hz Quest previously read speeds more sluggish than desktop with the per-frame constant).
@@ -65,6 +65,31 @@ function buildCockpit(app: LunarApp) {
   return { group: g, lights };
 }
 
+/** Follows `prefers-reduced-motion` live, like launch.ts; without matchMedia (tests, old browsers) motion stays on. */
+export function watchReducedMotion(): { reduced: () => boolean; stop: () => void } {
+  const query = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  let reduced = query?.matches ?? false;
+  const onChange = (e: MediaQueryListEvent) => { reduced = e.matches; };
+  query?.addEventListener('change', onChange);
+  return { reduced: () => reduced, stop: () => query?.removeEventListener('change', onChange) };
+}
+
+const SHAKE_SECONDS = 1.2;
+const JOLT_SECONDS = 0.5;
+
+/** Amplitude (m) of the desktop-only camera shake `since` seconds after the impact; none in VR or with reduced motion. */
+export function impactShakeAmplitude(since: number, isXR: boolean, reducedMotion: boolean): number {
+  if (isXR || reducedMotion || since < 0 || since >= SHAKE_SECONDS) return 0;
+  return 0.6 * (1 - since / SHAKE_SECONDS);
+}
+
+/** Vertical camera offset (m) of the desktop-only touchdown jolt at time `t`; none in VR or with reduced motion. */
+export function touchdownJolt(t: number, isXR: boolean, reducedMotion: boolean): number {
+  const since = t - T_TOUCH;
+  if (isXR || reducedMotion || since <= 0 || since >= JOLT_SECONDS) return 0;
+  return Math.sin(since * 40) * 0.04 * (1 - since / JOLT_SECONDS);
+}
+
 /** Phase 4 — powered descent seen from inside the capsule. */
 export class LandingPhase implements Phase {
   readonly name = 'landing' as const;
@@ -88,6 +113,7 @@ export class LandingPhase implements Phase {
   private fire: Particles | null = null; private smoke: Particles | null = null;
   private blast = new THREE.PointLight(0xffa040, 0, 400, 1.2);
   private alarm: THREE.Mesh | null = null;
+  private motion = watchReducedMotion();
 
   constructor(private app: LunarApp) {
     const m = ensureSelection(app);
@@ -133,6 +159,7 @@ export class LandingPhase implements Phase {
   }
 
   exit() {
+    this.motion.stop();
     this.thruster?.stop();
     this.cockpit.group.removeFromParent(); disposeTree(this.cockpit.group);
     this.cabinConsole.dispose();
@@ -196,10 +223,8 @@ export class LandingPhase implements Phase {
     this.last.copy(eye);
 
     const since = exploded ? t - this.impactAt : 0;
-    if (!app.isXR && exploded && since < 1.2) { // desktop-only shake, never in VR
-      const a = 0.6 * (1 - since / 1.2);
-      eye.x += rand(-a, a); eye.y += rand(-a, a); eye.z += rand(-a, a);
-    }
+    const a = exploded ? impactShakeAmplitude(since, app.isXR, this.motion.reduced()) : 0;
+    if (a > 0) { eye.x += rand(-a, a); eye.y += rand(-a, a); eye.z += rand(-a, a); }
     const look = exploded ? this.impactPoint.clone().add(new THREE.Vector3(0, 6, 0)) : this.world.lz.clone();
     app.setView(eye, look, { rate: exploded ? 3 : 6 });
 
@@ -283,8 +308,7 @@ export class LandingPhase implements Phase {
     this.last.copy(eye);
     this.fuel = Math.max(9, 100 - t * 3.4);
 
-    // desktop-only touchdown jolt (no camera shake in VR)
-    if (!app.isXR && t > T_TOUCH && t < T_TOUCH + 0.5) eye.y += Math.sin((t - T_TOUCH) * 40) * 0.04 * (1 - (t - T_TOUCH) / 0.5);
+    eye.y += touchdownJolt(t, app.isXR, this.motion.reduced());
     const look = t < T_BRAKE ? this.world.lz.clone() : this.world.lz.clone().addScaledVector(this.world.earthHoriz, 40);
     app.setView(eye, look, { rate: 6 });
 

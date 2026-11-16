@@ -354,3 +354,65 @@ describe('LunarApp VR preview and phases that own the run controls', () => {
     expect(updateUi.mock.calls.length).toBe(running + 3);
   });
 });
+
+describe('LunarApp render style and free look per phase', () => {
+  const DEFAULT_EXPOSURE = 1.05;
+
+  async function bootWithSite(extra: Partial<Phase>) {
+    const { app, probe } = await boot();
+    register(app, 'pov', probe, extra);
+    register(app, 'landing', probe);
+    return { app, renderer: app.renderer as unknown as { toneMapping: number; toneMappingExposure: number } };
+  }
+
+  it('a phase can raise the exposure and change the tone mapping, and the next phase gets the defaults back', async () => {
+    const { app, renderer } = await bootWithSite({ render: { toneMapping: THREE.NeutralToneMapping, exposure: 1.9 } });
+    const base = renderer.toneMapping;
+    expect(renderer.toneMappingExposure).toBe(DEFAULT_EXPOSURE);
+    app.setPhase('pov');
+    expect(renderer.toneMapping).toBe(THREE.NeutralToneMapping);
+    expect(renderer.toneMappingExposure).toBe(1.9);
+    app.setPhase('landing');
+    expect(renderer.toneMapping).toBe(base);
+    expect(renderer.toneMappingExposure).toBe(DEFAULT_EXPOSURE);
+  });
+
+  it('leaving the phase through a restart also restores the defaults', async () => {
+    const { app, renderer } = await bootWithSite({ render: { toneMapping: THREE.AgXToneMapping, exposure: 2 } });
+    app.setPhase('pov');
+    app.restart();
+    expect(renderer.toneMappingExposure).toBe(DEFAULT_EXPOSURE);
+    expect(renderer.toneMapping).toBe(THREE.ACESFilmicToneMapping);
+  });
+
+  it('a dragged look drifts back after 4 s in an ordinary phase but stays put when the phase holds the look', async () => {
+    const { app } = await bootWithSite({ holdsLook: true });
+    app.setPhase('landing');
+    app.lookDrag(-200, 0);
+    for (let i = 0; i < 160; i++) tick();
+    expect(Math.abs(app.camera.rotation.y)).toBeLessThan(0.3);
+
+    app.setPhase('pov');
+    app.lookDrag(-200, 0);
+    tick();
+    const dragged = app.camera.rotation.y;
+    for (let i = 0; i < 160; i++) tick();
+    expect(dragged).toBeCloseTo(0.8, 5);
+    expect(app.camera.rotation.y).toBeCloseTo(dragged, 5);
+  });
+
+  it('releaseLook eases a dragged look back to the framing even in a phase that holds it', async () => {
+    const { app } = await bootWithSite({ holdsLook: true });
+    app.setPhase('pov');
+    app.lookDrag(-200, 90);
+    tick();
+    expect(Math.abs(app.camera.rotation.y)).toBeGreaterThan(0.5);
+    app.releaseLook();
+    for (let i = 0; i < 80; i++) tick();
+    expect(app.camera.rotation.y).toBe(0);
+    expect(app.camera.rotation.x).toBe(0);
+    app.lookDrag(-100, 0);
+    tick();
+    expect(app.camera.rotation.y).toBeCloseTo(0.4, 5);
+  });
+});

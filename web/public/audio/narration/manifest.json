@@ -24,8 +24,8 @@
     },
     "siteCriteria": {
       "file": "siteCriteria.wav",
-      "text": "Estoy comparando cada sitio por tres cosas: cuánto sol reciben sus paneles solares, si tienen línea directa con la Tierra para comunicarse, y qué tan inclinado es el terreno para alunizar seguro.",
-      "durationMs": 10090
+      "text": "Estoy comparando cada sitio por dos cosas: cuántas horas de sol reciben sus paneles y cuántas horas tienen la Tierra a la vista para comunicarse directo. El relieve real del polo decide las dos.",
+      "durationMs": 10147
     },
     "welcome": {
       "file": "welcome.wav",

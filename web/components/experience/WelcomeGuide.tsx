@@ -165,7 +165,7 @@ export default function WelcomeGuide({ app, onChoose }: Props) {
           {step === 'speaking' && <p className={styles.bubble}>{SUBTITLE}</p>}
         </div>
         {step === 'tap' && (
-          <button ref={tapButton} type="button" className={`${layer.btn} ${styles.tap}`} data-variant="primary" onClick={retry}>
+          <button ref={tapButton} type="button" className={`${layer.btn} ${styles.tap}`} data-variant="cta" onClick={retry}>
             Toca para empezar
           </button>
         )}
@@ -185,7 +185,7 @@ export default function WelcomeGuide({ app, onChoose }: Props) {
               <p className={dialog.lede}>Soy tu guía en esta misión. ¿Cuál es tu rol ahora?</p>
             </div>
             <div className={styles.roles}>
-              <button type="button" className={layer.btn} data-variant="primary" disabled={done} onClick={() => choose('vr')}>
+              <button type="button" className={layer.btn} data-variant="cta" disabled={done} onClick={() => choose('vr')}>
                 Voy en VR
               </button>
               <button type="button" className={layer.btn} disabled={done} onClick={() => choose('monitor')}>

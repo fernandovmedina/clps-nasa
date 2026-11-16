@@ -10,10 +10,12 @@ interface Props {
   /** The launch has not started: the plan can still change. */
   prelaunch: boolean;
   onChangeLaunch: () => void;
+  /** Mission Control with this mission already loaded. */
+  controlHref: string;
 }
 
 /** The "Misión" block of the left rail, for the crew and for the monitor that follows them. */
-export default function MissionBlock({ mission, code, follow, roomOpen, prelaunch, onChangeLaunch }: Props) {
+export default function MissionBlock({ mission, code, follow, roomOpen, prelaunch, onChangeLaunch, controlHref }: Props) {
   if (follow) {
     return (
       <section className={styles.mission} aria-label="Misión que sigues">
@@ -40,7 +42,7 @@ export default function MissionBlock({ mission, code, follow, roomOpen, prelaunc
       <div className={styles.missionLinks}>
         {prelaunch
           ? <button type="button" className={styles.linkBtn} onClick={onChangeLaunch}>Cambiar lanzamiento</button>
-          : <a href="/mission-control/">Análisis de sitios y fechas</a>}
+          : <a href={controlHref}>Análisis de sitios y fechas</a>}
       </div>
       <div className={styles.codeBox}>
         <span>Código Mission Control</span>

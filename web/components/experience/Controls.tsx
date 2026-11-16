@@ -16,7 +16,7 @@ export default function Controls({ mode, hud, pauseRef, onTogglePause, onStop, o
   const primary = hud?.primary;
   return (
     <div className={styles.controls} role="group" aria-label="Controles de la misión">
-      <button ref={pauseRef} type="button" className={styles.btn} data-variant={paused ? 'primary' : undefined} disabled={hud?.waiting === true} onClick={onTogglePause}>
+      <button ref={pauseRef} type="button" className={styles.btn} data-variant={paused ? 'cta' : undefined} disabled={hud?.waiting === true} onClick={onTogglePause}>
         {paused ? <PlayIcon /> : <PauseIcon />}{paused ? 'Reanudar' : 'Pausar'}
       </button>
       <button type="button" className={styles.btn} onClick={onStop}><StopIcon />Detener</button>
@@ -24,9 +24,9 @@ export default function Controls({ mode, hud, pauseRef, onTogglePause, onStop, o
         <button key={a.id} type="button" className={styles.btn} disabled={paused || a.disabled} onClick={() => onAct(a.id)}>{a.label}</button>
       ))}
       {primary && (primary.href ? (
-        <a className={styles.btn} data-variant={paused ? undefined : 'primary'} href={primary.href} target="_blank" rel="noopener noreferrer">{primary.label}</a>
+        <a className={styles.btn} data-variant={paused ? undefined : 'cta'} href={primary.href} target="_blank" rel="noopener noreferrer">{primary.label}</a>
       ) : (
-        <button type="button" className={styles.btn} data-primary="" data-variant={paused ? undefined : 'primary'} disabled={paused || primary.disabled} onClick={() => onAct(primary.id)}>
+        <button type="button" className={styles.btn} data-primary="" data-variant={paused ? undefined : 'cta'} disabled={paused || primary.disabled} onClick={() => onAct(primary.id)}>
           {primary.label}
         </button>
       ))}

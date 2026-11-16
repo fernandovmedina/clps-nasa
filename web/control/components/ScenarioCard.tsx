@@ -7,9 +7,10 @@ import { UnknownSiteError } from '@/control/lib/data'
 import { formatNumber } from '@/control/lib/format'
 import { countdown, formatDuration, type CountdownResult } from '@/control/lib/countdown'
 import { launchHref } from '@/control/lib/launch'
+import { maskedBy } from '@/control/lib/scenario'
 import type { CardModel } from '@/control/lib/useCardModel'
 import { useCardModel } from '@/control/lib/useCardModel'
-import { formatUtc, fromInputValue, shiftIso, toInputValue, formatUtcDate } from '@/control/lib/time'
+import { DAY_MS, HOUR_MS, formatUtc, fromInputValue, shiftIso, toInputValue, formatUtcDate } from '@/control/lib/time'
 import {
   MAX_DURATION_DAYS,
   MIN_DURATION_DAYS,
@@ -43,13 +44,22 @@ interface Props {
   onChooseSite: () => void
 }
 
-function countdownText(t: Translate, body: 'sun' | 'earth', r: CountdownResult): string {
+function countdownText(
+  t: Translate,
+  body: 'sun' | 'earth',
+  r: CountdownResult,
+  ctx: { landingMs: number; dataEndMs: number },
+): string {
+  if (r.kind === 'set-after-mission') {
+    const day = Math.floor((r.atMs - ctx.landingMs) / DAY_MS)
+    return t(body === 'sun' ? 'sunSetAfter' : 'earthSetAfter', { day })
+  }
   if (r.kind === 'event') {
     const d = formatDuration(r.remainingMs)
     if (body === 'sun') return t(r.event === 'set' ? 'sunSet' : 'sunRise', { d })
     return t(r.event === 'set' ? 'earthSet' : 'earthRise', { d })
   }
-  if (r.kind === 'no-set') return t(body === 'sun' ? 'sunNoSet' : 'earthNoSet')
+  if (r.kind === 'no-set') return t(body === 'sun' ? 'sunNoSet' : 'earthNoSet', { date: formatUtcDate(ctx.dataEndMs) })
   if (r.kind === 'no-rise') return t(body === 'sun' ? 'sunNoRise' : 'earthNoRise')
   return t(body === 'sun' ? 'sunNever' : 'earthNever')
 }
@@ -97,6 +107,7 @@ export function ScenarioCard(props: Props) {
   const response = ok?.response
   const { playing, onAdvance, onTogglePlay } = props
   const missionHours = ok?.missionHours ?? 0
+  const missionEndMs = ok ? ok.landingMs + ok.missionHours * HOUR_MS : undefined
 
   useEffect(() => {
     if (!playing || !selected || missionHours <= 0) return
@@ -115,7 +126,7 @@ export function ScenarioCard(props: Props) {
   const domain =
     data && response ? skyDomain(data.horizon, Math.max(response.sun.max_elev, response.earth.max_elev)) : null
 
-  const launch = selected && ok ? launchHref(scenario.site, ok.landingMs) : null
+  const launch = ok ? launchHref(scenario.site, ok.landingMs) : null
   const showDelta = delayDays !== 0 && original?.ok && shifted?.ok
   const rangeError = shifted && !shifted.ok && shifted.reason === 'range' ? shifted : null
 
@@ -160,6 +171,7 @@ export function ScenarioCard(props: Props) {
           nextRise: events.sun.next_rise,
           nowMs: cursorMs ?? 0,
           neverVisible: response.windows.sun.length === 0,
+          missionEndMs,
         })
       : null
     const earthEvent = events
@@ -169,9 +181,17 @@ export function ScenarioCard(props: Props) {
           nextRise: events.earth.next_rise,
           nowMs: cursorMs ?? 0,
           neverVisible: response.windows.earth.length === 0,
+          missionEndMs,
         })
       : null
     const hours = (n: number) => t('hoursUnit', { n: fmt(n) })
+    const countdownCtx = { landingMs: ok.landingMs, dataEndMs: data.seriesEndMs }
+    const maskedText = (body: { el: number; horizonEl: number; visible: boolean; az: number } | undefined) => {
+      const m = body ? maskedBy(body) : null
+      return m ? t('maskedDetail', { el: fmt(m.el), horizon: fmt(m.horizonEl), gap: fmt(m.gap) }) : null
+    }
+    const sunMasked = maskedText(bodies?.sun)
+    const earthMasked = maskedText(bodies?.earth)
     const siteTitle = name
     const desc = {
       panorama: t('panoramaDesc', {
@@ -202,11 +222,11 @@ export function ScenarioCard(props: Props) {
 
     body = (
       <>
-        <div className="grid gap-6 @md:grid-cols-[minmax(0,1fr)_minmax(0,256px)]">
+        <div className="grid gap-6 @xl:grid-cols-[minmax(0,1fr)_minmax(0,256px)]">
           <div className="grid content-start gap-6">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex flex-nowrap items-center gap-x-4" data-testid="status-score">
               <StatusPill status={response.status} />
-              <p className="num text-title" data-testid="score">
+              <p className="num whitespace-nowrap text-title" data-testid="score">
                 <span className="sr-only">{t('score')}: </span>
                 {t('scoreValue', { n: response.score })}
               </p>
@@ -222,6 +242,11 @@ export function ScenarioCard(props: Props) {
               <p className="num text-caption text-label-2">
                 {t('solarAzimuth')} {bodies ? `${fmt(bodies.sun.az)}°` : '–'} · {sunState}
               </p>
+              {sunMasked && (
+                <p className="num text-caption text-label-2" data-testid="sun-masked">
+                  {sunMasked}
+                </p>
+              )}
             </div>
             <div className="num flex flex-wrap items-center gap-x-3 gap-y-1 text-body">
               <Earth size={18} aria-hidden="true" style={{ color: 'var(--earth)' }} />
@@ -229,6 +254,11 @@ export function ScenarioCard(props: Props) {
                 {t('earthElevation')} {bodies ? `${fmt(bodies.earth.el)}°` : '–'}
               </span>
               <span className="text-label-2">{earthState}</span>
+              {earthMasked && (
+                <span className="basis-full text-caption text-label-2" data-testid="earth-masked">
+                  {earthMasked}
+                </span>
+              )}
             </div>
           </div>
           <div className="slate grid content-start gap-3 rounded-[10px] p-4">
@@ -295,13 +325,13 @@ export function ScenarioCard(props: Props) {
               ) : (
                 <Sunset size={20} aria-hidden="true" style={{ color: 'var(--sun)' }} />
               )}
-              <span className="num">{countdownText(t, 'sun', sunEvent)}</span>
+              <span className="num">{countdownText(t, 'sun', sunEvent, countdownCtx)}</span>
             </li>
           )}
           {earthEvent && (
             <li className="flex items-center gap-3" data-testid="earth-countdown">
               <Earth size={20} aria-hidden="true" style={{ color: 'var(--earth)' }} />
-              <span className="num">{countdownText(t, 'earth', earthEvent)}</span>
+              <span className="num">{countdownText(t, 'earth', earthEvent, countdownCtx)}</span>
             </li>
           )}
         </ul>

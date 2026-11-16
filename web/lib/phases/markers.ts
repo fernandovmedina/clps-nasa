@@ -1,12 +1,75 @@
 import * as THREE from 'three';
 import type { Marker, MarkerKind } from '@touchdown/core';
-import { UI, textLabel } from '../engine/panel';
+import { UI, roundRect } from '../engine/panel';
+import { palette } from '../ui/palette';
+
+export interface PaperLine { text: string; size: number; weight?: number; /** Línea secundaria: tinta 2 en vez de tinta. */ muted?: boolean }
+
+const PAPER_PAD_X = 22;
+/** Los metros por pixel de una ficha salen de su ancho nominal sobre estos 512 px, como las fichas de siempre. */
+const PAPER_NOMINAL_W = 512;
+const PAPER_MIN_W = 96;
+const PAPER_ACCENT_H = 5;
+
+/** Color de estado para usarlo solo como detalle (filete) sobre papel: como texto no llega a 4.5:1. */
+export function paperStatusColor(status: 'viable' | 'marginal' | 'bad'): string {
+  return palette[status];
+}
+
+/** Fondo de papel opaco, borde fino de control y, si se pide, un filete de color de estado en el borde inferior. */
+export function paintPaperChip(g: CanvasRenderingContext2D, w: number, h: number, accent?: string, radius = 18) {
+  roundRect(g, 2, 2, w - 4, h - 4, radius);
+  g.fillStyle = palette['bg-surface']; g.fill();
+  g.strokeStyle = palette['control-border']; g.lineWidth = 2; g.stroke();
+  if (accent) {
+    roundRect(g, radius, h - 2 - 4 - PAPER_ACCENT_H, w - radius * 2, PAPER_ACCENT_H, PAPER_ACCENT_H / 2);
+    g.fillStyle = accent; g.fill();
+  }
+}
+
+/**
+ * Ficha de papel dentro del 3D: fondo papel opaco, texto en tinta (tinta 2 si es secundario), borde fino y el color
+ * de estado, del Sol o de la Tierra solo como filete. El lienzo se mide al texto; `widthM` fija la escala como en las
+ * fichas de 512 px de siempre (metros por pixel = widthM / 512), así que el tamaño del texto no cambia.
+ */
+export function paperLabel(lines: PaperLine[], widthM: number, opts: { pad?: number; accent?: string; name?: string } = {}): THREE.Sprite {
+  const pad = opts.pad ?? 18;
+  const accentRoom = opts.accent ? PAPER_ACCENT_H + 6 : 0;
+  const c = document.createElement('canvas');
+  const g = c.getContext('2d')!;
+  const fontOf = (l: PaperLine) => `${l.weight ?? 600} ${l.size}px ${UI.font}`;
+  let widest = 0;
+  for (const l of lines) {
+    g.font = fontOf(l);
+    const measured = Number(g.measureText(l.text).width);
+    widest = Math.max(widest, Number.isFinite(measured) ? measured : l.text.length * l.size * 0.58);
+  }
+  const W = Math.max(PAPER_MIN_W, Math.ceil(widest + PAPER_PAD_X * 2));
+  const H = Math.ceil(lines.reduce((a, l) => a + l.size * 1.3, 0) + pad * 2 + accentRoom);
+  c.width = W; c.height = H; // redimensionar reinicia el contexto
+  paintPaperChip(g, W, H, opts.accent);
+  let y = pad;
+  for (const l of lines) {
+    g.font = fontOf(l);
+    g.fillStyle = l.muted ? palette['label-2'] : palette.label; g.textBaseline = 'top'; g.textAlign = 'center';
+    g.fillText(l.text, W / 2, y);
+    y += l.size * 1.3;
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, toneMapped: false, depthWrite: false, fog: false }));
+  const mPerPx = widthM / PAPER_NOMINAL_W;
+  sprite.scale.set(W * mPerPx, H * mPerPx, 1);
+  sprite.renderOrder = 15;
+  if (opts.name) sprite.name = opts.name;
+  return sprite;
+}
 
 const STYLE: Record<MarkerKind, { color: string; glyph: string; label: string }> = {
-  rock: { color: '#C9A26B', glyph: '🪨', label: 'Roca' },
-  slope: { color: UI.warn, glyph: '⛰', label: 'Pendiente' },
-  shadow: { color: UI.earth, glyph: '🌑', label: 'Sombra' },
-  other: { color: UI.bad, glyph: '⚠', label: 'Otro' },
+  rock: { color: palette.accent, glyph: '🪨', label: 'Roca' },
+  slope: { color: palette.marginal, glyph: '⛰', label: 'Pendiente' },
+  shadow: { color: palette.earth, glyph: '🌑', label: 'Sombra' },
+  other: { color: palette.bad, glyph: '⚠', label: 'Otro' },
 };
 
 /**
@@ -51,11 +114,9 @@ export class MarkerField {
     ring.position.y = 0.06;
     g.add(ring);
 
-    const lines: { text: string; size: number; color?: string; weight?: number; mono?: boolean }[] = [
-      { text: `${style.glyph} ${style.label}`, size: 32, color: style.color, weight: 800, mono: true },
-    ];
-    if (m.note) lines.push({ text: m.note, size: 24 });
-    const label = textLabel(lines, 2.4);
+    const lines: PaperLine[] = [{ text: `${style.glyph} ${style.label}`, size: 32, weight: 800 }];
+    if (m.note) lines.push({ text: m.note, size: 24, muted: true });
+    const label = paperLabel(lines, 2.4, { accent: style.color });
     label.position.y = 1.7;
     g.add(label);
 

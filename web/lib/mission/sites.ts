@@ -7,9 +7,10 @@
  * does not compute it yet) - kept as a constant purely for the procedural
  * surface renderer in `surface-world.ts`, not used in scoring.
  */
-import type { EphemerisFile, GlobalFile, HorizonFile, HorizonSource, Site, SitesFile, TerrainInfo, Track } from '@touchdown/core';
+import type { EphemerisFile, GlobalFile, HorizonFile, HorizonSource, Region, Site, SitesFile, TerrainInfo, Track } from '@touchdown/core';
 import { sphericalHorizon, trackFromFile } from '@touchdown/core';
 import { readLandingParams } from './landing-param';
+import { DEFAULT_LANDING } from './launch-plan';
 import { loadTerrainPatch, type TerrainPatch } from './terrain';
 
 const DEFAULT_SLOPE_DEG = 6.5;
@@ -25,6 +26,8 @@ export interface SiteInput {
   track: Track;
   horizon: HorizonFile;
   hasTerrain: boolean;
+  /** Catalog region; absent in synthetic sites, which then get no contrast label. */
+  region?: Region;
   horizonSource: HorizonSource;
   ephemerisSource: string;
   /** Real LOLA heightmap, only set when hasTerrain is true. */
@@ -40,6 +43,24 @@ export interface SiteInput {
  */
 export const NO_CAER_SITE_ID = 'no-caer';
 const NO_CAER_SOURCE_ID = 'malapert-massif';
+
+/** Note shown wherever NO CAER appears next to real sites (ranking row, pin, tools). */
+export const DEMO_CRASH_NOTE = 'Caso de demostración · falla simulada del motor';
+
+const CONTRAST_NOTES: Partial<Record<Region, string>> = {
+  equatorial: 'Contraste · ecuatorial',
+  'mid-latitude': 'Contraste · latitud media',
+  'far-side': 'Contraste · lado oculto',
+};
+
+/** Extra data a ranking row carries beyond HudRankRow: what the DOM list and the tools read to tell demo and contrast sites apart. */
+export interface RankRowExtras { note?: string; demo?: boolean }
+
+/** The demo note for NO CAER, the contrast label for sites outside the south pole, nothing for the rest. */
+export function rankingNote(site: Pick<SiteInput, 'crash' | 'region'>): string | undefined {
+  if (site.crash) return DEMO_CRASH_NOTE;
+  return site.region ? CONTRAST_NOTES[site.region] : undefined;
+}
 
 function noCaerSite(sites: SiteInput[]): SiteInput | null {
   const src = sites.find((s) => s.id === NO_CAER_SOURCE_ID) ?? sites.find((s) => s.hasTerrain) ?? sites[0];
@@ -112,6 +133,7 @@ export async function loadMissionData(onProgress: (p: number, msg: string) => vo
       track: trackFromFile(ephemeris),
       horizon,
       hasTerrain: s.has_terrain,
+      region: s.region,
       horizonSource: s.horizon_source,
       ephemerisSource: s.ephemeris_source,
       terrain,
@@ -129,7 +151,7 @@ export async function loadMissionData(onProgress: (p: number, msg: string) => vo
   // Landing date must fall inside ephemerisRange (checked by callers, e.g. orbit.ts's delay button).
   const requested = readLandingParams(new URLSearchParams(window.location.search), ephemerisRange);
   const requestedSiteId = sites.find((s) => s.id === requested?.site)?.id;
-  return { landingDate: requested?.landing ?? new Date(Date.UTC(2027, 0, 10, 0, 0)), sites, global, ephemerisRange, requestedSiteId };
+  return { landingDate: requested?.landing ?? DEFAULT_LANDING, sites, global, ephemerisRange, requestedSiteId };
 }
 
 export type { Site };

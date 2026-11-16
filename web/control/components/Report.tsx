@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, Rocket, TriangleAlert } from 'lucide-react'
 import { useI18n } from '@/control/i18n'
 import { formatNumber } from '@/control/lib/format'
+import { shortSiteName } from '@/control/lib/launch'
 import { bothHours, buildMarkdown, pickRecommended, riskText, risksFor, type ReportEntry } from '@/control/lib/report'
 import { formatUtc } from '@/control/lib/time'
 import { StatusPill } from './CardParts'
@@ -37,18 +38,17 @@ export function Report({
   entries,
   pending,
   delayDays,
-  selectedLetter,
 }: {
   entries: ReportEntry[]
   pending: boolean
   delayDays: number
-  selectedLetter?: string
 }) {
   const { t, locale } = useI18n()
   const [copy, setCopy] = useState<CopyState>('idle')
   const timer = useRef<number | undefined>(undefined)
   const recommended = pickRecommended(entries)
-  const launch = entries.find((e) => e.letter === selectedLetter)?.launchHref
+  // El botón lanza lo que el reporte recomienda, no el escenario seleccionado, y lo rotula así.
+  const launch = recommended?.launchHref
   const hours = (n: number) => formatNumber(locale, n)
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
@@ -71,10 +71,10 @@ export function Report({
         </div>
         <div className="no-print grid justify-items-end gap-1">
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {launch && (
+            {launch && recommended && (
               <a href={launch} className="btn btn-outline" data-testid="launch-link-report">
                 <Rocket size={18} aria-hidden="true" />
-                {t('launchMission')}
+                {t('launchRecommended', { letter: recommended.letter, name: shortSiteName(recommended.name) })}
               </a>
             )}
             <button type="button" className="btn btn-solid" onClick={onCopy} disabled={entries.length === 0}>

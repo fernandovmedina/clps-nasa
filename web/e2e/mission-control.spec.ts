@@ -137,45 +137,55 @@ test('Chang\'e 4 never sees the Earth and is not viable', async ({ page }) => {
   expect(oracle.windows.earth).toEqual([])
 })
 
-test('theme and language toggles change the interface and persist after a reload', async ({ page }) => {
+test('there is no dark theme: the system dark mode and a stored dark preference leave the paper interface alone', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem('touchdown.theme', 'dark')
+    } catch {
+      return
+    }
+  })
   await openApp(page)
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
-  const background = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor)
-  const light = await background()
-  expect(light).toBe('rgb(250, 249, 245)')
-  await page.getByRole('button', { name: 'Cambiar a tema oscuro' }).click()
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
-  expect(await background()).not.toBe(light)
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme', 'dark')
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(250, 249, 245)')
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe('light')
+  await expect(page.getByRole('button', { name: /tema|theme/i })).toHaveCount(0)
+  expect(await page.locator('[data-testid=scenario-card]').first().evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(250, 249, 245)')
+  expect(await page.locator('section.slate').first().evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(240, 238, 230)')
+})
+
+test('language toggle changes the interface and persists after a reload', async ({ page }) => {
+  await openApp(page)
   await page.getByRole('button', { name: 'EN', exact: true }).click()
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
   await expect(page.getByText('Mission delay')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Switch to light theme' })).toBeVisible()
 
   await page.reload()
   await expect(page.locator('main')).toHaveAttribute('aria-busy', 'false')
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
   await expect(page.getByText('Mission delay')).toBeVisible()
-  expect(await page.evaluate(() => localStorage.getItem('touchdown.theme'))).toBe('dark')
   expect(await page.evaluate(() => localStorage.getItem('touchdown.lang'))).toBe('en')
 })
 
-test('axe finds no serious or critical violations in the main view in light and dark themes', async ({ page }) => {
+test('both routes link the favicon and it is served', async ({ page }) => {
+  for (const route of [CONTROL, '/']) {
+    const html = await (await page.request.get(route)).text()
+    const href = /<link[^>]*rel="icon"[^>]*href="([^"]+)"/.exec(html)?.[1] ?? /<link[^>]*href="([^"]+)"[^>]*rel="icon"/.exec(html)?.[1]
+    expect(href, route).toBeTruthy()
+    const icon = await page.request.get(href as string)
+    expect(icon.status(), route).toBe(200)
+    expect(icon.headers()['content-type'], route).toContain('image/svg+xml')
+  }
+})
+
+test('axe finds no serious or critical violations in the main view', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await openApp(page)
   await waitForLoaded(page)
-  for (const theme of ['light', 'dark'] as const) {
-    if (theme === 'dark') {
-      await page.getByRole('button', { name: 'Cambiar a tema oscuro' }).click()
-      await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
-    }
-    const result = await new AxeBuilder({ page }).analyze()
-    const blocking = result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')
-    expect(
-      blocking.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`),
-      `${theme} theme`,
-    ).toEqual([])
-  }
+  const result = await new AxeBuilder({ page }).analyze()
+  const blocking = result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')
+  expect(blocking.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)).toEqual([])
 })
 
 test('clicking a day in the calendar sets the landing date of the selected scenario', async ({ page }) => {
@@ -298,24 +308,37 @@ test('submitting empty custom coordinates links visible error messages via aria-
   expect(blocking.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)).toEqual([])
 })
 
-test('the launch link hands the effective landing date and site to the experience', async ({ page }) => {
+test('every card offers its own launch button and the report launches what it recommends', async ({ page }) => {
   await openApp(page)
   await waitForLoaded(page)
-  const card = page.getByTestId('scenario-card').first()
+  const cards = page.getByTestId('scenario-card')
   const report = page.getByTestId('report')
-  await expect(card.getByRole('link', { name: 'Lanzar misión con esta fecha' })).toHaveAttribute(
+  // A (seleccionada) y B (no seleccionada) llevan el mismo botón.
+  await expect(cards.nth(0).getByRole('link', { name: 'Lanzar misión con esta fecha' })).toHaveAttribute(
     'href',
     '/?landing=2027-01-10T00:00:00Z&site=malapert-a',
   )
+  await expect(cards.nth(1).getByTestId('launch-link')).toHaveAttribute('href', '/?landing=2027-01-10T00:00:00Z&site=mons-mouton')
+  // El reporte recomienda B (viable) aunque A sea la seleccionada, y lo dice en el botón.
+  await expect(page.getByTestId('recommended')).toContainText('Mons Mouton')
+  await expect(report.getByTestId('launch-link-report')).toHaveText('Lanzar B · Mons Mouton')
+  await expect(report.getByTestId('launch-link-report')).toHaveAttribute('href', '/?landing=2027-01-10T00:00:00Z&site=mons-mouton')
 
   await page.getByRole('button', { name: 'Retrasar 21 días' }).click()
   await expect(page.getByTestId('delay-value')).toHaveText('+21 d')
-  const href = '/?landing=2027-01-31T00:00:00Z&site=malapert-a'
-  await expect(card.getByTestId('launch-link')).toHaveAttribute('href', href)
-  await expect(report.getByTestId('launch-link-report')).toHaveAttribute('href', href)
-  await expect(page.getByTestId('launch-link')).toHaveCount(1)
+  await expect(cards.nth(0).getByTestId('launch-link')).toHaveAttribute('href', '/?landing=2027-01-31T00:00:00Z&site=malapert-a')
+  await expect(cards.nth(1).getByTestId('launch-link')).toHaveAttribute('href', '/?landing=2027-01-31T00:00:00Z&site=mons-mouton')
+  await expect(page.getByTestId('launch-link')).toHaveCount(2)
+  const a = expected('malapert-a', '2027-01-31T00:00:00Z', 14)
+  const b = expected('mons-mouton', '2027-01-31T00:00:00Z', 14)
+  const tier = { viable: 0, marginal: 1, not_viable: 2 } as const
+  const bWins = tier[b.status] < tier[a.status] || (tier[b.status] === tier[a.status] && b.score >= a.score)
+  await expect(report.getByTestId('launch-link-report')).toHaveAttribute(
+    'href',
+    `/?landing=2027-01-31T00:00:00Z&site=${bWins ? 'mons-mouton' : 'malapert-a'}`,
+  )
 
-  await card.getByTestId('launch-link').click()
+  await cards.nth(0).getByTestId('launch-link').click()
   await expect(page).toHaveURL(/\/\?landing=/)
   const url = new URL(page.url())
   expect(url.pathname).toBe('/')
@@ -323,6 +346,20 @@ test('the launch link hands the effective landing date and site to the experienc
   expect(url.searchParams.get('site')).toBe('malapert-a')
   // The welcome, still up here, draws its donkey on a canvas of its own.
   await expect(page.locator('canvas:not([data-testid="welcome-donkey"])')).toHaveCount(1)
+})
+
+test('sunset and Earthset are read against the mission, and a masked Earth shows the LOLA horizon', async ({ page }) => {
+  await openApp(page)
+  await waitForLoaded(page)
+  const cards = page.getByTestId('scenario-card')
+  // Mons Mouton: su Earthset llega a los 17 d 11 h, después de una misión de 14 días.
+  await expect(cards.nth(1).getByTestId('earth-countdown')).toHaveText('Sin Earthset durante la misión (el siguiente, día 17)')
+  // Malapert A: no hay Earthset en todas las efemérides.
+  await expect(cards.nth(0).getByTestId('earth-countdown')).toHaveText('Sin Earthset hasta el fin de los datos (2028-01-01)')
+
+  await page.goto(`${CONTROL}?s=nobile-rim-2~2027-01-10T00:00Z~14`)
+  await expect(page.locator('main')).toHaveAttribute('aria-busy', 'false')
+  await expect(page.getByTestId('earth-masked')).toHaveText('1.3° · horizonte LOLA 7.0° · tapada 5.7°')
 })
 
 test('the launch link is omitted for custom coordinates and hidden when the date is out of range', async ({ page }) => {
@@ -338,7 +375,7 @@ test('the launch link is omitted for custom coordinates and hidden when the date
   await expect(page.getByTestId('launch-link-report')).toHaveCount(0)
 })
 
-async function capture(browser: Browser, file: string, options: { width: number; height: number; theme: 'dark' | 'light'; mobile?: boolean }) {
+async function capture(browser: Browser, file: string, options: { width: number; height: number; mobile?: boolean }) {
   const context = await browser.newContext({
     viewport: { width: options.width, height: options.height },
     locale: 'es-MX',
@@ -347,13 +384,6 @@ async function capture(browser: Browser, file: string, options: { width: number;
     hasTouch: options.mobile ?? false,
     baseURL: 'http://127.0.0.1:4173',
   })
-  await context.addInitScript((theme) => {
-    try {
-      window.localStorage.setItem('touchdown.theme', theme)
-    } catch {
-      return
-    }
-  }, options.theme)
   const page = await context.newPage()
   await page.goto(`${CONTROL}?delay=21`)
   await waitForLoaded(page)
@@ -364,8 +394,6 @@ async function capture(browser: Browser, file: string, options: { width: number;
 
 test.afterAll(async ({ browser }) => {
   mkdirSync(SHOTS_DIR, { recursive: true })
-  await capture(browser, 'desktop-light.png', { width: 1440, height: 900, theme: 'light' })
-  await capture(browser, 'desktop-dark.png', { width: 1440, height: 900, theme: 'dark' })
-  await capture(browser, 'mobile-light.png', { width: 390, height: 844, theme: 'light', mobile: true })
-  await capture(browser, 'mobile-dark.png', { width: 390, height: 844, theme: 'dark', mobile: true })
+  await capture(browser, 'desktop.png', { width: 1440, height: 900 })
+  await capture(browser, 'mobile.png', { width: 390, height: 844, mobile: true })
 })

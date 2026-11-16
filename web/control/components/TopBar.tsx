@@ -1,19 +1,16 @@
 'use client'
 
-import { Moon, PanelLeft, Sun } from 'lucide-react'
+import { PanelLeft } from 'lucide-react'
 import { useI18n, type Lang } from '@/control/i18n'
-import type { Theme } from '@/control/lib/prefs'
 
 interface Props {
-  theme: Theme
   lang: Lang
   scrolled: boolean
   onChangeLang: (lang: Lang) => void
-  onToggleTheme: () => void
   onOpenCatalog: () => void
 }
 
-export function TopBar({ theme, lang, onToggleTheme, onChangeLang, scrolled, onOpenCatalog }: Props) {
+export function TopBar({ lang, onChangeLang, scrolled, onOpenCatalog }: Props) {
   const { t } = useI18n()
   return (
     <header
@@ -43,14 +40,6 @@ export function TopBar({ theme, lang, onToggleTheme, onChangeLang, scrolled, onO
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            className="btn btn-outline px-0"
-            aria-label={theme === 'dark' ? t('themeToLight') : t('themeToDark')}
-            onClick={onToggleTheme}
-          >
-            {theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
-          </button>
         </div>
       </div>
     </header>

@@ -10,6 +10,7 @@ export function formatDuration(ms: number): string {
 
 export type CountdownResult =
   | { kind: 'event'; event: 'set' | 'rise'; remainingMs: number }
+  | { kind: 'set-after-mission'; atMs: number }
   | { kind: 'no-set' }
   | { kind: 'no-rise' }
   | { kind: 'never' }
@@ -20,10 +21,14 @@ export function countdown(input: {
   nextRise: string | null
   nowMs: number
   neverVisible: boolean
+  /** Fin de la misión: un ocaso posterior no se cuenta como cuenta regresiva. */
+  missionEndMs?: number
 }): CountdownResult {
-  const { visibleNow, nextSet, nextRise, nowMs, neverVisible } = input
+  const { visibleNow, nextSet, nextRise, nowMs, neverVisible, missionEndMs } = input
   if (visibleNow) {
     if (nextSet === null) return { kind: 'no-set' }
+    const atMs = Date.parse(nextSet)
+    if (missionEndMs !== undefined && atMs > missionEndMs) return { kind: 'set-after-mission', atMs }
     return { kind: 'event', event: 'set', remainingMs: Date.parse(nextSet) - nowMs }
   }
   if (nextRise === null) return neverVisible ? { kind: 'never' } : { kind: 'no-rise' }

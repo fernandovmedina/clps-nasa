@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import { CAPCOM_ACCESS_EXPIRES_AT } from '../lib/capcom/config'
 
 const OPTIONAL_TEXTURES = ['/textures/moon/general.jpg', '/textures/moon/north-pole.jpg', '/textures/moon/south-pole.jpg']
 const LAYER = '[data-mode]'
@@ -92,7 +93,7 @@ test('the team experience mounts its canvas at / without console errors and offe
   expect(failed.filter((path) => !OPTIONAL_TEXTURES.includes(path))).toEqual([])
 
   const link = planner(page).getByRole('link', { name: 'Análisis detallado de sitios y fechas' })
-  await expect(link).toHaveAttribute('href', '/mission-control/')
+  await expect(link).toHaveAttribute('href', '/mission-control/?s=malapert-a~2027-01-10T00:00Z~14&s=mons-mouton~2027-01-10T00:00Z~14')
   await expect(link).toHaveAttribute('target', '_blank')
   await expect(link).toHaveAttribute('rel', /noopener/)
   await page.goto('/mission-control/')
@@ -173,7 +174,10 @@ test('Detener shows the stopped card and Reiniciar desde el despegue goes back t
   await expect(page.getByRole('heading', { name: 'Misión detenida' })).toBeVisible()
   await expect(currentStep(page)).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Pausar' })).toHaveCount(0)
-  await expect(page.getByRole('region', { name: 'Misión detenida' }).getByRole('link', { name: 'Análisis de sitios y fechas' })).toHaveAttribute('href', '/mission-control/')
+  await expect(page.getByRole('region', { name: 'Misión detenida' }).getByRole('link', { name: 'Análisis de sitios y fechas' })).toHaveAttribute(
+    'href',
+    '/mission-control/?s=malapert-a~2027-01-24T12:00Z~14&s=mons-mouton~2027-01-24T12:00Z~14',
+  )
   const restart = page.getByRole('button', { name: 'Reiniciar desde el despegue' })
   await expect(restart).toBeFocused()
 
@@ -197,8 +201,9 @@ test('in the orbit, choosing another site in the list changes the big figure and
   await expect(rows).toHaveCount(11)
   const pressed = await rows.evaluateAll((all) => all.findIndex((b) => b.getAttribute('aria-pressed') === 'true'))
   const target = rows.nth(pressed === 0 ? 1 : 0)
-  const name = (await target.locator('span').nth(1).textContent()) ?? ''
-  const score = (await target.locator('span').nth(2).textContent()) ?? ''
+  // Fila: rank · [nombre + etiqueta de contraste, si la hay] · (delta) · puntaje. El nombre es el tercer span y el puntaje el último.
+  const name = (await target.locator('span').nth(2).textContent()) ?? ''
+  const score = (await target.locator('span').last().textContent()) ?? ''
   const before = await figure(page).textContent()
 
   await target.click()
@@ -529,7 +534,13 @@ test('the Mission Control dialog exists, validates the code and cancels with Esc
   await expect(planner(page)).toBeVisible()
 })
 
+const DAY_MS = 24 * 60 * 60 * 1000
+/** Un día antes del corte de CAPCOM, derivado de la constante: la prueba no depende del reloj real. */
+const BEFORE_CAPCOM_CUTOFF = Date.parse(CAPCOM_ACCESS_EXPIRES_AT) - DAY_MS
+const AFTER_CAPCOM_CUTOFF = Date.parse(CAPCOM_ACCESS_EXPIRES_AT) + DAY_MS
+
 test('CAPCOM: the talk button is in the header with its accessible name, hint and keyboard shortcut', async ({ page }) => {
+  await page.clock.setFixedTime(BEFORE_CAPCOM_CUTOFF)
   await openLaunch(page, '?speed=4')
   const talk = page.getByRole('button', { name: 'Hablar con CAPCOM' })
   await expect(talk).toBeVisible()
@@ -539,8 +550,41 @@ test('CAPCOM: the talk button is in the header with its accessible name, hint an
   await expect(page.getByTestId('capcom-caption')).toHaveCount(0)
 })
 
+test('CAPCOM: after the access cutoff the button says «CAPCOM no disponible» and is disabled', async ({ page }) => {
+  await page.clock.setFixedTime(AFTER_CAPCOM_CUTOFF)
+  await page.goto('/?phase=orbit&speed=4')
+  test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+  const talk = page.getByRole('button', { name: 'CAPCOM no disponible' })
+  await expect(talk).toBeVisible()
+  await expect(talk).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Hablar con CAPCOM' })).toHaveCount(0)
+})
+
 test('?capcom=0 hides CAPCOM completely', async ({ page }) => {
   await openLaunch(page, '?speed=4&capcom=0')
   await expect(page.getByRole('button', { name: /CAPCOM/ })).toHaveCount(0)
   await expect(page.getByTestId('capcom-live')).toHaveCount(0)
+})
+
+test('the transmission report opens Mission Control with the chosen site as scenario A and the best other site as B', async ({ page }) => {
+  test.setTimeout(420_000)
+  await openLaunch(page, '?speed=20&landing=2027-01-10T00:00:00Z&site=nobile-rim-2')
+  await reachOrbit(page)
+  await page.getByRole('button', { name: 'Preconfirmar punto' }).click()
+  await expect(currentStep(page)).toContainText('Vista del sitio', { timeout: 60_000 })
+  await page.getByRole('button', { name: 'Iniciar descenso' }).click()
+  await expect(currentStep(page)).toContainText('Transmisión', { timeout: 240_000 })
+
+  const report = page.getByRole('link', { name: 'Ver reporte en Mission Control' })
+  await expect(report).toBeVisible({ timeout: 120_000 })
+  const href = (await report.getAttribute('href')) ?? ''
+  expect(href).toMatch(/^\/mission-control\/\?s=nobile-rim-2~2027-01-10T00:00Z~14&s=[a-z0-9-]+~2027-01-10T00:00Z~14$/)
+  expect(href).not.toContain('no-caer')
+
+  const [control] = await Promise.all([page.context().waitForEvent('page'), report.click()])
+  await expect(control).toHaveURL(/\/mission-control\//)
+  await expect(control.locator('main')).toHaveAttribute('aria-busy', 'false')
+  const titles = control.getByTestId('card-title')
+  await expect(titles.first()).toContainText('Nobile Rim 2')
+  await expect(titles).toHaveCount(2)
 })

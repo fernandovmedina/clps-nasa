@@ -21,13 +21,13 @@ export function MissionBar({ delayDays, scenarioCount, onAddDelay, onSetDelay, o
   return (
     <section
       aria-label={t('missionBar')}
-      className="slate slate-banner grid gap-6 rounded-[12px] border-[0.5px] border-line p-6 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center"
+      className="card grid gap-6 p-6 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center"
     >
       <div className="grid gap-1">
         <p className="text-caption text-label-2" id="delay-label">
           {t('delay')}
         </p>
-        <p className="num text-figure text-accent" data-testid="delay-value" aria-live="polite">
+        <p className="num text-figure text-accent-text" data-testid="delay-value" aria-live="polite">
           {valueText}
         </p>
       </div>
@@ -63,7 +63,7 @@ export function MissionBar({ delayDays, scenarioCount, onAddDelay, onSetDelay, o
           <Slider.Thumb
             aria-label={t('delaySlider')}
             aria-valuetext={valueText}
-            className="relative block h-6 w-6 rounded-full border-2 border-[var(--panel)] bg-accent outline-offset-2 after:absolute after:-inset-3 after:content-[''] active:opacity-80"
+            className="relative block h-6 w-6 rounded-full border-2 border-control bg-accent outline-offset-2 after:absolute after:-inset-3 after:content-[''] active:opacity-80"
           />
         </Slider.Root>
       </div>

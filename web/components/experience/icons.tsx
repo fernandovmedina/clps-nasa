@@ -53,14 +53,15 @@ export function StopIcon() {
   );
 }
 
-const STATUS_COLOR: Record<SiteStatus, string> = { viable: '#8FCB9B', marginal: '#E8C547', not_viable: '#E58A7B' };
+/** Tokens del papel (styles/tokens.css); el trazo usa currentColor. Marginal usa --sun (el ámbar del brief): --marginal no llega a 3:1 sobre la fila seleccionada. */
+const STATUS_COLOR: Record<SiteStatus, string> = { viable: 'var(--viable)', marginal: 'var(--sun)', not_viable: 'var(--bad)' };
 const STATUS_NAME: Record<SiteStatus, string> = { viable: 'Viable', marginal: 'Marginal', not_viable: 'No viable' };
 
 /** Shape plus colour, so the status never relies on colour alone. */
 export function StatusIcon({ status, size = 16, labelled = true }: { status: SiteStatus; size?: number; labelled?: boolean }) {
   const a11y = labelled ? { role: 'img', 'aria-label': STATUS_NAME[status] } : { 'aria-hidden': true as const };
   return (
-    <svg {...base} {...a11y} width={size} height={size} stroke={labelled ? STATUS_COLOR[status] : 'currentColor'} strokeWidth="2.4">
+    <svg {...base} {...a11y} width={size} height={size} style={labelled ? { color: STATUS_COLOR[status] } : undefined} strokeWidth="2.4">
       {status === 'viable' && (<><circle cx="12" cy="12" r="9" /><path d="M8 12.5l3 3 5-6" /></>)}
       {status === 'marginal' && (<><path d="M12 4l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.2v.3" /></>)}
       {status === 'not_viable' && (<><circle cx="12" cy="12" r="9" /><path d="M9 9l6 6M15 9l-6 6" /></>)}

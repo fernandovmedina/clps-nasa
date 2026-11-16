@@ -95,7 +95,7 @@ export default function FollowMissionDialog({ code, onJoin, onClose }: Props) {
 
           <div className={dialog.actions}>
             <button type="button" className={layer.btn} onClick={onClose}>Cancelar</button>
-            <button type="submit" className={layer.btn} data-variant="primary">Conectar</button>
+            <button type="submit" className={layer.btn} data-variant="cta">Conectar</button>
           </div>
         </form>
       </div>

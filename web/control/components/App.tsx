@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { I18nProvider, detectLang, useI18n, type Lang } from '@/control/i18n'
-import { applyTheme, readPref, readTheme, writePref, type Theme } from '@/control/lib/prefs'
+import { readPref, writePref } from '@/control/lib/prefs'
 import { reducer, type Action } from '@/control/lib/reducer'
 import { decodeState, encodeState } from '@/control/lib/stateUrl'
 import { loadSites } from '@/control/lib/data'
@@ -30,17 +30,13 @@ const GRID_COLUMNS: Record<number, string> = {
 function Shell({
   state,
   dispatch,
-  theme,
   lang,
-  onToggleTheme,
   onChangeLang,
   ready,
 }: {
   state: AppState
   dispatch: (a: Action) => void
-  theme: Theme
   lang: Lang
-  onToggleTheme: () => void
   onChangeLang: (lang: Lang) => void
   ready: boolean
 }) {
@@ -115,9 +111,7 @@ function Shell({
     <>
       <div ref={sentinel} aria-hidden="true" className="absolute top-0 h-px w-px" />
       <TopBar
-        theme={theme}
         lang={lang}
-        onToggleTheme={onToggleTheme}
         onChangeLang={onChangeLang}
         scrolled={scrolled}
         onOpenCatalog={() => setCatalogOpen(true)}
@@ -190,7 +184,6 @@ function Shell({
                   entries={reportState.entries}
                   pending={reportState.pending}
                   delayDays={state.delayDays}
-                  selectedLetter={letter}
                 />
               </ErrorBoundary>
             </div>
@@ -205,13 +198,11 @@ export function App() {
   const [state, dispatch] = useReducer(reducer, undefined, defaultState)
   const [ready, setReady] = useState(false)
   const [lang, setLang] = useState<Lang>('es')
-  const [theme, setTheme] = useState<Theme>('light')
 
   /* eslint-disable react-hooks/set-state-in-effect -- client-only state is read after the static render */
   useEffect(() => {
     dispatch({ type: 'hydrate', state: decodeState(window.location.search) })
     setLang(detectLang(readPref('lang'), navigator.language))
-    setTheme(readTheme())
     setReady(true)
   }, [])
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -231,21 +222,12 @@ export function App() {
     setLang(next)
   }
 
-  const toggleTheme = () => {
-    const next: Theme = theme === 'dark' ? 'light' : 'dark'
-    applyTheme(next)
-    writePref('theme', next)
-    setTheme(next)
-  }
-
   return (
     <I18nProvider lang={lang}>
       <Shell
         state={state}
         dispatch={dispatch}
-        theme={theme}
         lang={lang}
-        onToggleTheme={toggleTheme}
         onChangeLang={changeLang}
         ready={ready}
       />

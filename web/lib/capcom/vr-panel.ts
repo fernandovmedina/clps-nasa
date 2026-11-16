@@ -62,12 +62,20 @@ export function mountCapcomVrPanel(app: LunarApp, controller: CapcomController):
     const text = describePanel(snap);
     p.frame(g, 0, 0, W, H, 24);
     g.font = `600 22px ${UI.font}`; g.fillStyle = UI.dim; g.fillText('CAPCOM', 28, 44);
-    g.font = `600 24px ${UI.font}`; g.fillStyle = UI[text.tone === 'dim' ? 'text' : text.tone]; g.textAlign = 'right';
+    // El estado va en tinta (AA sobre papel) y su tono en un punto de la paleta.
+    g.font = `600 24px ${UI.font}`; g.fillStyle = UI.text; g.textAlign = 'right';
     g.fillText(text.status, W - 28, 44); g.textAlign = 'left';
+    g.beginPath(); g.arc(W - 28 - g.measureText(text.status).width - 18, 36, 7, 0, Math.PI * 2);
+    g.fillStyle = text.tone === 'dim' ? UI.control : UI[text.tone]; g.fill();
     g.font = `500 28px ${UI.font}`; g.fillStyle = UI.text;
     const lines = wrap(g, text.body, W - 56);
     lines.slice(-BODY_LINES + 1).forEach((line, i) => g.fillText(line, 28, 88 + i * 36));
-    if (text.hint) { g.font = `500 22px ${UI.font}`; g.fillStyle = UI.dim; g.fillText(text.hint, 28, H - 22); }
+    if (text.hint) {
+      // El botón es de papel opaco: la pista se parte en dos líneas a la izquierda para no quedar debajo de él.
+      g.font = `500 22px ${UI.font}`; g.fillStyle = UI.dim;
+      const hint = wrap(g, text.hint, W - 196 - 28 - 16).slice(-2);
+      hint.forEach((line, i) => g.fillText(line, 28, H - 22 - (hint.length - 1 - i) * 28));
+    }
     if (snap.state !== 'unavailable') {
       p.button(g, 'talk', W - 196, H - 70, 168, 52, snap.talking ? 'Soltar' : 'Hablar', () => (snap.talking ? controller.release() : controller.press()), snap.talking ? 'primary' : 'ghost');
     }

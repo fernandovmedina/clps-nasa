@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 import '@fontsource-variable/inter'
+import '@/styles/tokens.css'
 import '@/control/styles/globals.css'
 import { BOOT_SCRIPT } from '@/control/lib/prefs'
 
@@ -12,7 +13,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  colorScheme: 'light dark',
+  colorScheme: 'light',
+  themeColor: '#faf9f5',
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {

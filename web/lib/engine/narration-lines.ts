@@ -11,8 +11,8 @@ export const NARRATION_LINES = {
   leftAtmosphere: 'Hemos salido de la atmósfera. Rumbo a la Luna.',
   lunarApproach: 'Aproximándonos a la Luna. Preparando inserción orbital.',
   siteCriteria:
-    'Estoy comparando cada sitio por tres cosas: cuánto sol reciben sus paneles solares, '
-    + 'si tienen línea directa con la Tierra para comunicarse, y qué tan inclinado es el terreno para alunizar seguro.',
+    'Estoy comparando cada sitio por dos cosas: cuántas horas de sol reciben sus paneles '
+    + 'y cuántas horas tienen la Tierra a la vista para comunicarse directo. El relieve real del polo decide las dos.',
   welcome: 'Bienvenido a touchdown. Soy el burrito espacial, tu guía. ¿Vas en VR, o sigues la misión en Mission Control?',
 } as const;
 

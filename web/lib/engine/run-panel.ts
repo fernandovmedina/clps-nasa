@@ -19,12 +19,12 @@ export function createRunPanel(app: LunarApp) {
     }
     const paused = app.run.paused;
     if (!paused && app.awaitingStart) {
-      roundRect(g, 24, 52, 280, 96, 48); g.fillStyle = 'rgba(250,249,245,.03)'; g.fill();
+      roundRect(g, 24, 52, 280, 96, 48); g.fillStyle = UI.raised; g.fill();
       g.strokeStyle = UI.line; g.lineWidth = 2; g.stroke();
-      g.font = `600 36px ${UI.font}`; g.fillStyle = 'rgba(250,249,245,.3)'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `600 36px ${UI.font}`; g.fillStyle = UI.dim; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText('Pausar', 164, 101); g.textAlign = 'left'; g.textBaseline = 'alphabetic';
     } else {
-      p.button(g, 'pause', 24, 52, 280, 96, paused ? 'Reanudar' : 'Pausar', () => app.setPaused(!paused), paused ? 'primary' : 'ghost');
+      p.button(g, 'pause', 24, 52, 280, 96, paused ? 'Reanudar' : 'Pausar', () => app.setPaused(!paused), paused ? 'cta' : 'ghost');
     }
     p.button(g, 'stop', 336, 52, 280, 96, 'Detener', () => app.stop(), 'ghost');
   });
