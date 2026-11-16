@@ -5,7 +5,7 @@ import { starField } from '../engine/particles';
 import { earthTexture, glowTexture, regolithTexture, solarCellTexture } from '../engine/textures';
 import { disposeTree, seeded, smooth } from '../engine/util';
 import { horizonAt, type SiteMetrics } from '../mission/scoring';
-import { sampleTerrainHeight, type TerrainPatch } from '../mission/terrain';
+import { sampleTerrainHeight, terrainRoughness, type TerrainPatch } from '../mission/terrain';
 import { Astronaut, astronautSpot, loadAstronaut, type AstronautMode } from './astronaut';
 import { loadLanderModel } from './lander-model';
 import { disposeObject } from './rocket-model';
@@ -15,9 +15,15 @@ const NEAR_SIZE = 420;
 const HORIZON_R = 2500;
 const SKY_DIST = 30000;
 const GROUND_COLOR = 0xc8c6c0;
-// Orthophoto brightness only shows from this distance to the near-mesh centre; the same
-// world-space ramp drives both ground meshes so no seam can appear between them.
-const ORTHO_FADE_FROM = 150, ORTHO_FADE_TO = 700, ORTHO_GAIN = 1.4;
+const MOON_RADIUS_M = 1737400;
+/** Diámetro angular real del disco solar (2 × 0.2666°), el del núcleo del sprite. */
+export const SUN_CORE_DEG = 0.53;
+const SUN_DIST = SKY_DIST * 1.5;
+/** Luz de la Tierra sobre el regolito: débil y azulada, solo un relleno para que las caras sin Sol no queden negras. */
+const EARTHSHINE_INTENSITY = 0.35, EARTHSHINE_COLOR = 0xa9c4ff;
+const HORIZON_LABEL = 'Horizonte LOLA';
+// Ganancia de Lommel-Seeliger: con 2 un Sol cenital y el ojo en el cenit dan el mismo brillo que Lambert (μ0 = μ = 1 → 1).
+const LS_GAIN = 2.0;
 // Cosmetic relief (small craters, the 9 m bumps) only exists where the near mesh can resolve it:
 // it dies out before the near mesh ends, so the coarse far mesh meets it without a visible step.
 const DETAIL_FADE_FROM = 120, DETAIL_FADE_TO = 190;
@@ -25,6 +31,27 @@ const FAR_SINK = 3;
 const SHADOW_FADE_FROM = 70, SHADOW_FADE_TO = 190;
 // The near mesh dissolves (screen-door) into the far one over this distance band from its centre.
 const NEAR_DISSOLVE_FROM = 150, NEAR_DISSOLVE_TO = 205;
+
+const LOMMEL_SEELIGER_GLSL = `
+float lommelSeeliger( float mu0, float mu ) { return ${LS_GAIN.toFixed(2)} * mu0 / max( mu0 + mu, 0.02 ); }
+`;
+const LAMBERT_DIFFUSE = 'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );';
+
+/**
+ * Cambia el difuso lambertiano (N·L) de RE_Direct_Physical por Lommel-Seeliger, μ0/(μ0+μ): el regolito
+ * devuelve la luz hacia el Sol y con el Sol rasante una ladera plana sigue legible en vez de caer a ~0.
+ * Falla si el trozo de three ya no tiene la línea esperada, para no dejar Lambert sin avisar tras una actualización.
+ */
+export function patchGroundLight(chunk: string): string {
+  if (!chunk.includes(LAMBERT_DIFFUSE)) throw new Error('lights_physical_pars_fragment cambió: ya no está el difuso lambertiano de RE_Direct_Physical');
+  return LOMMEL_SEELIGER_GLSL + chunk.replace(LAMBERT_DIFFUSE,
+    'reflectedLight.directDiffuse += lommelSeeliger( dotNL, saturate( dot( geometryNormal, geometryViewDir ) ) ) * directLight.color * BRDF_Lambert( material.diffuseColor );');
+}
+
+/** Etiqueta del contorno fantasma; `aboveHorizon` es negativo cuando el relieve tapa el cuerpo. */
+export function earthOcclusionLabel(aboveHorizon: number) {
+  return `Tierra tapada por el relieve · ${Math.abs(aboveHorizon).toFixed(1)}°`;
+}
 
 /* ---- seeded 2D Perlin noise ---- */
 function perlin(rnd: () => number) {
@@ -66,7 +93,16 @@ export class SurfaceWorld {
   readonly lander: THREE.Group;
   readonly dish: THREE.Object3D;
   readonly solarPanels: THREE.Mesh[] = [];
-  readonly roughness: number;
+  /** Rugosidad (m) del DEM real en la zona, o null si el sitio no tiene terreno real. */
+  readonly roughness: number | null;
+  readonly horizonRing: THREE.Mesh;
+  readonly horizonLine: THREE.Line;
+  readonly horizonLabel: THREE.Sprite;
+  readonly horizonLabelText = HORIZON_LABEL;
+  /** Contorno de la Tierra cuando está sobre 0° pero bajo el horizonte LOLA. */
+  readonly earthGhost: { group: THREE.Group; label: string } | null;
+  readonly earthLight: THREE.DirectionalLight | null;
+  readonly sunCore: THREE.Sprite;
   readonly stars = starField();
   private noise: (x: number, y: number) => number;
   private craters: Crater[] = [];
@@ -111,9 +147,8 @@ export class SurfaceWorld {
     this.flatten = true;
     this.lz.y = this.heightAt(this.lz.x, this.lz.z);
 
-    // terrain: coarse far mesh + detailed near mesh around viewpoint and LZ. Both share
-    // one albedo (tiled procedural regolith); the real orthophoto (~39 m/texel) only
-    // modulates its brightness, fading in with distance, so the two meshes match at the seam.
+    // terreno: malla lejana gruesa + malla cercana detallada alrededor del punto de vista y la zona de alunizaje.
+    // Comparten un solo albedo (regolito procedural en mosaico) para que no se note la costura; el relieve lo da la luz.
     const tex = regolithTexture();
     const nearC = this.nearC;
     const far = this.terrainMesh(FAR_SIZE, 220, new THREE.Vector2(0, 0), tex, 140, FAR_SINK);
@@ -122,20 +157,19 @@ export class SurfaceWorld {
     sc.add(far, near);
     this.groundMeshes.push(far, near);
 
-    // roughness inside the LZ (std-dev of heights, r = 20 m)
-    const hs: number[] = [];
-    for (let i = 0; i < 200; i++) { const a = rnd() * 6.283, rr = Math.sqrt(rnd()) * 20; hs.push(this.heightAt(this.lz.x + Math.cos(a) * rr, this.lz.z + Math.sin(a) * rr)); }
-    const mean = hs.reduce((a, b) => a + b, 0) / hs.length;
-    this.roughness = Math.sqrt(hs.reduce((a, b) => a + (b - mean) ** 2, 0) / hs.length);
+    // La rugosidad sale del DEM crudo, antes del aplanado de la zona y sin el detalle cosmético.
+    this.roughness = this.terrain ? terrainRoughness(this.terrain, this.lz.x, this.lz.z) : null;
 
-    sc.add(this.horizonRing(tex));
+    this.horizonRing = this.buildHorizonRing(tex);
+    this.horizonLine = this.buildHorizonLine();
+    sc.add(this.horizonRing, this.horizonLine);
 
     // Sun & Earth
     this.sunVisible = smooth(-0.27, 0.35, m.sun.aboveHorizon);
     this.earthVisible = m.earth.aboveHorizon > 0;
     const sunDir = m.sun.local.clone();
     const earthDir = m.earth.local.clone();
-    this.sunPos = sunDir.clone().multiplyScalar(SKY_DIST * 1.5);
+    this.sunPos = sunDir.clone().multiplyScalar(SUN_DIST);
     this.earthPos = earthDir.clone().multiplyScalar(SKY_DIST);
 
     const light = new THREE.DirectionalLight(0xfff6ea, 4.2 * this.sunVisible);
@@ -147,13 +181,25 @@ export class SurfaceWorld {
     sh.left = -230; sh.right = 230; sh.top = 230; sh.bottom = -230; sh.near = 10; sh.far = 4000;
     light.shadow.bias = -0.0004; light.shadow.normalBias = 0.6;
     sc.add(light, light.target);
-    sc.add(new THREE.HemisphereLight(0x9fb4d8, 0x1a1a1a, this.earthVisible ? 0.32 : 0.16)); // earthshine
+    // Relleno mínimo para que lo que ni el Sol ni la Tierra tocan no sea negro puro; el earthshine real va aparte.
+    sc.add(new THREE.HemisphereLight(0x9fb4d8, 0x1a1a1a, 0.08));
+    if (this.earthVisible) {
+      const earthLight = new THREE.DirectionalLight(EARTHSHINE_COLOR, EARTHSHINE_INTENSITY);
+      earthLight.target.position.set(nearC.x, 0, nearC.y);
+      earthLight.position.copy(earthLight.target.position).addScaledVector(earthDir, 1500);
+      earthLight.castShadow = false;
+      sc.add(earthLight, earthLight.target);
+      this.earthLight = earthLight;
+    } else {
+      this.earthLight = null;
+    }
 
     const glow = glowTexture();
     const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xfff0d0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
     sunGlow.position.copy(this.sunPos); sunGlow.scale.setScalar(SKY_DIST * 0.28);
     const sunDisk = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: 0xffffff, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
-    sunDisk.position.copy(this.sunPos); sunDisk.scale.setScalar(SKY_DIST * 0.035);
+    sunDisk.position.copy(this.sunPos); sunDisk.scale.setScalar(SUN_DIST * 2 * Math.tan(SUN_CORE_DEG * Math.PI / 360));
+    this.sunCore = sunDisk;
     sc.add(sunGlow, sunDisk);
 
     const earth = new THREE.Mesh(new THREE.SphereGeometry(SKY_DIST * Math.tan(1.0 * Math.PI / 180), 64, 32), new THREE.MeshStandardMaterial({ map: earthTexture(), roughness: 0.85 }));
@@ -168,6 +214,10 @@ export class SurfaceWorld {
       s.position.copy(dir).multiplyScalar(2200).add(new THREE.Vector3(0, -120, 0));
       return s;
     };
+    this.earthGhost = m.earth.elevation > 0 && m.earth.aboveHorizon < 0 ? this.buildEarthGhost() : null;
+    if (this.earthGhost) sc.add(this.earthGhost.group);
+    this.horizonLabel = this.buildHorizonLabel();
+    sc.add(this.horizonLabel);
     sc.add(lbl('SOL', `elev ${m.sun.elevation.toFixed(1)}° · az ${m.sun.azimuth.toFixed(0)}°`, sunDir, UI.sun));
     sc.add(lbl('TIERRA', `elev ${m.earth.elevation.toFixed(1)}° · az ${m.earth.azimuth.toFixed(0)}°`, earthDir, UI.earth));
 
@@ -187,7 +237,7 @@ export class SurfaceWorld {
       new THREE.MeshBasicMaterial({ color: 0x5cf2b0, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.beacon.position.set(this.lz.x, this.lz.y + 30, this.lz.z);
     this.lzMarker.add(this.beacon);
-    const lzLabel = textLabel([{ text: 'ZONA DE ALUNIZAJE', size: 40, color: UI.ok, weight: 800, mono: true }, { text: `Ø 40 m · rugosidad ${this.roughness.toFixed(2)} m`, size: 30 }], 14);
+    const lzLabel = textLabel([{ text: 'ZONA DE ALUNIZAJE', size: 40, color: UI.ok, weight: 800, mono: true }, { text: this.roughness === null ? 'Ø 40 m' : `Ø 40 m · rugosidad ${this.roughness.toFixed(2)} m`, size: 30 }], 14);
     lzLabel.position.set(this.lz.x, this.lz.y + 64, this.lz.z);
     this.lzMarker.add(lzLabel);
     sc.add(this.lzMarker);
@@ -264,7 +314,7 @@ export class SurfaceWorld {
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i) + c.x, z = pos.getZ(i) + c.y;
       const r = Math.hypot(x, z);
-      pos.setXYZ(i, x, this.heightAt(x, z) - (r * r) / (2 * 1737400) * 40, z); // exaggerated curvature at the edges
+      pos.setXYZ(i, x, this.heightAt(x, z) - (r * r) / (2 * MOON_RADIUS_M), z); // caída real por la curvatura lunar: la máscara LOLA también la descuenta
     }
     geo.computeVertexNormals();
     if (sink) {
@@ -277,20 +327,19 @@ export class SurfaceWorld {
     }
     const map = tex.clone(); map.needsUpdate = true; map.repeat.set(repeat, repeat);
     const mat = new THREE.MeshStandardMaterial({ map, color: GROUND_COLOR, roughness: 1, metalness: 0 });
-    this.shadeGround(mat, this.terrain?.texture ?? undefined, this.terrain?.info.extent_m ?? 0, !sink);
+    this.shadeGround(mat, !sink);
     if (sink) { mat.polygonOffset = true; mat.polygonOffsetFactor = 1; mat.polygonOffsetUnits = 1; }
     return new THREE.Mesh(geo, mat);
   }
 
   /**
-   * Shading both ground meshes share, so nothing differs across their seam: the orthophoto's brightness
-   * (relative to its own mean, the 1x1 mip) by world position, and cast shadows that fade out with distance
-   * from the landing area (only the near mesh casts them, so beyond it they would leave a brightness step).
-   * The near mesh also dissolves into the far one toward its border, which hides whatever shading still differs.
+   * Sombreado que comparten las dos mallas del suelo, para que nada cambie en su costura: luz de regolito
+   * (Lommel-Seeliger) y sombras proyectadas que se desvanecen con la distancia a la zona (solo la malla cercana las
+   * proyecta; más allá dejarían un escalón de brillo). La malla cercana además se disuelve en la lejana hacia su borde.
    */
-  private shadeGround(mat: THREE.MeshStandardMaterial, ortho: THREE.Texture | undefined, extent: number, dissolve: boolean) {
+  private shadeGround(mat: THREE.MeshStandardMaterial, dissolve: boolean) {
     const focus = this.nearC;
-    mat.customProgramCacheKey = () => `ground-${dissolve ? 'near' : 'far'}-${ortho ? 'ortho' : 'plain'}`;
+    mat.customProgramCacheKey = () => `ground-${dissolve ? 'near' : 'far'}`;
     mat.onBeforeCompile = (shader) => {
       shader.uniforms.uFocus = { value: focus };
       shader.vertexShader = shader.vertexShader
@@ -298,43 +347,89 @@ export class SurfaceWorld {
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGroundXZ = (modelMatrix * vec4(position, 1.0)).xz;');
       const lights = THREE.ShaderChunk.lights_fragment_begin.replace('directionalLightShadow.shadowIntensity', 'directionalLightShadow.shadowIntensity * shadowFade');
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec2 vGroundXZ;\nuniform vec2 uFocus;' + (ortho ? '\nuniform sampler2D uOrtho;\nuniform float uOrthoExtent;' : ''))
+        .replace('#include <common>', '#include <common>\nvarying vec2 vGroundXZ;\nuniform vec2 uFocus;')
+        .replace('#include <lights_physical_pars_fragment>', patchGroundLight(THREE.ShaderChunk.lights_physical_pars_fragment))
         .replace('#include <clipping_planes_fragment>', dissolve ? `#include <clipping_planes_fragment>
         vec2 qEdge = abs( vGroundXZ - uFocus );
         if ( smoothstep( ${NEAR_DISSOLVE_FROM.toFixed(1)}, ${NEAR_DISSOLVE_TO.toFixed(1)}, max( qEdge.x, qEdge.y ) ) > fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) ) ) discard;` : '#include <clipping_planes_fragment>')
         .replace('#include <lights_fragment_begin>', `
         float shadowFade = 1.0 - smoothstep( ${SHADOW_FADE_FROM.toFixed(1)}, ${SHADOW_FADE_TO.toFixed(1)}, distance( vGroundXZ, uFocus ) );
         ${lights}`);
-      if (!ortho) return;
-      shader.uniforms.uOrtho = { value: ortho };
-      shader.uniforms.uOrthoExtent = { value: extent };
-      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-        float oLum = texture2D(uOrtho, vGroundXZ / uOrthoExtent + 0.5).r;
-        float oMean = max(textureLod(uOrtho, vec2(0.5), 16.0).r, 1e-3);
-        float oFade = smoothstep(${ORTHO_FADE_FROM.toFixed(1)}, ${ORTHO_FADE_TO.toFixed(1)}, distance(vGroundXZ, uFocus));
-        diffuseColor.rgb *= mix(1.0, clamp(1.0 + ${ORTHO_GAIN.toFixed(2)} * (oLum / oMean - 1.0), 0.4, 1.8), oFade);`);
     };
   }
 
-  private horizonRing(tex: THREE.Texture) {
-    const N = 360, pos: number[] = [], uv: number[] = [], idx: number[] = [];
-    const rnd = seeded(this.m.site.id + '-horizon');
+  /** Falda del horizonte: su borde superior es la máscara LOLA tal cual, sin ruido ni recorte. */
+  private buildHorizonRing(tex: THREE.Texture) {
+    const N = this.horizonSteps, pos: number[] = [], uv: number[] = [], idx: number[] = [], nor: number[] = [];
     for (let i = 0; i <= N; i++) {
       const az = (i / N) * 360, a = az * Math.PI / 180;
       const dx = Math.sin(a), dz = -Math.cos(a);
-      const jag = (rnd() - 0.5) * 0.25;
-      const top = Math.tan(Math.max(-1.5, horizonAt(this.m.site, az) + jag) * Math.PI / 180) * HORIZON_R;
+      const top = Math.tan(horizonAt(this.m.site, az) * Math.PI / 180) * HORIZON_R;
       pos.push(dx * HORIZON_R * 1.15, -260, dz * HORIZON_R * 1.15, dx * HORIZON_R, top, dz * HORIZON_R);
-      uv.push(i / 8, 0, i / 8, 1);
+      // Normal radial hacia el centro: es la cara del cerro que mira al observador.
+      nor.push(-dx, 0, -dz, -dx, 0, -dz);
+      uv.push((i / N) * 45, 0, (i / N) * 45, 1);
       if (i < N) { const k = i * 2; idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3); }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    g.setAttribute('normal', new THREE.Float32BufferAttribute(Array.from({ length: pos.length }, (_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
     g.setIndex(idx);
     const t = tex.clone(); t.needsUpdate = true;
-    return new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: t, color: GROUND_COLOR, roughness: 1, side: THREE.DoubleSide }));
+    const mat = new THREE.MeshStandardMaterial({ map: t, color: GROUND_COLOR, roughness: 1, side: THREE.DoubleSide });
+    mat.customProgramCacheKey = () => 'ground-ring';
+    mat.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <lights_physical_pars_fragment>', patchGroundLight(THREE.ShaderChunk.lights_physical_pars_fragment));
+    };
+    return new THREE.Mesh(g, mat);
+  }
+
+  private get horizonSteps() { return Math.round(360 / this.m.site.horizon.az_step_deg); }
+
+  /** Línea fina y tenue sobre el borde superior de la falda: la silueta que la máscara LOLA dibuja. */
+  private buildHorizonLine() {
+    const r = HORIZON_R * 0.99, N = this.horizonSteps, pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= N; i++) {
+      const az = (i / N) * 360, a = az * Math.PI / 180;
+      pts.push(new THREE.Vector3(Math.sin(a) * r, Math.tan(horizonAt(this.m.site, az) * Math.PI / 180) * r, -Math.cos(a) * r));
+    }
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: 0xe9e5da, transparent: true, opacity: 0.35, fog: false }));
+    line.renderOrder = 5;
+    return line;
+  }
+
+  /** Etiqueta de la silueta, 20° al lado de la Tierra y 1.5° sobre la línea, donde no tapa nada. */
+  private buildHorizonLabel() {
+    const az = (this.m.earth.azimuth + 20) % 360, a = az * Math.PI / 180, r = HORIZON_R * 0.97;
+    const label = textLabel([{ text: HORIZON_LABEL, size: 44, color: UI.dim, weight: 600 }], 520, 12);
+    label.position.set(Math.sin(a) * r, Math.tan((horizonAt(this.m.site, az) + 1.5) * Math.PI / 180) * r, -Math.cos(a) * r);
+    return label;
+  }
+
+  /** Circunferencia punteada de la Tierra (radio 1°) y su etiqueta, dibujadas por encima del relieve que la tapa. */
+  private buildEarthGhost() {
+    const group = new THREE.Group();
+    const label = earthOcclusionLabel(this.m.earth.aboveHorizon);
+    const dir = this.m.earth.local;
+    const side = new THREE.Vector3(0, 1, 0).cross(dir).normalize(), up = dir.clone().cross(side).normalize();
+    const radius = SKY_DIST * Math.tan(1.0 * Math.PI / 180), pts: THREE.Vector3[] = [];
+    for (let i = 0; i < 96; i++) {
+      const t = (i / 96) * Math.PI * 2;
+      pts.push(this.earthPos.clone().addScaledVector(side, Math.cos(t) * radius).addScaledVector(up, Math.sin(t) * radius));
+    }
+    const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineDashedMaterial({ color: UI.earth, dashSize: radius * 0.12, gapSize: radius * 0.1, transparent: true, opacity: 0.9, depthTest: false, fog: false }));
+    ring.computeLineDistances();
+    ring.renderOrder = 20;
+    const text = textLabel([{ text: label, size: 24, color: UI.earth, weight: 700 }], 900, 14);
+    const el = (this.m.earth.elevation + 2.8) * Math.PI / 180, az = this.m.earth.azimuth * Math.PI / 180;
+    text.position.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)).multiplyScalar(2200);
+    (text.material as THREE.SpriteMaterial).depthTest = false;
+    text.renderOrder = 21;
+    group.add(ring, text);
+    return { group, label };
   }
 
   private buildLander() {
