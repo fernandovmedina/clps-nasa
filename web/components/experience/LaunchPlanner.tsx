@@ -14,6 +14,7 @@ import {
   TRANSIT_DAYS,
   topSites,
 } from '@/lib/mission/launch-plan';
+import { controlHref } from '@/lib/mission/control-link';
 import type { MissionData } from '@/lib/mission/sites';
 import { earthMoonDistanceKm } from '@/lib/phases/launch-telemetry';
 import dialog from './Dialog.module.css';
@@ -206,7 +207,7 @@ export default function LaunchPlanner({ app, code, onClose, suspendEscape = fals
         </div>
 
         <div className={styles.footer}>
-          <a href="/mission-control/" target="_blank" rel="noopener">Análisis detallado de sitios y fechas</a>
+          <a href={controlHref({ site: null, landing: plan })} target="_blank" rel="noopener">Análisis detallado de sitios y fechas</a>
           <button type="button" className={layer.btn} data-variant="cta" disabled={!check?.ok} onClick={confirm}>Confirmar lanzamiento</button>
         </div>
       </section>

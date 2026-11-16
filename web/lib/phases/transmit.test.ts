@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fmtInt } from '../engine/hud';
 import { palette } from '../ui/palette';
-import { RELAY_LABEL, buildRelayLabel, packetsText } from './transmit';
+import { RELAY_LABEL, buildRelayLabel, earthElevationText, packetsText } from './transmit';
 
 describe('transmisión: textos', () => {
   it('«4 096 / 4 096» usa el mismo formato de número que el DOM, no el en-US del visor', () => {
@@ -35,5 +35,23 @@ describe('transmisión: ficha del relevo', () => {
     expect(sprite).toBeInstanceOf(THREE.Sprite);
     expect(fills[0]).toBe(palette['bg-surface']);
     expect(texts).toEqual([RELAY_LABEL]);
+  });
+});
+
+describe('transmisión: elevación de la Tierra', () => {
+  it('visible: la elevación y «visible»', () => {
+    expect(earthElevationText(8.5, 1.51, 'lola')).toBe('8.50° · visible');
+  });
+
+  it('positiva pero tapada por el relieve: cita el horizonte LOLA calculado', () => {
+    expect(earthElevationText(1.3, 1.3 - 6.99, 'lola')).toBe('1.30° · bajo el horizonte LOLA (6.99°)');
+  });
+
+  it('con horizonte esférico dice «horizonte geométrico»', () => {
+    expect(earthElevationText(-2.4, -2.4, 'spherical')).toBe('−2.40° · bajo el horizonte geométrico');
+  });
+
+  it('negativa con horizonte LOLA: bajo el horizonte, sin cifra de relieve', () => {
+    expect(earthElevationText(-2.4, -9, 'lola')).toBe('−2.40° · bajo el horizonte');
   });
 });

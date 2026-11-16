@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LunarApp, PhaseName } from '@/lib/engine/app';
 import type { PhaseHud, RunMode } from '@/lib/engine/hud';
 import type { RoomStatus } from '@/lib/sync/room-client';
+import { realMissionData } from '@/lib/mission/test-data';
 import MissionLayer from './MissionLayer';
 
 const NBSP = String.fromCharCode(160);
+const DEFAULT_CONTROL_HREF = '/mission-control/?s=malapert-a~2027-01-10T00:00Z~14&s=mons-mouton~2027-01-10T00:00Z~14';
 
 afterEach(cleanup);
 
@@ -16,7 +18,7 @@ interface Fake {
   ran: string[];
 }
 
-function fakeApp(hud: PhaseHud, phase: PhaseName = 'launch'): Fake {
+function fakeApp(hud: PhaseHud, phase: PhaseName = 'launch', over: Record<string, unknown> = {}): Fake {
   const state = { phase, mode: 'running' as RunMode, hud, muted: false, room: 'open' as RoomStatus };
   const ran: string[] = [];
   const app = {
@@ -27,6 +29,7 @@ function fakeApp(hud: PhaseHud, phase: PhaseName = 'launch'): Fake {
     data: null,
     selected: null,
     ranking: [],
+    ...over,
     setPaused: vi.fn((v: boolean) => { state.mode = v ? 'paused' : 'running'; }),
     stop: vi.fn(() => { state.mode = 'stopped'; }),
     restart: vi.fn(() => { state.mode = 'running'; state.phase = 'launch'; ran.push('restart'); }),
@@ -76,8 +79,24 @@ describe('MissionLayer', () => {
     await tick();
     expect(screen.queryByRole('link', { name: 'Mission Control' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Mission Control' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Análisis de sitios y fechas' }).getAttribute('href')).toBe('/mission-control/');
+    expect(screen.getByRole('link', { name: 'Análisis de sitios y fechas' }).getAttribute('href')).toBe(DEFAULT_CONTROL_HREF);
     expect(screen.queryByRole('link', { name: 'Cambiar fecha o sitio' })).toBeNull();
+  });
+
+  it('links the analysis with the chosen site as A, the best other site as B and the landing date', async () => {
+    const site = (id: string, crash = false) => ({
+      site: { id, name: id, crash }, rank: 1, score: 80, status: 'viable', sun: { elevation: 1, aboveHorizon: 1 }, earth: { elevation: 1, aboveHorizon: 1 },
+      hoursToSunset: 1, hoursToEarthset: 1,
+    });
+    const fake = fakeApp(launchHud(), 'orbit', {
+      data: realMissionData(new Date(Date.UTC(2027, 1, 3, 6, 30))),
+      selected: site('de-gerlache'),
+      ranking: [site('shackleton'), site('no-caer', true), site('de-gerlache')],
+    });
+    mount(fake);
+    await tick();
+    expect(screen.getByRole('link', { name: 'Análisis de sitios y fechas' }).getAttribute('href'))
+      .toBe('/mission-control/?s=de-gerlache~2027-02-03T06:30Z~14&s=shackleton~2027-02-03T06:30Z~14');
   });
 
   it('shows the real plan in the mission block: launch, arrival and the room code in a box', async () => {
@@ -158,7 +177,7 @@ describe('MissionLayer', () => {
     const items = within(screen.getByRole('list', { name: 'Fases de la misión' })).getAllByRole('listitem');
     expect(items.some((li) => li.getAttribute('aria-current') === 'step')).toBe(false);
     const card = screen.getByRole('region', { name: 'Misión detenida' });
-    expect(within(card).getByRole('link', { name: 'Análisis de sitios y fechas' }).getAttribute('href')).toBe('/mission-control/');
+    expect(within(card).getByRole('link', { name: 'Análisis de sitios y fechas' }).getAttribute('href')).toBe(DEFAULT_CONTROL_HREF);
 
     fireEvent.click(screen.getByRole('button', { name: 'Reiniciar desde el despegue' }));
     await tick();
