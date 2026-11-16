@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import type { Marker, MarkerKind } from '@touchdown/core';
 import { UI, roundRect } from '../engine/panel';
 import { palette } from '../ui/palette';
+import { t } from '@/lib/i18n';
+import { phasesWorldDict as D } from '@/lib/i18n/dicts/phases-world';
 
 export interface PaperLine { text: string; size: number; weight?: number; /** Línea secundaria: tinta 2 en vez de tinta. */ muted?: boolean }
 
@@ -32,7 +34,9 @@ export function paintPaperChip(g: CanvasRenderingContext2D, w: number, h: number
  * de estado, del Sol o de la Tierra solo como filete. El lienzo se mide al texto; `widthM` fija la escala como en las
  * fichas de 512 px de siempre (metros por pixel = widthM / 512), así que el tamaño del texto no cambia.
  */
-export function paperLabel(lines: PaperLine[], widthM: number, opts: { pad?: number; accent?: string; name?: string } = {}): THREE.Sprite {
+export type PaperOpts = { pad?: number; accent?: string; name?: string };
+
+export function paperLabel(lines: PaperLine[], widthM: number, opts: PaperOpts = {}): THREE.Sprite {
   const pad = opts.pad ?? 18;
   const accentRoom = opts.accent ? PAPER_ACCENT_H + 6 : 0;
   const c = document.createElement('canvas');
@@ -65,12 +69,36 @@ export function paperLabel(lines: PaperLine[], widthM: number, opts: { pad?: num
   return sprite;
 }
 
-const STYLE: Record<MarkerKind, { color: string; glyph: string; label: string }> = {
-  rock: { color: palette.accent, glyph: '🪨', label: 'Roca' },
-  slope: { color: palette.marginal, glyph: '⛰', label: 'Pendiente' },
-  shadow: { color: palette.earth, glyph: '🌑', label: 'Sombra' },
-  other: { color: palette.bad, glyph: '⚠', label: 'Otro' },
+/**
+ * Vuelve a pintar una ficha de papel con otras líneas, en el mismo sprite: conserva posición, nombre, orden de dibujo,
+ * visibilidad y prueba de profundidad, cambia el mapa y la escala, y libera la textura vieja.
+ */
+export function relabelPaper(sprite: THREE.Sprite, lines: PaperLine[], widthM: number, opts: PaperOpts = {}) {
+  const fresh = paperLabel(lines, widthM, opts);
+  const mat = sprite.material as THREE.SpriteMaterial;
+  mat.map?.dispose();
+  mat.map = (fresh.material as THREE.SpriteMaterial).map;
+  mat.needsUpdate = true;
+  sprite.scale.copy(fresh.scale);
+  fresh.material.dispose();
+}
+
+const STYLE: Record<MarkerKind, { color: string; glyph: string }> = {
+  rock: { color: palette.accent, glyph: '🪨' },
+  slope: { color: palette.marginal, glyph: '⛰' },
+  shadow: { color: palette.earth, glyph: '🌑' },
+  other: { color: palette.bad, glyph: '⚠' },
 };
+
+/** Nombre del tipo de riesgo en el idioma actual: «Roca» / «Rock». */
+export const markerLabel = (kind: MarkerKind) => t(D, `mk.${kind}` as const);
+
+/** Las líneas de la ficha de un riesgo: el tipo con su glifo y, si la hay, la nota de quien lo marcó. */
+function markerLines(m: Marker): PaperLine[] {
+  const lines: PaperLine[] = [{ text: `${STYLE[m.kind].glyph} ${markerLabel(m.kind)}`, size: 32, weight: 800 }];
+  if (m.note) lines.push({ text: m.note, size: 24, muted: true });
+  return lines;
+}
 
 /**
  * Renders one site's risk markers as a ground ring + floating label, kept in
@@ -80,6 +108,7 @@ const STYLE: Record<MarkerKind, { color: string; glyph: string; label: string }>
 export class MarkerField {
   private group = new THREE.Group();
   private byId = new Map<string, THREE.Object3D>();
+  private labels = new Map<string, { sprite: THREE.Sprite; m: Marker }>();
 
   constructor(scene: THREE.Scene, private siteId: string, private heightAt: (x: number, z: number) => number) {
     scene.add(this.group);
@@ -94,6 +123,7 @@ export class MarkerField {
       this.group.remove(obj);
       disposeMarkerObject(obj);
       this.byId.delete(id);
+      this.labels.delete(id);
     }
     for (const m of mine) {
       if (!this.byId.has(m.id)) this.byId.set(m.id, this.build(m));
@@ -114,19 +144,24 @@ export class MarkerField {
     ring.position.y = 0.06;
     g.add(ring);
 
-    const lines: PaperLine[] = [{ text: `${style.glyph} ${style.label}`, size: 32, weight: 800 }];
-    if (m.note) lines.push({ text: m.note, size: 24, muted: true });
-    const label = paperLabel(lines, 2.4, { accent: style.color });
+    const label = paperLabel(markerLines(m), 2.4, { accent: style.color });
     label.position.y = 1.7;
     g.add(label);
+    this.labels.set(m.id, { sprite: label, m });
 
     this.group.add(g);
     return g;
   }
 
+  /** El idioma cambió: cada ficha se vuelve a pintar con el nombre del tipo en el idioma nuevo. */
+  relabel() {
+    for (const { sprite, m } of this.labels.values()) relabelPaper(sprite, markerLines(m), 2.4, { accent: STYLE[m.kind].color });
+  }
+
   dispose() {
     for (const obj of this.byId.values()) disposeMarkerObject(obj);
     this.byId.clear();
+    this.labels.clear();
     this.group.removeFromParent();
   }
 }

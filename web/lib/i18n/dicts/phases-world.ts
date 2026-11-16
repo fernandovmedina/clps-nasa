@@ -1,0 +1,43 @@
+import { defineDict } from '../dict'
+
+/** El mundo de la superficie (surface-world.ts), las fichas de riesgo (markers.ts) y el visor del inspector (spy-view.ts). */
+export const phasesWorldDict = defineDict({
+  es: {
+    sun: 'SOL',
+    earth: 'TIERRA',
+    'sky.sub': 'elev {el}° · az {az}°',
+    'lz.title': 'ZONA DE ALUNIZAJE',
+    'lz.sub': 'Ø 40 m',
+    'lz.subRough': 'Ø 40 m · rugosidad {r} m',
+    'horizon.label': 'Horizonte {h}',
+    'ghost.label': 'Tierra tapada por el relieve · {deg}°',
+    'ghost.note': 'visto desde la superficie',
+    'relay.label': 'Relevo (posición ilustrativa)',
+    'mk.rock': 'Roca',
+    'mk.slope': 'Pendiente',
+    'mk.shadow': 'Sombra',
+    'mk.other': 'Otro',
+    'spy.title': 'VISTA DEL INSPECTOR VR',
+    'spy.live': '● EN VIVO',
+    'spy.noSignal': '● SIN SEÑAL',
+  },
+  en: {
+    sun: 'SUN',
+    earth: 'EARTH',
+    'sky.sub': 'elev {el}° · az {az}°',
+    'lz.title': 'LANDING SITE',
+    'lz.sub': 'Ø 40 m',
+    'lz.subRough': 'Ø 40 m · roughness {r} m',
+    'horizon.label': '{h} horizon',
+    'ghost.label': 'Earth hidden by terrain · {deg}°',
+    'ghost.note': 'as seen from the surface',
+    'relay.label': 'Relay (illustrative position)',
+    'mk.rock': 'Rock',
+    'mk.slope': 'Slope',
+    'mk.shadow': 'Shadow',
+    'mk.other': 'Other',
+    'spy.title': 'VR INSPECTOR VIEW',
+    'spy.live': '● LIVE',
+    'spy.noSignal': '● NO SIGNAL',
+  },
+})

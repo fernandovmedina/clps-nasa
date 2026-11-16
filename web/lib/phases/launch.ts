@@ -8,7 +8,10 @@ import { createMoon } from '../engine/moon';
 import { clamp01, damp, disposeTree, lerp, rand, smooth } from '../engine/util';
 import { clearSurface } from './surface-world';
 import { disposeObject, loadRocketModel } from './rocket-model';
-import { countdownFigure, fmtPercent, groupThousands, type PhaseHud } from '../engine/hud';
+import type { PhaseHud } from '../engine/hud';
+import { getLang, t } from '@/lib/i18n';
+import { phasesLaunchDict as D } from '@/lib/i18n/dicts/phases-launch';
+import { groupNums, percent } from './phases-format';
 import { LaunchEnvironment, rocketShadowProxy } from './launch-environment';
 import { LaunchExhaust } from './launch-exhaust';
 import { loadLaunchTower } from './launch-tower';
@@ -28,6 +31,35 @@ const HUD_DIST = 1.45;
 const HUD_W = 1.15;
 const HUD_H = (HUD_W * 360) / 1400;
 const COUNT_W = (HUD_W * 480) / 1400;
+
+type LaunchStatus = { kind: 'init' | 'ready' | 'error' } | { kind: 'load'; msg: string };
+
+const renderStatus = (s: LaunchStatus) => (s.kind === 'load' ? loadMessage(s.msg) : t(D, `status.${s.kind}` as const));
+
+const LOAD_KEYS = ['load.catalog', 'load.ephemeris', 'load.terrain', 'load.done'] as const;
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** El cargador de datos (lib/mission/sites.ts) manda su mensaje en español: en inglés se reconoce y se traduce, y lo demás pasa tal cual. */
+export function loadMessage(msg: string): string {
+  if (getLang() === 'es') return msg;
+  for (const key of LOAD_KEYS) {
+    const m = new RegExp(`^${escapeRe(D.es[key]).replace('\\{name\\}', '(.+)')}$`).exec(msg);
+    if (m) return t(D, key, { name: m[1] ?? '' });
+  }
+  return msg;
+}
+
+/** Cuenta regresiva: el rótulo interno sigue en español (lo comparan el audio y el narrador); el texto se elige al pintar. */
+const countText = (label: string) => (label === 'IGNICIÓN' ? t(D, 'count.ignition') : label === 'DESPEGUE' ? t(D, 'count.liftoff') : label);
+
+/** La cifra grande del DOM durante la cuenta: mismo texto que `countdownFigure` (engine/hud.ts) en español. */
+export function countFigure(label: string): { value: string; caption: string } | null {
+  const tick = /^T-(\d)$/.exec(label);
+  if (tick) return { value: t(D, 'fig.tick', { n: tick[1]! }), caption: t(D, 'fig.tickCaption') };
+  if (label === 'IGNICIÓN') return { value: t(D, 'fig.ignition'), caption: t(D, 'fig.ignitionCaption') };
+  if (label === 'DESPEGUE') return { value: t(D, 'fig.liftoff'), caption: t(D, 'fig.liftoffCaption') };
+  return null;
+}
 const HEMI_DAY = 0.8;
 
 /* ---------------- models ---------------- */
@@ -67,7 +99,9 @@ export class LaunchPhase implements Phase {
   private progress = 0; private shownPct = 0; private done = false; private leaving = false;
   private sync: LaunchSync;
   private narratedAtmo = false; private narratedApproach = false;
-  private status = 'Inicializando sistemas de vuelo';
+  /** La línea de estado: `statusSrc` dice qué es y `status` es el texto en el idioma actual (se reescribe al cambiar de idioma). */
+  private statusSrc: LaunchStatus = { kind: 'init' };
+  private status = renderStatus(this.statusSrc);
   private tele = { alt: '0.0 km', vel: '0.00 km/s', dist: '384,400 km' };
   private moonKm = MEAN_MOON_DISTANCE_KM;
   private uiT = 0; private countLabel = '';
@@ -188,11 +222,11 @@ export class LaunchPhase implements Phase {
     // The room client replays the snapshot it already received, which is what a monitor joining late needs.
     this.app.room.setListener((msg) => this.sync.handle(msg));
 
-    this.app.opts.loadData((p, msg) => { this.progress = Math.max(this.progress, clamp01(p)); this.status = msg; this.hud.invalidate(); })
+    this.app.opts.loadData((p, msg) => { this.progress = Math.max(this.progress, clamp01(p)); this.setStatus({ kind: 'load', msg }); this.hud.invalidate(); })
       .then((d) => {
-        this.app.data = d; this.done = true; this.status = 'Datos listos · Rumbo al polo sur lunar'; this.hud.invalidate();
+        this.app.data = d; this.done = true; this.setStatus({ kind: 'ready' }); this.hud.invalidate();
       })
-      .catch((e) => { console.error(e); this.status = 'Error al cargar datos — reintenta'; this.hud.invalidate(); });
+      .catch((e) => { console.error(e); this.setStatus({ kind: 'error' }); this.hud.invalidate(); });
   }
 
   exit() {
@@ -209,6 +243,11 @@ export class LaunchPhase implements Phase {
 
   private get started() { return this.sync.started; }
 
+  private setStatus(src: LaunchStatus) { this.statusSrc = src; this.status = renderStatus(src); }
+
+  /** El idioma cambió: la línea de estado se reescribe y los paneles de canvas se repintan con el texto nuevo. */
+  onLangChange() { this.status = renderStatus(this.statusSrc); this.hud.invalidate(); this.count.invalidate(); }
+
   /** Date-dependent, so read from the mission every time: the planner can change it while the launch waits. */
   private get moonTarget() {
     const d = this.app.data;
@@ -219,10 +258,11 @@ export class LaunchPhase implements Phase {
   private beginCountdown() { this.sync.start('crew'); }
 
   private drawCount(p: Panel, g: CanvasRenderingContext2D) {
-    const label = this.countLabel;
-    if (!label) return;
+    const raw = this.countLabel;
+    if (!raw) return;
+    const label = countText(raw);
     p.frame(g);
-    const tick = label.startsWith('T-');
+    const tick = raw.startsWith('T-');
     let size = tick ? 150 : 84;
     g.textAlign = 'center'; g.textBaseline = 'middle';
     do { g.font = `800 ${size}px ${UI.font}`; size -= 4; } while (g.measureText(label).width > p.pxW - 64 && size > 32);
@@ -247,17 +287,17 @@ export class LaunchPhase implements Phase {
     p.frame(g);
     g.fillStyle = UI.accent; g.beginPath(); g.arc(56, 62, 9, 0, 7); g.fill();
     g.font = `600 26px ${UI.mono}`; g.fillStyle = UI.dim;
-    g.fillText('MISSION CONTROL  /  LUNAR SOUTH POLE · SITE PLANNER', 80, 72);
+    g.fillText(t(D, 'hud.title'), 80, 72);
     if (!this.started) {
       g.font = `500 30px ${UI.font}`; g.fillStyle = UI.text; g.fillText(this.status, 44, 140);
       roundRect(g, 44, 170, 1200, 10, 5); g.fillStyle = UI.lineStrong; g.fill();
       if (this.shownPct > 0.002) { roundRect(g, 44, 170, 1200 * this.shownPct, 10, 5); g.fillStyle = UI.accent; g.fill(); }
       g.font = `700 24px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right';
       g.fillText(`${Math.round(this.shownPct * 100)}%`, 1356, 184); g.textAlign = 'left';
-      p.button(g, 'start', 44, 215, 1200, 96, 'Comenzar despegue', () => this.beginCountdown());
+      p.button(g, 'start', 44, 215, 1200, 96, t(D, 'start'), () => this.beginCountdown());
       return;
     }
-    const cols: [string, string][] = [['ALTITUD', this.tele.alt], ['VELOCIDAD', this.tele.vel], ['DIST. A LA LUNA', this.tele.dist]];
+    const cols: [string, string][] = [[t(D, 'col.alt'), this.tele.alt], [t(D, 'col.vel'), this.tele.vel], [t(D, 'col.dist'), this.tele.dist]];
     cols.forEach(([k, v], i) => {
       const x = 44 + i * 440;
       g.font = `600 22px ${UI.mono}`; g.fillStyle = UI.dim; g.fillText(k, x, 140);
@@ -369,11 +409,11 @@ export class LaunchPhase implements Phase {
       this.uiT = 0;
       const u = Math.max(0, pos.distanceTo(EARTH_C) - EARTH_R - 3.8);
       const km = s >= 0.999 ? 384300 : 384400 * Math.pow(clamp01(u / this.travelUnits), 2.2);
-      const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
       const v = t < T_LIFT ? 0 : lerp(lerp(0, 10.9, smooth(0, 0.25, s)), 1.7, smooth(0.6, 1, s)) * (0.75 + 0.25 * Math.min(1, this.speed / 0.04));
       const moonTarget = this.moonTarget;
       this.moonKm = Math.abs(moonTarget - this.moonKm) < 0.5 ? moonTarget : lerp(this.moonKm, moonTarget, damp(2.5, tick));
       const left = Math.max(100, this.moonKm * (1 - clamp01(km / 384300)));
+      const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
       this.tele = { alt: km < 1000 ? `${km.toFixed(1)} km` : `${fmt(km)} km`, vel: `${v.toFixed(2)} km/s`, dist: `${fmt(left)} km` };
       this.hud.invalidate();
     }
@@ -393,30 +433,30 @@ export class LaunchPhase implements Phase {
   }
 
   controlHud(): PhaseHud {
-    const pct = fmtPercent(this.shownPct * 100);
-    const count = this.started ? countdownFigure(this.countLabel || (this.t < 0.4 ? 'T-3' : '')) : null;
+    const pct = percent(this.shownPct * 100);
+    const count = this.started ? countFigure(this.countLabel || (this.t < 0.4 ? 'T-3' : '')) : null;
     const isHost = this.app.isHost;
     const waitingFigure = this.started ? null
-      : !isHost ? { value: 'En espera', caption: '' }
-      : this.done ? { value: 'Listo', caption: 'para despegar' }
+      : !isHost ? { value: t(D, 'fig.standby'), caption: '' }
+      : this.done ? { value: t(D, 'fig.ready'), caption: t(D, 'fig.readyCaption') }
       : null;
     const detail = this.started ? this.status
-      : !isHost ? (this.app.room.status === 'open' ? 'Conectado. El despegue empezará aquí en cuanto la tripulación pulse «Comenzar despegue».' : 'Conectando con la sala…')
-      : this.done ? `Quien te siga puede conectarse con el código ${this.app.room.room} antes de iniciar.`
+      : !isHost ? (this.app.room.status === 'open' ? t(D, 'detail.connected') : t(D, 'detail.connecting'))
+      : this.done ? t(D, 'detail.share', { room: this.app.room.room })
       : this.status;
     return {
-      figure: count ?? waitingFigure ?? { value: pct, caption: 'de los datos de la misión cargados' },
-      progress: { value: this.shownPct, label: 'Carga de datos', text: count ? pct : undefined },
+      figure: count ?? waitingFigure ?? { value: pct, caption: t(D, 'fig.loaded') },
+      progress: { value: this.shownPct, label: t(D, 'progress.label'), text: count ? pct : undefined },
       detail,
       side: {
         kind: 'readouts',
         items: [
-          { label: 'Altitud', value: groupThousands(this.tele.alt) },
-          { label: 'Velocidad', value: this.tele.vel },
-          { label: 'Distancia a la Luna', value: groupThousands(this.tele.dist) },
+          { label: t(D, 'ro.alt'), value: groupNums(this.tele.alt) },
+          { label: t(D, 'ro.vel'), value: this.tele.vel },
+          { label: t(D, 'ro.dist'), value: groupNums(this.tele.dist) },
         ],
       },
-      primary: this.started || !isHost ? undefined : { id: 'start', label: 'Comenzar despegue', run: () => { this.beginCountdown(); this.hud.invalidate(); } },
+      primary: this.started || !isHost ? undefined : { id: 'start', label: t(D, 'start'), run: () => { this.beginCountdown(); this.hud.invalidate(); } },
       waiting: !this.started,
     };
   }

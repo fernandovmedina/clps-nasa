@@ -7,7 +7,10 @@ import { clamp01, damp, disposeTree, rand, smooth } from '../engine/util';
 import { ensureSelection, nearReliefNote } from './pov';
 import { CabinConsole } from './landing-console';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
-import { fmtInt, fmtLatLon, fmtPercent, type PhaseHud } from '../engine/hud';
+import { fmtLatLon, type PhaseHud } from '../engine/hud';
+import { t } from '@/lib/i18n';
+import { phasesLandingDict as D } from '@/lib/i18n/dicts/phases-landing';
+import { int, percent } from './phases-format';
 
 const T_BRAKE = 17;     // end of the powered approach
 export const T_TOUCH = 25.5;   // touchdown
@@ -346,24 +349,30 @@ export class LandingPhase implements Phase {
 
   updateUi() { if (this.impactAt < 0) this.cabinConsole.update(); }
 
+  /** El idioma cambió: la consola de la cabina relee sus vistas y repinta los cinco paneles; las fichas del mundo se rehacen. */
+  onLangChange() {
+    if (this.impactAt < 0) this.cabinConsole.onLangChange();
+    this.world.relabel();
+  }
+
   controlHud(): PhaseHud {
     const site = this.world.m.site;
     if (this.crash && this.t >= T_FAIL) return this.crashHud(site);
-    const status = this.touched ? 'Luz de contacto · motor apagado' : this.t < T_BRAKE ? 'Descenso motorizado · aproximación' : 'Descenso terminal · vertical';
+    const status = t(D, this.touched ? 'status.contact' : this.t < T_BRAKE ? 'status.approach' : 'status.terminal');
     const toTouch = Math.max(0, T_TOUCH - this.t);
     const progress = clamp01(this.t / T_TOUCH);
     return {
-      figure: { value: `${this.alt < 100 ? this.alt.toFixed(1) : fmtInt(this.alt)} m`, caption: 'sobre la superficie' },
-      progress: { value: progress, label: 'Avance del descenso', text: fmtPercent(progress * 100) },
-      detail: `${status} · ${this.touched ? 'alunizaje confirmado' : `contacto en ${toTouch.toFixed(0)} s`}`,
+      figure: { value: `${this.alt < 100 ? this.alt.toFixed(1) : int(this.alt)} m`, caption: t(D, 'fig.caption') },
+      progress: { value: progress, label: t(D, 'progress.label'), text: percent(progress * 100) },
+      detail: `${status} · ${this.touched ? t(D, 'detail.confirmed') : t(D, 'detail.contactIn', { s: toTouch.toFixed(0) })}`,
       side: {
         kind: 'readouts',
         items: [
-          { label: 'Velocidad de descenso', value: `${(this.touched ? 0 : Math.abs(this.vs)).toFixed(1)} m/s` },
-          { label: 'Velocidad horizontal', value: `${(this.touched ? 0 : this.hs).toFixed(1)} m/s` },
-          { label: 'Combustible', value: fmtPercent(this.fuel), meter: { value: this.fuel / 100, label: `Combustible al ${Math.round(this.fuel)} %` } },
-          { label: 'Luz de contacto', value: this.touched ? 'Encendida' : 'Apagada' },
-          { label: 'Zona de alunizaje', value: fmtLatLon(site.lat, site.lon), size: 'md' },
+          { label: t(D, 'ro.vs'), value: `${(this.touched ? 0 : Math.abs(this.vs)).toFixed(1)} m/s` },
+          { label: t(D, 'ro.hs'), value: `${(this.touched ? 0 : this.hs).toFixed(1)} m/s` },
+          { label: t(D, 'ro.fuel'), value: percent(this.fuel), meter: { value: this.fuel / 100, label: t(D, 'fuel.meter', { n: Math.round(this.fuel) }) } },
+          { label: t(D, 'ro.contact'), value: t(D, this.touched ? 'on' : 'off') },
+          { label: t(D, 'ro.zone'), value: fmtLatLon(site.lat, site.lon), size: 'md' },
         ],
         note: nearReliefNote(site),
       },
@@ -374,19 +383,19 @@ export class LandingPhase implements Phase {
     const exploded = this.impactAt >= 0;
     return {
       figure: exploded
-        ? { value: 'IMPACTO', caption: 'misión perdida' }
-        : { value: `${this.alt < 100 ? this.alt.toFixed(1) : fmtInt(this.alt)} m`, caption: 'caída libre · motor apagado' },
+        ? { value: t(D, 'crash.impact'), caption: t(D, 'crash.lost') }
+        : { value: `${this.alt < 100 ? this.alt.toFixed(1) : int(this.alt)} m`, caption: t(D, 'crash.free') },
       detail: exploded
-        ? `Impacto a ${this.impactSpeed.toFixed(1)} m/s · regresando a órbita`
-        : 'FALLA DEL MOTOR · caída libre con gravedad lunar (1.62 m/s²)',
+        ? t(D, 'crash.hit', { v: this.impactSpeed.toFixed(1) })
+        : t(D, 'crash.fail'),
       side: {
         kind: 'readouts',
         items: [
-          { label: 'Velocidad de descenso', value: `${(exploded ? this.impactSpeed : Math.abs(this.vs)).toFixed(1)} m/s` },
-          { label: 'Motor principal', value: 'Falla' },
-          { label: 'Combustible', value: fmtPercent(this.fuel) },
-          { label: 'Luz de contacto', value: exploded ? 'Impacto' : 'Apagada' },
-          { label: 'Zona de alunizaje', value: fmtLatLon(site.lat, site.lon), size: 'md' },
+          { label: t(D, 'ro.vs'), value: `${(exploded ? this.impactSpeed : Math.abs(this.vs)).toFixed(1)} m/s` },
+          { label: t(D, 'ro.engine'), value: t(D, 'engine.fail') },
+          { label: t(D, 'ro.fuel'), value: percent(this.fuel) },
+          { label: t(D, 'ro.contact'), value: t(D, exploded ? 'contact.impact' : 'off') },
+          { label: t(D, 'ro.zone'), value: fmtLatLon(site.lat, site.lon), size: 'md' },
         ],
         note: nearReliefNote(site),
       },
