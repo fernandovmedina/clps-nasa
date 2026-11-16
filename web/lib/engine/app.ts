@@ -29,6 +29,10 @@ export interface Phase {
   readonly ownsRunControls?: boolean;
   /** Every frame, also while paused or stopped, so the phase's own 3D controls keep redrawing. */
   updateUi?(): void;
+  /** La fase deja que el visitante mire donde quiera: la vista no regresa sola a la del encuadre tras 4 s sin arrastrar. */
+  readonly holdsLook?: boolean;
+  /** Exposición y tone mapping propios de la fase; se restauran al pasar a otra. */
+  readonly render?: RenderStyle;
 }
 
 export type PhaseName = 'launch' | 'orbit' | 'pov' | 'landing' | 'transmit';
@@ -56,6 +60,10 @@ export interface AppOptions {
    */
   isHost?: boolean;
 }
+
+/** Tone mapping y exposición con que una fase se dibuja; sin `render`, la fase usa los de siempre. */
+export interface RenderStyle { toneMapping: THREE.ToneMapping; exposure: number }
+const DEFAULT_RENDER: RenderStyle = { toneMapping: THREE.ACESFilmicToneMapping, exposure: 1.05 };
 
 type PhaseFactory = (app: LunarApp) => Phase;
 
@@ -109,7 +117,7 @@ export class LunarApp {
   private viewFScratch = new THREE.Vector3();
   private viewTgtScratch = new THREE.Vector3();
   private viewRigUpScratch = new THREE.Vector3();
-  private look = { yaw: 0, pitch: 0, idle: 0 };
+  private look = { yaw: 0, pitch: 0, idle: 0, releasing: false };
   /** Child of `camera`, not `rig` - a spy-view capture (spy-view.ts) must hide this too. */
   readonly fadeMesh: THREE.Mesh;
   /** Head-locked, visible only in VR - the only way out of a session besides powering off the headset.
@@ -132,8 +140,8 @@ export class LunarApp {
     const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     r.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     r.outputColorSpace = THREE.SRGBColorSpace;
-    r.toneMapping = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = 1.05;
+    r.toneMapping = DEFAULT_RENDER.toneMapping;
+    r.toneMappingExposure = DEFAULT_RENDER.exposure;
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.xr.enabled = true;
@@ -259,7 +267,11 @@ export class LunarApp {
     this.look.yaw -= dx * 0.004;
     this.look.pitch = THREE.MathUtils.clamp(this.look.pitch - dy * 0.004, -1.2, 1.2);
     this.look.idle = 0;
+    this.look.releasing = false;
   }
+
+  /** Suelta lo arrastrado con el ratón (suave) para que el encuadre de la fase vuelva a mandar, p. ej. tras «Mirar al Sol». */
+  releaseLook() { this.look.releasing = true; }
 
   fadeTo(v: number, seconds: number) {
     this.fade.target = v;
@@ -274,10 +286,13 @@ export class LunarApp {
     this.phase?.exit();
     const p = f(this);
     this.phase = p;
+    const style = p.render ?? DEFAULT_RENDER;
+    this.renderer.toneMapping = style.toneMapping;
+    this.renderer.toneMappingExposure = style.exposure;
     p.scene.add(this.rig);
     p.enter();
     this.view.snap = true;
-    this.look.yaw = 0; this.look.pitch = 0;
+    this.look.yaw = 0; this.look.pitch = 0; this.look.releasing = false;
     this.opts.onPhase?.(name);
     this.follow.announce(name, currentLanding(this.data, window.location.search));
   }
@@ -390,7 +405,11 @@ export class LunarApp {
 
     if (!this.isXR) {
       this.look.idle += frame;
-      if (this.look.idle > 4) { const d = damp(1.2, frame); this.look.yaw *= 1 - d; this.look.pitch *= 1 - d; }
+      if ((this.look.idle > 4 && !p.holdsLook) || this.look.releasing) {
+        const d = damp(this.look.releasing ? 4 : 1.2, frame);
+        this.look.yaw *= 1 - d; this.look.pitch *= 1 - d;
+        if (this.look.releasing && Math.abs(this.look.yaw) + Math.abs(this.look.pitch) < 1e-3) { this.look.yaw = 0; this.look.pitch = 0; this.look.releasing = false; }
+      }
       this.camera.position.set(0, this.eyeHeight, 0);
       this.camera.rotation.set(this.look.pitch, this.look.yaw, 0, 'YXZ');
     }
