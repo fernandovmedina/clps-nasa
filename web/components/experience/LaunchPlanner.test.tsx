@@ -181,7 +181,7 @@ describe('LaunchPlanner', () => {
   it('links to the detailed analysis in a new tab without giving it the opener', () => {
     mount();
     const link = screen.getByRole('link', { name: 'Análisis detallado de sitios y fechas' });
-    expect(link.getAttribute('href')).toBe('/mission-control/');
+    expect(link.getAttribute('href')).toBe('/mission-control/?s=malapert-a~2027-01-10T00:00Z~14&s=mons-mouton~2027-01-10T00:00Z~14');
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toContain('noopener');
   });

@@ -7,10 +7,24 @@ import { clamp01, disposeTree, rand, smooth } from '../engine/util';
 import { ensureSelection } from './pov';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
 import { paperLabel } from './markers';
+import { controlHrefFor } from '../mission/control-link';
 import { earthRangeKmAt } from '../mission/global-track';
 import { fmtInt, fmtPercent, fmtSigned, signalDelayS, type HudReadout, type PhaseHud } from '../engine/hud';
 
 const TX_SECONDS = 14;
+
+/**
+ * Earth's elevation and why it is or is not visible. The terrain horizon is the
+ * elevation minus how far the Earth is above it (the LOLA mask at that azimuth);
+ * a spherical horizon is the geometric 0°.
+ */
+export function earthElevationText(elevation: number, aboveHorizon: number, source: 'lola' | 'spherical'): string {
+  const value = `${fmtSigned(elevation, 2)}°`;
+  if (aboveHorizon > 0) return `${value} · visible`;
+  if (source === 'spherical') return `${value} · bajo el horizonte geométrico`;
+  if (elevation > 0) return `${value} · bajo el horizonte LOLA (${fmtSigned(elevation - aboveHorizon, 2)}°)`;
+  return `${value} · bajo el horizonte`;
+}
 const LIGHT_TIME_S = 384400 / 299792.458;
 
 /** Animated energy beam between two points (additive, flowing stripes toward `to`). */
@@ -259,7 +273,7 @@ export class TransmitPhase implements Phase {
     const rangeKm = data ? earthRangeKmAt(data.global, data.landingDate) : null;
     const items: HudReadout[] = [
       { label: 'Enlace', value: this.relay ? 'Relevo orbital' : 'Directo con la Tierra' },
-      { label: 'Elevación de la Tierra', value: `${fmtSigned(m.earth.elevation, 2)}° · ${w.earthVisible ? 'visible' : 'bajo el horizonte'}` },
+      { label: 'Elevación de la Tierra', value: earthElevationText(m.earth.elevation, m.earth.aboveHorizon, m.site.horizonSource) },
     ];
     if (rangeKm !== null) {
       items.push(
@@ -281,7 +295,7 @@ export class TransmitPhase implements Phase {
         { id: 'again', label: 'Repetir misión', run: () => this.app.goTo('launch', 1.0, 1.2) },
         { id: 'other', label: 'Otro sitio', run: () => this.app.goTo('orbit', 0.8, 1.0) },
       ],
-      primary: { id: 'report', label: 'Ver reporte en Mission Control', href: '/mission-control/' },
+      primary: { id: 'report', label: 'Ver reporte en Mission Control', href: controlHrefFor(this.app, window.location.search) },
     };
   }
 }

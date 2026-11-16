@@ -12,6 +12,7 @@ import FollowPill from './FollowPill';
 import { CheckIcon, SoundIcon } from './icons';
 import LaunchPlanner from './LaunchPlanner';
 import { announce, describeMission } from './mission';
+import { controlHrefFor } from '@/lib/mission/control-link';
 import MissionBlock from './MissionBlock';
 import SidePanel from './SidePanel';
 import StatusPanel from './StatusPanel';
@@ -54,6 +55,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
   const stopped = mode === 'stopped';
   const paused = mode === 'paused';
   const current = PHASE_ORDER.indexOf(phase);
+  const controlHref = app ? controlHrefFor(app, window.location.search) : '/mission-control/';
 
   const [announced, setAnnounced] = useState({ phase, mode, text: '' });
   if (announced.phase !== phase || announced.mode !== mode) {
@@ -174,7 +176,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
             );
           })}
         </ol>
-        <MissionBlock mission={mission} code={room.code} follow={follow} roomOpen={roomOpen} prelaunch={prelaunch} onChangeLaunch={() => onPlanning?.(true)} />
+        <MissionBlock mission={mission} code={room.code} follow={follow} roomOpen={roomOpen} prelaunch={prelaunch} onChangeLaunch={() => onPlanning?.(true)} controlHref={controlHref} />
       </div>
 
       {hud && !stopped && (
@@ -204,7 +206,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
           <h2 id="stopped-title">Misión detenida</h2>
           <p>La simulación se detuvo en la fase de {PHASE_LABELS[phase].toLowerCase()} y el sonido está apagado. La fecha y el sitio elegidos se conservan.</p>
           <button ref={restartButton} type="button" className={styles.btn} data-variant="cta" onClick={restart}>Reiniciar desde el despegue</button>
-          <a className={styles.btn} href="/mission-control/">Análisis de sitios y fechas</a>
+          <a className={styles.btn} href={controlHref}>Análisis de sitios y fechas</a>
         </section>
       )}
 
