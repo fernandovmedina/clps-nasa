@@ -1,3 +1,4 @@
-html, body { margin: 0; height: 100%; background: #000; color: #FAF9F5; overflow: hidden;
+/* El fondo negro es el espacio del render 3D; el texto heredado es tinta porque todo lo que se pinta encima es papel. */
+html, body { margin: 0; height: 100%; background: black; color: var(--label); overflow: hidden;
   font-family: 'Inter Variable', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
 * { box-sizing: border-box; }

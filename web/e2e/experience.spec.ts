@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import { CAPCOM_ACCESS_EXPIRES_AT } from '../lib/capcom/config'
 
 const OPTIONAL_TEXTURES = ['/textures/moon/general.jpg', '/textures/moon/north-pole.jpg', '/textures/moon/south-pole.jpg']
 const LAYER = '[data-mode]'
@@ -197,8 +198,9 @@ test('in the orbit, choosing another site in the list changes the big figure and
   await expect(rows).toHaveCount(11)
   const pressed = await rows.evaluateAll((all) => all.findIndex((b) => b.getAttribute('aria-pressed') === 'true'))
   const target = rows.nth(pressed === 0 ? 1 : 0)
-  const name = (await target.locator('span').nth(1).textContent()) ?? ''
-  const score = (await target.locator('span').nth(2).textContent()) ?? ''
+  // Fila: rank · [nombre + etiqueta de contraste, si la hay] · (delta) · puntaje. El nombre es el tercer span y el puntaje el último.
+  const name = (await target.locator('span').nth(2).textContent()) ?? ''
+  const score = (await target.locator('span').last().textContent()) ?? ''
   const before = await figure(page).textContent()
 
   await target.click()
@@ -529,7 +531,13 @@ test('the Mission Control dialog exists, validates the code and cancels with Esc
   await expect(planner(page)).toBeVisible()
 })
 
+const DAY_MS = 24 * 60 * 60 * 1000
+/** Un día antes del corte de CAPCOM, derivado de la constante: la prueba no depende del reloj real. */
+const BEFORE_CAPCOM_CUTOFF = Date.parse(CAPCOM_ACCESS_EXPIRES_AT) - DAY_MS
+const AFTER_CAPCOM_CUTOFF = Date.parse(CAPCOM_ACCESS_EXPIRES_AT) + DAY_MS
+
 test('CAPCOM: the talk button is in the header with its accessible name, hint and keyboard shortcut', async ({ page }) => {
+  await page.clock.setFixedTime(BEFORE_CAPCOM_CUTOFF)
   await openLaunch(page, '?speed=4')
   const talk = page.getByRole('button', { name: 'Hablar con CAPCOM' })
   await expect(talk).toBeVisible()
@@ -537,6 +545,16 @@ test('CAPCOM: the talk button is in the header with its accessible name, hint an
   await expect(talk).toHaveAttribute('aria-keyshortcuts', 'V')
   await expect(talk).toHaveAccessibleDescription(/Mantén pulsado para hablar.*tecla V/)
   await expect(page.getByTestId('capcom-caption')).toHaveCount(0)
+})
+
+test('CAPCOM: after the access cutoff the button says «CAPCOM no disponible» and is disabled', async ({ page }) => {
+  await page.clock.setFixedTime(AFTER_CAPCOM_CUTOFF)
+  await page.goto('/?phase=orbit&speed=4')
+  test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+  const talk = page.getByRole('button', { name: 'CAPCOM no disponible' })
+  await expect(talk).toBeVisible()
+  await expect(talk).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Hablar con CAPCOM' })).toHaveCount(0)
 })
 
 test('?capcom=0 hides CAPCOM completely', async ({ page }) => {

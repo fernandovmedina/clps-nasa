@@ -207,7 +207,7 @@ export default function LaunchPlanner({ app, code, onClose, suspendEscape = fals
 
         <div className={styles.footer}>
           <a href="/mission-control/" target="_blank" rel="noopener">Análisis detallado de sitios y fechas</a>
-          <button type="button" className={layer.btn} data-variant="primary" disabled={!check?.ok} onClick={confirm}>Confirmar lanzamiento</button>
+          <button type="button" className={layer.btn} data-variant="cta" disabled={!check?.ok} onClick={confirm}>Confirmar lanzamiento</button>
         </div>
       </section>
     </>

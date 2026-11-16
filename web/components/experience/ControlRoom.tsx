@@ -244,7 +244,7 @@ export default function ControlRoom({ view, code, log, capcom, soundOn, soundDis
           <section className={`${styles.card} ${styles.local}`} aria-label="Control local">
             <h2>Control local</h2>
             {stopped ? (
-              <button type="button" className={layer.btn} data-variant="primary" onClick={onRestart}>Reiniciar desde el despegue</button>
+              <button type="button" className={layer.btn} data-variant="cta" onClick={onRestart}>Reiniciar desde el despegue</button>
             ) : controls}
           </section>
         )}

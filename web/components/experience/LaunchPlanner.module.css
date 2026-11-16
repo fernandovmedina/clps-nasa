@@ -1,40 +1,46 @@
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 .figures { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0; }
-.figure { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 12px; background: rgba(250, 249, 245, 0.06);
-  border: 0.5px solid rgba(250, 249, 245, 0.12); min-width: 0; }
-.figure dt { font-size: 12px; font-weight: 500; color: var(--dim); }
+.figure { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: var(--radius-card); background: var(--bg-raised);
+  border: 1px solid var(--line); min-width: 0; }
+.figure dt { font-size: 12px; font-weight: 500; color: var(--label-2); }
 .figure dd { margin: 0; }
 .figure .value { font-size: 18px; font-weight: 600; line-height: 1.25; }
-.figure .hint { font-size: 12px; color: var(--soft); }
-.pending { padding: 14px; border-radius: 12px; background: rgba(250, 249, 245, 0.06); border: 0.5px solid rgba(250, 249, 245, 0.12);
-  font-size: 14px; color: var(--soft); }
+.figure .hint { font-size: 12px; color: var(--label-2); }
+.pending { padding: 14px; border-radius: var(--radius-card); background: var(--bg-raised); border: 1px solid var(--line);
+  font-size: 14px; color: var(--label-2); }
 
 .sites { display: flex; flex-direction: column; gap: 8px; }
 .sites h3 { font-size: 13px; font-weight: 600; }
 .sites ol { display: flex; flex-direction: column; gap: 6px; }
-.sites li { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 12px; border-radius: 8px; background: rgba(250, 249, 245, 0.06); }
-.rank { width: 18px; text-align: right; color: var(--dim); font-size: 13px; }
+.sites li { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 12px; border-radius: var(--radius-control); background: var(--bg-raised); }
+.rank { width: 18px; text-align: right; color: var(--label-2); font-size: 13px; }
 .name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .score { font-size: 15px; font-weight: 700; }
-.badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; background: #EFE3B5; color: var(--slate);
+.badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; background: var(--marginal-bg); color: var(--on-status);
   font-size: 12px; font-weight: 600; white-space: nowrap; }
-.badge[data-tone='ok'] { background: #CBE8D1; }
-.badge[data-tone='bad'] { background: #F4CBC3; }
-.note { font-size: 12px; color: var(--dim); }
+.badge[data-tone='ok'] { background: var(--viable-bg); }
+.badge[data-tone='bad'] { background: var(--bad-bg); }
+.note { font-size: 12px; color: var(--label-2); }
 
-.codeBox { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px 16px; border-radius: 12px; border: 1px dashed var(--accent); }
-.codeBox h3 { font-size: 12px; font-weight: 600; color: var(--soft); }
-.codeBox .code { font-size: 32px; font-weight: 700; line-height: 1.1; letter-spacing: 0.08em; color: var(--accent); }
-.codeBox p { font-size: 13px; color: var(--soft); }
-.codeBox em { font-style: normal; color: var(--ink); font-weight: 600; }
+.codeBox { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; row-gap: 4px; align-items: start; padding: 12px 16px;
+  border-radius: var(--radius-card); border: 1px dashed var(--accent-text); }
+.codeBox h3 { grid-column: 1; font-size: 12px; font-weight: 600; color: var(--label-2); }
+.codeBox .code { grid-column: 1; font-size: 28px; font-weight: 700; line-height: 1.1; letter-spacing: 0.08em; color: var(--accent-text); }
+.codeBox p:last-of-type { grid-column: 1; font-size: 13px; color: var(--label-2); }
+.codeBox button { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+.codeBox em { font-style: normal; color: var(--label); font-weight: 600; }
 
-.footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+/* Pie fijo: «Confirmar lanzamiento» queda siempre a la vista aunque el contenido haga desplazar la tarjeta. */
+.footer { position: sticky; bottom: calc(var(--pad-y) * -1); z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  margin: 0 calc(var(--pad-x) * -1) calc(var(--pad-y) * -1); padding: 12px var(--pad-x); background: var(--bg-surface); border-top: 1px solid var(--line); }
 .footer a { display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 600; }
 
 @media (max-width: 1023.98px) {
   .figures { grid-template-columns: 1fr; }
-  .codeBox .code { font-size: 28px; }
+  .codeBox { grid-template-columns: minmax(0, 1fr); }
+  .codeBox button { grid-column: 1; grid-row: auto; justify-self: start; margin-top: 4px; }
+  .codeBox .code { font-size: 24px; }
   .footer { flex-direction: column-reverse; align-items: stretch; }
   .footer a { justify-content: center; }
 }

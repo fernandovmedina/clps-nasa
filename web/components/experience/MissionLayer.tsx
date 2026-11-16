@@ -203,7 +203,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
         <section className={styles.stopped} aria-labelledby="stopped-title">
           <h2 id="stopped-title">Misión detenida</h2>
           <p>La simulación se detuvo en la fase de {PHASE_LABELS[phase].toLowerCase()} y el sonido está apagado. La fecha y el sitio elegidos se conservan.</p>
-          <button ref={restartButton} type="button" className={styles.btn} data-variant="primary" onClick={restart}>Reiniciar desde el despegue</button>
+          <button ref={restartButton} type="button" className={styles.btn} data-variant="cta" onClick={restart}>Reiniciar desde el despegue</button>
           <a className={styles.btn} href="/mission-control/">Análisis de sitios y fechas</a>
         </section>
       )}
