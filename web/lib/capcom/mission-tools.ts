@@ -1,6 +1,7 @@
 import type { LunarApp } from '../engine/app';
 import { PHASE_ORDER, type HudRankRow, type PhaseHud } from '../engine/hud';
-import { getLang, interpolate, type Lang, type Vars } from '../i18n';
+import { getLang, type Lang, type Vars } from '../i18n';
+import { textIn } from '../i18n/dict';
 import { capcomToolsDict } from '../i18n/dicts/capcom-tools';
 import type { SiteMetrics } from '../mission/scoring';
 import type { RankRowExtras } from '../mission/sites';
@@ -18,7 +19,7 @@ type ToolKey = keyof typeof capcomToolsDict.es;
 /** Texto en el idioma de la sesión (fijado al crear las herramientas: una sesión no cambia de idioma a medias). */
 type Say = (key: ToolKey, vars?: Vars) => string;
 
-const sayIn = (lang: Lang): Say => (key, vars) => interpolate(capcomToolsDict[lang][key], vars);
+const sayIn = (lang: Lang): Say => (key, vars) => textIn(capcomToolsDict, lang, key, vars);
 
 const tidy = (text: string) => text.replace(/ /g, ' ');
 const round = (n: number, digits = 1) => Math.round(n * 10 ** digits) / 10 ** digits;
