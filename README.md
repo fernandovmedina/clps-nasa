@@ -1,163 +1,227 @@
 <div align="center">
 
-# 🌑 TOUCHDOWN
+# TOUCHDOWN
 
-### Evalúa sitios y fechas de aterrizaje lunar en segundos.
+**Evaluate lunar landing sites and dates in seconds.**
 
-**NASA Space Apps Challenge 2026 · Reto: _Lunar Landing Site Navigator_**
+NASA International Space Apps Challenge 2026 · Challenge: *Lunar Landing Site Navigator*
 
-*La web decide con datos y el VR valida con los ojos.*
+![Space Apps 2026](https://img.shields.io/badge/NASA%20Space%20Apps-2026-0B3D91?style=flat-square)
+![Status](https://img.shields.io/badge/status-deployed-2ea44f?style=flat-square)
+![Platform](https://img.shields.io/badge/platform-Web%20%7C%20WebXR-555555?style=flat-square)
 
-![Space Apps 2026](https://img.shields.io/badge/NASA%20Space%20Apps-2026-0B3D91?style=for-the-badge)
-![Estado](https://img.shields.io/badge/estado-desplegado-7be38a?style=for-the-badge)
-![Hackathon](https://img.shields.io/badge/hackathon-14–15%20nov-FC3D21?style=for-the-badge)
-
-**🔗 Demo en vivo:** https://touchdown.villabruno2.workers.dev
+**Live demo:** https://touchdown.villabruno2.workers.dev
 
 </div>
 
 ---
 
-## 🚀 El problema
+## Overview
 
-En el **polo sur lunar** el Sol rasga el horizonte y la Tierra se esconde detrás de los cerros. Un cambio de unos días en la fecha o de unos kilómetros en el sitio puede dejar a una misión **sin energía** o **sin comunicación directa con la Tierra**.
+At the lunar south pole the Sun skims the horizon and Earth disappears behind ridges and crater rims. Shifting a landing by a few days, or a few kilometers, can leave a mission without solar power or without a direct-to-Earth communication link.
 
-Las herramientas que existen (Quickmap, Moon Trek, JPL Horizons) son potentes, pero no están hechas para comparar escenarios rápido. Cuando una misión se retrasa, el equipo necesita saber **ya** si el sitio sigue siendo viable o cuál es la alternativa.
+Existing tools such as LROC Quickmap, NASA Moon Trek and JPL Horizons are powerful, but they are built for detailed analysis rather than rapid scenario comparison. When a mission slips, planners need to know immediately whether the site is still viable and, if not, what the best alternative is.
 
-## 💡 La solución
+TOUCHDOWN combines real JPL Horizons ephemerides with terrain horizons derived from LOLA elevation data to answer that question quickly, through two synchronized interfaces:
 
-**TOUCHDOWN** tiene dos caras sincronizadas en tiempo real:
-
-| | 🖥️ **Mission Control** (web) | 🥽 **Inspector de sitio** (Meta Quest 3S) |
+| | Mission Control (web) | Site Inspector (WebXR, Meta Quest 3S) |
 |---|---|---|
-| **Para quién** | Planeadores de misión | Público, educadores, el "inspector en campo" |
-| **Qué hace** | Compara escenarios sitio × fecha con efemérides reales y el horizonte real del terreno | Te para en el sitio, a escala real, para ver *por qué* cambia todo |
-| **Clave** | Cuentas regresivas, semáforo de viabilidad, botón de **retraso** | El cerro que tapa la Tierra y las sombras de kilómetros |
+| **Audience** | Mission planners | Educators, the public, field inspection |
+| **Purpose** | Compare site × date scenarios with real ephemerides and real terrain horizons | Stand on the site at true scale and see *why* conditions change |
+| **Key features** | Countdowns, viability status, mission-delay simulation | The ridge that hides Earth, kilometer-long shadows |
 
-### Lo que nos hace diferentes
+## Key differentiators
 
-1. **⛰️ Horizonte real desde LOLA.** No usamos una esfera lisa: calculamos la silueta del terreno en cada azimut con los datos del altímetro láser del LRO.
-2. **🔗 VR sincronizado con la web.** Multijugador asimétrico: el planeador manda al inspector a un sitio y le llegan en vivo los riesgos que marca.
-3. **⏱️ La narrativa del retraso.** El demo gira en torno a lo que de verdad pasa en las misiones: *"se retrasó tres semanas, ¿y ahora?"*.
+1. **Real terrain horizons from LOLA.** Instead of a smooth sphere, the horizon elevation is computed at every azimuth from Lunar Orbiter Laser Altimeter DEMs, corrected for lunar curvature.
+2. **Web and VR synchronized in real time.** An asymmetric multi-user setup: the planner and the VR inspector share the same site, time and playback state through a WebSocket room.
+3. **Mission-delay workflow.** The product is built around the situation the challenge describes: "the launch slipped three weeks, what now?"
 
-## ✨ Funcionalidades
+## Features
 
-- 📍 **Catálogo curado:** Apollo, CLPS (IM-1, IM-2), candidatos de Artemis III, Chandrayaan-3 y Chang'e 4, más coordenadas personalizadas.
-- 🧭 **Diagrama polar del cielo:** trayectorias del Sol y la Tierra contra la silueta real del horizonte.
-- 📊 **Línea de tiempo:** bandas de Sol, Tierra y ventana de operación (cuando hay los dos).
-- ⏳ **Cuentas regresivas** al atardecer y al Earthset.
-- ☀️ **Elevación solar** como métrica principal (potencia de los paneles).
-- ⚖️ **Comparación lado a lado** de 2 a 4 escenarios.
-- 📅 **Botón de retraso:** mueve la fecha N días y ve qué se rompe.
-- 🥽 **VR:** terreno real, Sol y Tierra en su posición real, y marcado de riesgos sincronizado.
-- 📝 **Reporte:** sitio recomendado, ventana y riesgos.
+- **Curated site catalog:** CLPS (IM-1, IM-2), Artemis III candidate regions, Chandrayaan-3, Chang'e 4 and Apollo 11/17, plus custom coordinates.
+- **Sky diagram:** Sun and Earth trajectories plotted against the real horizon profile of the site.
+- **Timeline:** sunlight, Earth visibility and combined operating windows over the mission.
+- **Countdowns** to the next sunset and Earthset.
+- **Solar elevation** as the headline power metric.
+- **Side-by-side comparison** of multiple site × date scenarios.
+- **Delay simulation:** shift the landing date by N days and see what changes.
+- **Mission report:** recommended site, operating windows and risks.
+- **Immersive experience (WebXR):** launch, orbital site ranking, surface view on real LOLA terrain, powered descent and data transmission, playable on desktop or Meta Quest 3S.
+- **CAPCOM voice assistant:** push-to-talk mission controller that answers questions about the mission using the same scenario data shown in the interface.
 
-## 🏗️ Arquitectura
+## Architecture
 
-**100% serverless.** Como todo se precalcula, no hay servidores siempre encendidos.
+The system is fully serverless. All heavy computation is done offline, so no long-running servers are required.
 
 ```
         ┌─────────────────────────────────────────┐
-        │  Pipeline de datos (Python, offline)    │
-        │  LOLA DEM → máscara de horizonte        │
-        │  LOLA DEM → heightmap para VR/3D        │
-        │  JPL Horizons → efemérides              │
+        │  Data pipeline (Python, offline)        │
+        │  LOLA DEM      -> horizon masks         │
+        │  LOLA DEM      -> heightmaps (3D/VR)    │
+        │  JPL Horizons  -> Sun/Earth ephemerides │
         └───────────────────┬─────────────────────┘
-                            │ JSON / RAW precalculados
+                            │ precomputed JSON / RAW16
         ┌───────────────────▼─────────────────────┐
-        │  ☁️ Cloudflare Worker (un solo dominio) │
-        │  ├── /*        → Static Assets (Next.js)│
-        │  ├── /static/* → Static Assets (terreno)│
-        │  └── /api/*    → API REST (Worker)      │
+        │  Cloudflare Worker (single domain)      │
+        │  ├── /*        -> Static Assets (web)   │
+        │  ├── /static/* -> Static Assets (terrain)│
+        │  ├── /api/*    -> REST API              │
+        │  └── /ws       -> Durable Object RoomHub│
+        │                   (WebSocket + SQLite)  │
         └───────┬─────────────────────────┬───────┘
                 │ REST + WS               │ REST + WS
    ┌────────────▼──────────┐   ┌──────────▼────────────┐
-   │ 🖥️ Mission Control    │   │ 🥽 WebXR (three.js)   │
-   │ (navegador)           │   │ Inspector de sitio    │
-   └────────────┬──────────┘   └──────────┬────────────┘
-                │        WebSocket        │
-        ┌───────▼─────────────────────────▼───────┐
-        │  ☁️ Durable Object RoomHub              │
-        │  WebSocket Hibernation + SQLite         │
-        │  conexiones + estado de cada sala       │
-        └─────────────────────────────────────────┘
+   │ Mission Control       │   │ Site Inspector        │
+   │ (browser)             │   │ (WebXR, three.js)     │
+   └───────────────────────┘   └───────────────────────┘
 ```
 
-- **Principio clave:** todo lo pesado se **precalcula**. Nada de llamadas en vivo a Horizons durante el demo.
-- **Plan de respaldo:** el mismo Worker corriendo en la laptop (`pnpm dev:lan`) para la red local del evento. La web también funciona sin sincronización, leyendo los JSON estáticos directo.
+- **Precompute everything.** Ephemerides and horizon masks are generated offline and served as static JSON. There are no live calls to Horizons at runtime.
+- **Works offline from the sync layer.** The web app reads the static JSON directly and remains fully functional if the WebSocket is unavailable.
+- **Local fallback.** The same Worker can be served on a local network with `pnpm dev:lan`.
 
-### Stack
+### Technology stack
 
-| Capa | Tecnologías |
+| Layer | Technologies |
 |---|---|
-| Datos | Python 3.12 (`uv`), NumPy, Pillow, PDS LOLA GDR, JPL Horizons API |
-| Web + VR | **Next.js 15** (App Router, export estático), TypeScript, **three.js puro** (WebXR) |
-| Lógica compartida | `@touchdown/core`: tipos del contrato + motor de escenario, usado por `worker/` y `web/` |
-| API REST | **Cloudflare Worker** en `/api/*`, mismo dominio que la web |
-| Tiempo real | **Cloudflare Durable Objects** (`RoomHub`, WebSocket Hibernation + SQLite) |
-| Hosting | **Cloudflare Workers Static Assets** (front, heightmaps y texturas) |
-| VR | WebXR con three.js puro, dentro del mismo Next.js de `web/` (decisión 14-nov-2026; Unity descartado) |
+| Data pipeline | Python 3.12 (`uv`), NumPy, Pillow, LOLA GDR products, JPL Horizons API |
+| Web and VR | Next.js (App Router, static export), React 19, TypeScript, three.js, WebXR |
+| Shared logic | `@touchdown/core`: data contract types and scenario engine, used by both `worker/` and `web/` |
+| REST API | Cloudflare Worker under `/api/*`, same origin as the web app |
+| Real-time sync | Cloudflare Durable Objects (`RoomHub`, WebSocket Hibernation API, SQLite storage) |
+| Hosting | Cloudflare Workers Static Assets (front end, heightmaps, textures) |
+| Voice assistant | Amazon Nova Sonic via Amazon Bedrock, with Cognito guest credentials |
+| CI/CD | GitHub Actions: CI on pull requests, automatic deployment on `main` |
 
-## 🔭 La ciencia
+## Methodology
 
-**Horizonte real.** Para cada azimut recorremos el DEM desde el sitio hacia afuera y nos quedamos con el ángulo máximo del terreno, corrigiendo por la curvatura lunar:
+**Terrain horizon.** For each azimuth (0.5° step), the DEM is sampled outward from the site and the maximum terrain elevation angle is kept, corrected for lunar curvature:
 
 $$\theta(d) = \arctan\left(\frac{h(d) - h_0 - h_{obs} - \frac{d^2}{2R}}{d}\right), \qquad R = 1737.4\ \text{km}$$
 
-Un cuerpo es visible si su elevación supera `horizon_deg[az]`. Sin atmósfera **no hay refracción**: el horizonte lo definen solo el terreno y la esfera lunar.
+A body is visible when its elevation exceeds `horizon_deg[az]`. The Moon has no atmosphere, so there is no refraction: the horizon is defined solely by terrain and the curvature of the lunar sphere. For each point, the highest-resolution DEM available is used: `LDEM_80S_80M` (80 m/px), `LDEM_45S_400M` (400 m/px) and `LDEM_16` (~1.9 km/px, global).
 
-**Efemérides.** Azimut y elevación topocéntricos del Sol y la Tierra cada hora, con JPL Horizons (`coord@301`). La libración de la Tierra ya viene incluida.
+**Ephemerides.** Topocentric azimuth and elevation of the Sun and Earth at hourly resolution, computed with JPL Horizons from a surface observer (`coord@301`). Earth libration is included in the ephemeris.
 
-**Métricas.** Ventanas de Sol, de Tierra y de ambos; tiempo al siguiente ocaso; horas de energía y de comunicación en la misión; puntaje de viabilidad = 30 % energía (fracción del disco solar sobre el horizonte real) + 25 % comunicación con la Tierra + 30 % tiempo con Sol y Tierra a la vez + 15 % continuidad (noche más larga). El ranking ordena primero por estado y luego por puntaje.
+**Metrics.** Sunlight, Earth-visibility and combined windows; time to next sunset and Earthset; hours of power and communication within the mission window; and a viability score:
 
-## 🛰️ Datos de NASA que usamos
+```
+score = 100 × (0.30 × energy + 0.25 × comms + 0.30 × operations + 0.15 × continuity)
+```
 
-- [LOLA (Lunar Orbiter Laser Altimeter)](https://pds-geosciences.wustl.edu/missions/lro/lola.htm): DEMs del polo sur
-- [NASA Moon Trek](https://trek.nasa.gov/moon/): recortes de DEM y mosaicos
-- [LROC Quickmap](https://quickmap.lroc.asu.edu/): validación visual
-- [JPL Horizons](https://ssd.jpl.nasa.gov/horizons/) y [NAIF SPICE](https://naif.jpl.nasa.gov/naif/): efemérides
-- [CLPS](https://www.nasa.gov/reference/commercial-lunar-payload-services/) y [regiones de Artemis III](https://www.nasa.gov/news-release/nasa-provides-update-on-artemis-iii-moon-landing-regions/): catálogo de sitios
+- **Energy:** mean fraction of the solar disk above the real LOLA horizon (a grazing Sun counts less than a clear one).
+- **Comms:** fraction of the mission with Earth above the horizon.
+- **Operations:** fraction of the mission with both the Sun and Earth visible.
+- **Continuity:** `1 − longest night / mission duration`.
 
-## 📁 Estructura del repo (planeada)
+Each scenario is classified as `viable`, `marginal` or `not_viable`, and sites are ranked first by status, then by score. The reference implementation is `computeScenario` in `core/src/scenario.ts`.
+
+## Site catalog
+
+| Site | Program | Lat | Lon (E) | LOLA terrain |
+|---|---|---|---|---|
+| Malapert A (IM-1 Odysseus) | CLPS | -80.13 | 1.44 | Yes |
+| Mons Mouton (IM-2 Athena) | CLPS / Artemis | -84.79 | 29.20 | Yes |
+| Malapert Massif | Artemis III | -85.97 | -2.50 | Yes |
+| Shackleton Connecting Ridge | Artemis III | -89.45 | -137.40 | Yes |
+| Nobile Rim 1 | Artemis III | -85.30 | 36.92 | Yes |
+| Nobile Rim 2 | Artemis III | -84.20 | 60.70 | Yes |
+| Statio Shiv Shakti (Chandrayaan-3) | ISRO | -69.37 | 32.32 | No |
+| Von Kármán Crater (Chang'e 4) | CNSA | -45.46 | 177.59 | No |
+| Mare Tranquillitatis (Apollo 11) | NASA Apollo | 0.67 | 23.47 | No |
+| Taurus-Littrow (Apollo 17) | NASA Apollo | 20.19 | 30.77 | No |
+
+Sites without local terrain use a geometric spherical horizon and are labeled `"source": "spherical"` in the data. The source of truth for the catalog is `web/public/data/sites.json`.
+
+## Repository structure
 
 ```
 clps-nasa/
-├── pipeline/   # Python (uv): ingesta LOLA + JPL Horizons, máscaras y heightmaps
-├── core/       # @touchdown/core: tipos del contrato y motor de escenario (TS, compartido)
-├── worker/     # Cloudflare Worker (/api/*) + Durable Object (/ws) + wrangler.jsonc
-├── web/        # Next.js 15 (export estático): Mission Control + VR WebXR (three.js)
-├── vr/         # Sandbox/prototipos de prueba WebXR (no la app final, ver web/)
-├── docs/       # Análisis de fuentes de datos oficiales del reto
-├── CLAUDE.md   # Contexto completo del proyecto y contrato de datos
+├── pipeline/   Python (uv): LOLA and JPL Horizons ingestion, horizon masks, heightmaps
+├── core/       @touchdown/core: data contract types and scenario engine (TypeScript)
+├── worker/     Cloudflare Worker (/api/*), Durable Object (/ws), wrangler.jsonc
+├── web/        Next.js static export: Mission Control and the WebXR experience
+├── vr/         WebXR sandboxes and prototypes (not the production app)
+├── docs/       Notes on the challenge's official data sources
+├── CLAUDE.md   Full project context and data contract
 └── README.md
 ```
 
-> 📜 **El contrato de datos** (formatos JSON, endpoints y mensajes de WebSocket) está en [`CLAUDE.md`](CLAUDE.md#7-contrato-de-datos-v01--ya-implementado-en-core-worker-y-web). **No se cambia sin avisar al equipo.**
+## Getting started
 
-## 👥 Equipo
+**Prerequisites:** Node.js with `pnpm` 10, and Python 3.12 with `uv` (only needed to regenerate data).
 
-| Rol | Responsabilidad |
+```bash
+pnpm install
+
+pnpm dev:web     # Front end only (next dev, http://localhost:3000), no real-time sync
+pnpm dev         # Builds the web app and runs Worker + API + WebSocket at http://localhost:8787
+pnpm dev:lan     # Same as dev, exposed on the local network (0.0.0.0)
+```
+
+Quality checks:
+
+```bash
+pnpm test        # core, worker and web unit tests
+pnpm typecheck
+pnpm lint
+```
+
+Regenerating data (writes to `web/public/data/` and `web/public/static/terrain/`):
+
+```bash
+cd pipeline
+uv sync
+uv run touchdown-build
+```
+
+### Running on Meta Quest 3S
+
+WebXR requires HTTPS. Open the deployed URL directly in the Quest browser, or run the development server over HTTPS on the local network:
+
+```bash
+cd web && pnpm dev:https   # https://<your-ip>:3000
+```
+
+See [`web/README.md`](web/README.md) for development shortcuts (`?phase=`, `?speed=`, `?room=`) and details on synchronization.
+
+## Deployment
+
+Every push to `main` runs CI and deploys to Cloudflare automatically (`.github/workflows/deploy.yml`, gated by the repository variable `CLOUDFLARE_DEPLOY`). A manual deployment can be run with:
+
+```bash
+pnpm --filter @touchdown/worker deploy
+pnpm --filter @touchdown/worker deploy:dry-run   # validate without deploying
+```
+
+## Data contract
+
+The JSON formats, REST endpoints and WebSocket messages shared by `pipeline/`, `core/`, `worker/` and `web/` are documented in [`CLAUDE.md`, section 7](CLAUDE.md#7-data-contract-v01--implemented-in-core-worker-and-web). Changes to the contract must be agreed with the team, since they affect both the web app and the VR client.
+
+## Data sources
+
+- [LOLA (Lunar Orbiter Laser Altimeter)](https://pds-geosciences.wustl.edu/missions/lro/lola.htm): south pole digital elevation models
+- [JPL Horizons](https://ssd.jpl.nasa.gov/horizons/) and [NAIF SPICE](https://naif.jpl.nasa.gov/naif/): ephemerides
+- [NASA Moon Trek](https://trek.nasa.gov/moon/) and [LROC Quickmap](https://quickmap.lroc.asu.edu/): visual validation
+- [CLPS](https://www.nasa.gov/reference/commercial-lunar-payload-services/) and [Artemis III candidate regions](https://www.nasa.gov/news-release/nasa-provides-update-on-artemis-iii-moon-landing-regions/): site catalog
+
+Any approximated or simulated value is explicitly labeled in the data and in the application. No simulated data is presented as official NASA data.
+
+## Team
+
+| Role | Responsibilities |
 |---|---|
-| **Datos** | Pipeline LOLA → horizonte y heightmap; efemérides precalculadas |
-| **Web** | Mission Control: catálogo, diagrama polar, línea de tiempo, comparador |
-| **API + tiempo real + integración** | Cloudflare Worker (`/api/*`, Static Assets, Durable Object), respaldo local, contrato de datos, despliegue |
-| **VR: mundo** | Terreno, Sol, Tierra e iluminación en WebXR (three.js, dentro de `web/`) |
-| **VR: interacción** | Panel flotante, marcadores, cliente WebSocket |
-| **Pitch y diseño** | Narrativa, identidad visual, video y página del proyecto |
-
-## 🗓️ Plan
-
-- [ ] **Antes del 14 de nov:** preparación y prototipos desechables (datos, Quest, wireframes, identidad)
-- [ ] **13 nov:** revisar la pestaña *Resources* del reto
-- [ ] **14–15 nov:** construcción del producto en 48 h
-- [ ] Entrega: video + página del proyecto
-
-> ⚠️ Las coordenadas de los sitios son aproximadas hasta verificarlas contra fuentes oficiales. Cualquier dato simulado se marca de forma explícita en la app.
+| Data | LOLA pipeline (horizon masks, heightmaps) and precomputed ephemerides |
+| Web | Mission Control: catalog, sky diagram, timeline, comparison |
+| API, real-time and integration | Cloudflare Worker, Durable Object, local fallback, data contract, deployment |
+| VR: world | Terrain, Sun, Earth and lighting in WebXR |
+| VR: interaction | Floating panels, markers, WebSocket client |
+| Pitch and design | Narrative, visual identity, video and project page |
 
 ---
 
 <div align="center">
 
-Hecho con ☕ y regolito para el **NASA International Space Apps Challenge 2026** · *The Next Frontier*
+Built for the NASA International Space Apps Challenge 2026 · *The Next Frontier*
 
 </div>
