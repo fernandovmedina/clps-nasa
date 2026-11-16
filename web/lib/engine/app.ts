@@ -14,6 +14,7 @@ import type { SiteMetrics } from '../mission/scoring';
 import { RoomClient, type RoomEvent, type RoomStatus } from '../sync/room-client';
 import { PhaseFollow } from '../sync/phase-follow';
 import { reduceRoom, type Marker } from '@touchdown/core';
+import { subscribe as subscribeLang } from '../i18n';
 
 export interface Phase {
   readonly name: PhaseName;
@@ -29,6 +30,11 @@ export interface Phase {
   readonly ownsRunControls?: boolean;
   /** Every frame, also while paused or stopped, so the phase's own 3D controls keep redrawing. */
   updateUi?(): void;
+  /**
+   * El idioma cambió (lib/i18n): la fase vuelve a dibujar los paneles de canvas con los textos nuevos, por ejemplo
+   * invalidando cada `Panel`. El HUD del DOM no lo necesita: `controlHud()` se vuelve a leer y ya trae el texto nuevo.
+   */
+  onLangChange?(): void;
   /** La fase deja que el visitante mire donde quiera: la vista no regresa sola a la del encuadre tras 4 s sin arrastrar. */
   readonly holdsLook?: boolean;
   /** Exposición y tone mapping propios de la fase; se restauran al pasar a otra. */
@@ -135,6 +141,7 @@ export class LunarApp {
   private ro: ResizeObserver;
   private factories = new Map<PhaseName, PhaseFactory>();
   private follow: PhaseFollow;
+  private unsubscribeLang: () => void;
 
   constructor(readonly container: HTMLElement, readonly opts: AppOptions) {
     const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -193,6 +200,11 @@ export class LunarApp {
       goTo: (name) => { void this.goTo(name); },
       restart: () => this.restart(),
     }, this.room);
+    this.unsubscribeLang = subscribeLang(() => {
+      this.phase?.onLangChange?.();
+      this.runPanel.invalidate();
+      this.exitPanel.invalidate();
+    });
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
     this.resize();
@@ -441,6 +453,7 @@ export class LunarApp {
 
   dispose() {
     this.renderer.setAnimationLoop(null);
+    this.unsubscribeLang();
     this.phase?.exit();
     this.runPanel.dispose();
     this.exitPanel.dispose();

@@ -3,8 +3,9 @@
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react'
 import { en } from './en'
 import { es, type Dict } from './es'
+import { detectLang, type Lang } from '@/lib/i18n/lang'
 
-export type Lang = 'es' | 'en'
+export { detectLang, type Lang }
 export type Key = keyof Dict
 export type Translate = (key: Key, vars?: Record<string, string | number>) => string
 
@@ -14,11 +15,6 @@ export function translate(lang: Lang, key: Key, vars?: Record<string, string | n
   const text = dictionaries[lang][key]
   if (!vars) return text
   return text.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? `{${name}}`))
-}
-
-export function detectLang(saved: string | null, navigatorLang: string | undefined): Lang {
-  if (saved === 'es' || saved === 'en') return saved
-  return navigatorLang?.toLowerCase().startsWith('es') ? 'es' : 'en'
 }
 
 interface I18n {

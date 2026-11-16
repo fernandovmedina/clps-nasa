@@ -46,6 +46,7 @@ class FakeSocket {
 
 import { LunarApp, type AppOptions, type Phase, type PhaseName } from './app';
 import { Panel } from './panel';
+import { getLang, setLang } from '../i18n';
 import type { PhaseHud } from './hud';
 
 interface Probe { updates: { dt: number; t: number }[]; made: number; waiting: boolean; hudPanel: Panel; exited: number }
@@ -414,5 +415,53 @@ describe('LunarApp render style and free look per phase', () => {
     app.lookDrag(-100, 0);
     tick();
     expect(app.camera.rotation.y).toBeCloseTo(0.4, 5);
+  });
+});
+
+describe('LunarApp language hook', () => {
+  it('tells the current phase through onLangChange and redraws the generic panels', async () => {
+    const onLangChange = vi.fn();
+    const probe: Probe = { updates: [], made: 0, waiting: false, hudPanel: new Panel(64, 64, 0.1, () => undefined), exited: 0 };
+    const app = new LunarApp(document.createElement('div'), { loadData: async () => { throw new Error('unused'); } });
+    register(app, 'launch', probe, { onLangChange });
+    await app.start();
+    tick(0);
+    const run = vi.spyOn(app.runPanel, 'invalidate');
+    const exit = vi.spyOn(app.exitPanel, 'invalidate');
+    setLang('en', { persist: false });
+    expect(getLang()).toBe('en');
+    expect(onLangChange).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalled();
+    expect(exit).toHaveBeenCalled();
+    setLang('en', { persist: false });
+    expect(onLangChange).toHaveBeenCalledTimes(1);
+    app.dispose();
+  });
+
+  it('does nothing for phases without onLangChange, and follows the phase that is current after a switch', async () => {
+    const onLangChange = vi.fn();
+    const probe: Probe = { updates: [], made: 0, waiting: false, hudPanel: new Panel(64, 64, 0.1, () => undefined), exited: 0 };
+    const app = new LunarApp(document.createElement('div'), { loadData: async () => { throw new Error('unused'); } });
+    register(app, 'launch', probe);
+    register(app, 'orbit', probe, { onLangChange });
+    await app.start();
+    tick(0);
+    expect(() => setLang('en', { persist: false })).not.toThrow();
+    expect(onLangChange).not.toHaveBeenCalled();
+    app.setPhase('orbit');
+    setLang('es', { persist: false });
+    expect(onLangChange).toHaveBeenCalledTimes(1);
+    app.dispose();
+  });
+
+  it('stops listening once disposed', async () => {
+    const onLangChange = vi.fn();
+    const probe: Probe = { updates: [], made: 0, waiting: false, hudPanel: new Panel(64, 64, 0.1, () => undefined), exited: 0 };
+    const app = new LunarApp(document.createElement('div'), { loadData: async () => { throw new Error('unused'); } });
+    register(app, 'launch', probe, { onLangChange });
+    await app.start();
+    app.dispose();
+    setLang('en', { persist: false });
+    expect(onLangChange).not.toHaveBeenCalled();
   });
 });
