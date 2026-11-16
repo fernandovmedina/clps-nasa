@@ -5,7 +5,7 @@ import type { HudRankRow, PhaseHud } from '../engine/hud';
 import type { SiteMetrics } from '../mission/scoring';
 import { DEMO_CRASH_NOTE, NO_CAER_SITE_ID, type MissionData, type SiteInput } from '../mission/sites';
 import { realMissionData } from '../mission/test-data';
-import { OrbitPhase, planPinLabels, rectsOverlap, type PinLabelCandidate, type PinRect } from './orbit';
+import { OrbitPhase, planPinLabels, segmentHitsSphere, rectsOverlap, type PinLabelCandidate, type PinRect } from './orbit';
 
 const rect = (x: number, y = 0, w = 100, h = 40): PinRect => ({ x, y, w, h });
 
@@ -22,6 +22,27 @@ describe('rectsOverlap', () => {
     expect(rectsOverlap(rect(0), rect(100))).toBe(false);
     expect(rectsOverlap(rect(0), rect(0, 40))).toBe(false);
     expect(rectsOverlap(rect(0), rect(0, 39))).toBe(true);
+  });
+});
+
+describe('segmentHitsSphere', () => {
+  const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+
+  it('is true when the sphere stands between the eye and the point', () => {
+    expect(segmentHitsSphere(v(0, 0, 2000), v(0, 0, -1100), 1000)).toBe(true);
+  });
+
+  it('is false for a point in plain view, even one just above the limb that is past the horizon of its own base', () => {
+    expect(segmentHitsSphere(v(0, 0, 2000), v(0, 0, 1100), 1000)).toBe(false);
+    // a pin 50° from the eye's sub-point: its base is behind the limb, its top (160 u up) clears it
+    const eye = v(1150, 0, 0);
+    const at = (r: number) => v(Math.cos(Math.PI / 3.6), Math.sin(Math.PI / 3.6), 0).setLength(r);
+    expect(segmentHitsSphere(eye, at(1000), 1000)).toBe(true);
+    expect(segmentHitsSphere(eye, at(1160), 1000)).toBe(false);
+  });
+
+  it('ignores a sphere behind the eye', () => {
+    expect(segmentHitsSphere(v(0, 0, 2000), v(0, 0, 3000), 1000)).toBe(false);
   });
 });
 
@@ -204,6 +225,8 @@ describe('OrbitPhase pin labels', () => {
     app.selected = metricsOf(app, 'malapert-a');
     phase.update(0.016);
     const shown = pinsOf(phase).filter((p) => p.label.visible).map((p) => p.m.site.id);
+    expect(shown).toContain('malapert-a');
+    expect(shown.length).toBeGreaterThanOrEqual(2);
     for (const id of shown) expect([1, 2, 3, metricsOf(app, 'malapert-a').rank]).toContain(metricsOf(app, id).rank);
     expect(pinsOf(phase).filter((p) => p.label.visible && p.chip.visible)).toHaveLength(0);
     expect(pinsOf(phase).filter((p) => p.chip.visible).length).toBeGreaterThan(0);

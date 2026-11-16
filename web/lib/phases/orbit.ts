@@ -80,6 +80,19 @@ function setSpriteShown(sprite: THREE.Sprite, shown: boolean) {
   sprite.layers.set(shown ? 0 : 1);
 }
 
+/** True when the Moon (a sphere at the origin) stands between `eye` and `point`. */
+export function segmentHitsSphere(eye: THREE.Vector3, point: THREE.Vector3, radius: number): boolean {
+  const d = point.clone().sub(eye);
+  const a = d.lengthSq();
+  if (a === 0) return false;
+  const b = 2 * eye.dot(d);
+  const c = eye.lengthSq() - radius * radius;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return false;
+  const near = (-b - Math.sqrt(disc)) / (2 * a);
+  return near > 0 && near < 1;
+}
+
 const scoreOf100 = (m: SiteMetrics) => `${Math.round(m.score)}/100`;
 const shortName = (name: string) => (name.length > NAME_MAX_CHARS ? `${name.slice(0, NAME_MAX_CHARS - 1).trimEnd()}…` : name);
 
@@ -431,9 +444,8 @@ export class OrbitPhase implements Phase {
     for (const mk of this.markers) {
       setSpriteShown(mk.label, false); setSpriteShown(mk.chip, false);
       if (!mk.group.visible) continue;
-      const toCam = cam.clone().sub(mk.group.position);
-      if (toCam.dot(mk.group.position) <= 0) continue; // on the far side of the Moon
       mk.group.updateMatrixWorld(true);
+      if (segmentHitsSphere(cam, mk.label.getWorldPosition(new THREE.Vector3()), R * 0.998)) continue; // the Moon hides it
       // in the headset there is no single screen to overlap on: the rank rule alone decides
       const full = this.app.isXR || !width ? { x: mk.m.rank * 1e5, y: 0, w: 1, h: 1 } : this.spriteRect(mk.label, width, height);
       const chip = this.app.isXR || !width ? { x: mk.m.rank * 1e5, y: 0, w: 1, h: 1 } : this.spriteRect(mk.chip, width, height);
