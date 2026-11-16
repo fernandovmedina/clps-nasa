@@ -250,7 +250,7 @@ export class LaunchPhase implements Phase {
     g.fillText('MISSION CONTROL  /  LUNAR SOUTH POLE · SITE PLANNER', 80, 72);
     if (!this.started) {
       g.font = `500 30px ${UI.font}`; g.fillStyle = UI.text; g.fillText(this.status, 44, 140);
-      roundRect(g, 44, 170, 1200, 10, 5); g.fillStyle = 'rgba(250,249,245,.15)'; g.fill();
+      roundRect(g, 44, 170, 1200, 10, 5); g.fillStyle = UI.lineStrong; g.fill();
       if (this.shownPct > 0.002) { roundRect(g, 44, 170, 1200 * this.shownPct, 10, 5); g.fillStyle = UI.accent; g.fill(); }
       g.font = `700 24px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right';
       g.fillText(`${Math.round(this.shownPct * 100)}%`, 1356, 184); g.textAlign = 'left';
@@ -264,7 +264,7 @@ export class LaunchPhase implements Phase {
       g.font = `700 46px ${UI.mono}`; g.fillStyle = UI.text; g.fillText(v, x, 192);
     });
     g.font = `500 30px ${UI.font}`; g.fillStyle = UI.text; g.fillText(this.status, 44, 270);
-    roundRect(g, 44, 300, 1200, 10, 5); g.fillStyle = 'rgba(250,249,245,.15)'; g.fill();
+    roundRect(g, 44, 300, 1200, 10, 5); g.fillStyle = UI.lineStrong; g.fill();
     if (this.shownPct > 0.002) { roundRect(g, 44, 300, 1200 * this.shownPct, 10, 5); g.fillStyle = UI.accent; g.fill(); }
     g.font = `700 30px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right';
     g.fillText(`${Math.round(this.shownPct * 100)}%`, 1356, 314); g.textAlign = 'left';

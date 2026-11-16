@@ -290,7 +290,7 @@ export class PovPhase implements Phase {
       const y = 236 + i * 56;
       g.font = `500 26px ${UI.font}`; g.fillStyle = UI.dim; g.fillText(k, 48, y);
       g.font = `700 30px ${UI.mono}`; g.fillStyle = c ?? UI.text; g.textAlign = 'right'; g.fillText(v, 976, y); g.textAlign = 'left';
-      g.fillStyle = 'rgba(250,249,245,.07)'; g.fillRect(48, y + 18, 928, 2);
+      g.fillStyle = UI.line; g.fillRect(48, y + 18, 928, 2);
     });
 
     // 14-day outlook chart: Sun and Earth elevation vs the local horizon
@@ -298,29 +298,29 @@ export class PovPhase implements Phase {
     const X = (i: number) => x0 + (i / (this.series.length - 1)) * (x1 - x0);
     const Y = (e: number) => y1 - ((Math.max(lo, Math.min(hi, e)) - lo) / (hi - lo)) * (y1 - y0);
     g.font = `600 24px ${UI.mono}`; g.fillStyle = UI.dim; g.fillText('PRÓXIMOS 14 DÍAS · ELEVACIÓN (°)', 48, 735);
-    roundRect(g, x0, y0, x1 - x0, y1 - y0, 10); g.fillStyle = 'rgba(250,249,245,.04)'; g.fill();
+    roundRect(g, x0, y0, x1 - x0, y1 - y0, 10); g.fillStyle = UI.raised; g.fill();
     g.font = `500 20px ${UI.mono}`;
     for (let e = lo; e <= hi; e += 2) {
-      g.fillStyle = 'rgba(250,249,245,.08)'; g.fillRect(x0, Y(e), x1 - x0, 1);
+      g.fillStyle = UI.line; g.fillRect(x0, Y(e), x1 - x0, 1);
       g.fillStyle = UI.dim; g.textAlign = 'right'; g.fillText(`${e}`, x0 - 10, Y(e) + 7); g.textAlign = 'left';
     }
     for (let d = 0; d <= 14; d += 2) { g.fillStyle = UI.dim; g.fillText(`d${d}`, X((d * 12)) - 12, y1 + 30); }
     // sunlit shading
     this.series.forEach((s, i) => {
-      if (s.sun > s.hSun - 0.27) { g.fillStyle = 'rgba(232,197,71,.08)'; g.fillRect(X(i), y0, (x1 - x0) / this.series.length + 1, y1 - y0); }
+      if (s.sun > s.hSun - 0.27) { g.fillStyle = UI.sunWash; g.fillRect(X(i), y0, (x1 - x0) / this.series.length + 1, y1 - y0); }
     });
     const curve = (key: 'sun' | 'earth' | 'hSun', color: string, dash: number[] = [], w = 4) => {
       g.beginPath(); this.series.forEach((s, i) => (i ? g.lineTo(X(i), Y(s[key])) : g.moveTo(X(i), Y(s[key]))));
       g.setLineDash(dash); g.strokeStyle = color; g.lineWidth = w; g.stroke(); g.setLineDash([]);
     };
-    curve('hSun', 'rgba(250,249,245,.45)', [8, 8], 3);
+    curve('hSun', UI.dim, [8, 8], 3);
     curve('earth', UI.earth);
     curve('sun', UI.sun);
     g.font = `600 22px ${UI.font}`;
     g.fillStyle = UI.sun; g.fillText('■ Sol', x0 + 12, y0 + 32);
     g.fillStyle = UI.earth; g.fillText('■ Tierra', x0 + 110, y0 + 32);
     g.fillStyle = UI.dim; g.fillText('- - horizonte local', x0 + 240, y0 + 32);
-    g.fillStyle = 'rgba(232,197,71,.7)'; g.fillText('▒ iluminado', x0 + 470, y0 + 32);
+    g.fillStyle = UI.sun; g.fillText('▒ iluminado', x0 + 470, y0 + 32);
   }
 
   private drawActions(p: Panel, g: CanvasRenderingContext2D) {

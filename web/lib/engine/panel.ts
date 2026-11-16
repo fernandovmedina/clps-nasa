@@ -30,7 +30,28 @@ export const UI = {
   bad: palette.bad,
   sun: palette.sun,
   earth: palette.earth,
+  idle: palette.idle,
+  /** Pozo tenue para sombrear un intervalo sobre el papel (en la gráfica de 14 días, las horas con Sol). */
+  sunWash: palette['marginal-bg'],
 };
+
+/**
+ * Tonos claros SOLO para el render 3D sobre el espacio negro (cabezas y anillos de pines, anillos de marcadores).
+ * Los colores de la paleta son oscuros para el papel y sobre el negro se apagan; estos nunca se pintan sobre papel.
+ */
+export const RENDER = {
+  ok: '#8FCB9B',
+  warn: '#E8C547',
+  bad: '#E58A7B',
+  earth: '#8FB8E0',
+  rock: '#C9A26B',
+};
+
+export const renderStatusColor = (status: SiteMetrics['status']) => (status === 'viable' ? RENDER.ok : status === 'marginal' ? RENDER.warn : RENDER.bad);
+
+/** Fondo tenue del estado, para un cuadro con texto de tinta (el color de estado sólido no da 4.5:1 con la tinta). */
+export const statusBg = (status: SiteMetrics['status']) =>
+  status === 'viable' ? palette['viable-bg'] : status === 'marginal' ? palette['marginal-bg'] : palette['bad-bg'];
 
 export const statusColor = (status: SiteMetrics['status']) => (status === 'viable' ? UI.ok : status === 'marginal' ? UI.warn : UI.bad);
 

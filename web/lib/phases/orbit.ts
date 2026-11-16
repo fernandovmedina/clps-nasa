@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { LunarApp, Phase } from '../engine/app';
 import type { LoopControl } from '../engine/audio';
-import { Panel, UI, roundRect, statusColor, textLabel } from '../engine/panel';
+import { Panel, UI, renderStatusColor, roundRect, statusBg, statusColor, textLabel } from '../engine/panel';
 import { starField } from '../engine/particles';
 import { createMoon } from '../engine/moon';
 import { earthTexture, glowTexture } from '../engine/textures';
@@ -88,9 +88,9 @@ function rankChip(rank: number, color: string): THREE.Sprite {
   c.width = CHIP_TEX.w; c.height = CHIP_TEX.h;
   const g = c.getContext('2d')!;
   roundRect(g, 2, 2, CHIP_TEX.w - 4, CHIP_TEX.h - 4, 16);
-  g.fillStyle = 'rgba(20,20,19,0.85)'; g.fill();
-  g.strokeStyle = UI.line; g.lineWidth = 2; g.stroke();
-  g.font = `800 52px ${UI.mono}`; g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = UI.bg; g.fill();
+  g.strokeStyle = color; g.lineWidth = 5; g.stroke();
+  g.font = `800 52px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText(`#${rank}`, CHIP_TEX.w / 2, CHIP_TEX.h / 2 + 3);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -213,7 +213,7 @@ export class OrbitPhase implements Phase {
     const n = latLonToVec3(m.site.lat, m.site.lon).normalize();
     group.position.copy(n).multiplyScalar(R);
     group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
-    const color = new THREE.Color(statusColor(m.status));
+    const color = new THREE.Color(renderStatusColor(m.status));
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 1.4, 60, 12, 1, true),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
     beam.position.y = 30;
@@ -525,10 +525,11 @@ export class OrbitPhase implements Phase {
     evaluated.forEach((m, i) => {
       const y = y0 + i * rowH;
       const sel = this.app.selected === m, hov = p.hover === `row-${m.site.id}`;
-      if (sel || hov) { roundRect(g, 28, y, 968, rowH - 10, 18); g.fillStyle = sel ? 'rgba(217,119,87,.18)' : 'rgba(250,249,245,.07)'; g.fill(); }
+      if (sel || hov) { roundRect(g, 28, y, 968, rowH - 10, 18); g.fillStyle = sel ? UI.selected : UI.raised; g.fill(); }
       const col = statusColor(m.status);
-      roundRect(g, 44, y + 18, 58, 58, 14); g.fillStyle = col; g.fill();
-      g.font = `800 30px ${UI.mono}`; g.fillStyle = UI.onAccent; g.textAlign = 'center'; g.fillText(`${i + 1}`, 73, y + 58); g.textAlign = 'left';
+      roundRect(g, 44, y + 18, 58, 58, 14); g.fillStyle = statusBg(m.status); g.fill();
+      g.strokeStyle = col; g.lineWidth = 3; g.stroke();
+      g.font = `800 30px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'center'; g.fillText(`${i + 1}`, 73, y + 58); g.textAlign = 'left';
       g.font = `600 32px ${UI.font}`; g.fillStyle = UI.text; g.fillText(m.site.name, 124, y + 44);
       const note = rankingNote(m.site);
       g.font = `500 22px ${UI.mono}`; g.fillStyle = m.site.crash ? UI.warn : UI.dim;
@@ -548,7 +549,7 @@ export class OrbitPhase implements Phase {
     });
     if (!this.analysisDone) {
       const w = 928 * (revealed / total);
-      roundRect(g, 48, 1240, 928, 10, 5); g.fillStyle = 'rgba(250,249,245,.15)'; g.fill();
+      roundRect(g, 48, 1240, 928, 10, 5); g.fillStyle = UI.lineStrong; g.fill();
       if (w > 1) { roundRect(g, 48, 1240, w, 10, 5); g.fillStyle = UI.accent; g.fill(); }
     }
   }
@@ -556,7 +557,7 @@ export class OrbitPhase implements Phase {
   /** Small "connected to the shared room" badge, top-right of the list panel. */
   private drawRoomBadge(g: CanvasRenderingContext2D) {
     const status = this.app.room.status;
-    const color = status === 'open' ? UI.ok : status === 'connecting' ? UI.warn : 'rgba(250,249,245,.35)';
+    const color = status === 'open' ? UI.ok : status === 'connecting' ? UI.warn : UI.idle;
     const label = status === 'open' ? `sincronizado · sala "${this.app.room.room}"` : status === 'connecting' ? 'conectando…' : 'sin conexión (local)';
     g.font = `600 20px ${UI.mono}`; g.textAlign = 'right';
     g.fillStyle = color; g.fillText('●', 968, 82);
@@ -573,9 +574,9 @@ export class OrbitPhase implements Phase {
       const outOfRange = days > this.maxDelayDays;
       if (outOfRange) {
         // Disabled, not clickable - no p.region/p.button, drawn dimmed directly.
-        roundRect(g, x, y, w, h, h / 2); g.fillStyle = 'rgba(250,249,245,.03)'; g.fill();
+        roundRect(g, x, y, w, h, h / 2); g.fillStyle = UI.raised; g.fill();
         g.strokeStyle = UI.line; g.lineWidth = 2; g.stroke();
-        g.font = `600 ${Math.round(h * 0.34)}px ${UI.font}`; g.fillStyle = 'rgba(250,249,245,.3)';
+        g.font = `600 ${Math.round(h * 0.34)}px ${UI.font}`; g.fillStyle = UI.dim;
         g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(`+${days} d`, x + w / 2, y + h / 2 + 1);
         g.textAlign = 'left'; g.textBaseline = 'alphabetic';
       } else {
@@ -646,7 +647,7 @@ export class OrbitPhase implements Phase {
     bars.forEach(([k, v], i) => {
       const y = 820 + i * 52;
       g.font = `500 24px ${UI.font}`; g.fillStyle = UI.dim; g.fillText(k, 48, y + 18);
-      roundRect(g, 300, y, 660, 16, 8); g.fillStyle = 'rgba(250,249,245,.12)'; g.fill();
+      roundRect(g, 300, y, 660, 16, 8); g.fillStyle = UI.lineStrong; g.fill();
       if (v > 0.01) { roundRect(g, 300, y, 660 * v, 16, 8); g.fillStyle = col; g.fill(); }
     });
     const contrast = rankingNote(m.site);

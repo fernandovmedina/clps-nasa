@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import type { Marker, MarkerKind } from '@touchdown/core';
-import { UI, textLabel } from '../engine/panel';
+import { RENDER, UI, textLabel } from '../engine/panel';
+import { palette } from '../ui/palette';
 
-const STYLE: Record<MarkerKind, { color: string; glyph: string; label: string }> = {
-  rock: { color: '#C9A26B', glyph: '🪨', label: 'Roca' },
-  slope: { color: UI.warn, glyph: '⛰', label: 'Pendiente' },
-  shadow: { color: UI.earth, glyph: '🌑', label: 'Sombra' },
-  other: { color: UI.bad, glyph: '⚠', label: 'Otro' },
+/** `color` rotula sobre el chip de papel (≥3:1); `ring` es el tono claro del anillo sobre el suelo oscuro. */
+const STYLE: Record<MarkerKind, { color: string; ring: string; glyph: string; label: string }> = {
+  rock: { color: palette['terrain-line'], ring: RENDER.rock, glyph: '🪨', label: 'Roca' },
+  slope: { color: UI.warn, ring: RENDER.warn, glyph: '⛰', label: 'Pendiente' },
+  shadow: { color: UI.earth, ring: RENDER.earth, glyph: '🌑', label: 'Sombra' },
+  other: { color: UI.bad, ring: RENDER.bad, glyph: '⚠', label: 'Otro' },
 };
 
 /**
@@ -45,7 +47,7 @@ export class MarkerField {
 
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(0.55, 0.85, 24),
-      new THREE.MeshBasicMaterial({ color: style.color, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ color: style.ring, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
     );
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.06;
