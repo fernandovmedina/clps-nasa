@@ -2,9 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LunarApp } from '@/lib/engine/app';
-import type { CapcomController } from '@/lib/capcom/controller';
 import { PHASE_LABELS, PHASE_ORDER, collectActions } from '@/lib/engine/hud';
-import { CapcomButton, CapcomCaption } from './Capcom';
 import ControlRoom, { EMPTY_LOG, nextLog, seenOf } from './ControlRoom';
 import Controls from './Controls';
 import FollowMissionDialog from './FollowMissionDialog';
@@ -24,8 +22,6 @@ interface Props {
   vr: 'checking' | 'yes' | 'no';
   onEnterVR: () => void;
   room: { code: string; isHost: boolean; onJoin: (code: string) => boolean; onLeave: () => void };
-  /** Voice assistant; absent when switched off with ?capcom=0. */
-  capcom?: CapcomController | null;
   /** The launch planner is open. Held by the parent: this layer unmounts while the headset is on. */
   planning?: boolean;
   onPlanning?: (open: boolean) => void;
@@ -48,7 +44,7 @@ const IDLE: HudSnapshot = {
 };
 
 /** DOM control layer over the 3D scene: phases, mission, the phase's own data and the run controls. */
-export default function MissionLayer({ app, vr, onEnterVR, room, capcom, planning = false, onPlanning, openFollowOnMount = false }: Props) {
+export default function MissionLayer({ app, vr, onEnterVR, room, planning = false, onPlanning, openFollowOnMount = false }: Props) {
   const { snap, refresh } = useHudSnapshot(app);
   const view = snap ?? IDLE;
   const { phase, mode, muted, hud, mission, roomOpen } = view;
@@ -119,7 +115,6 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
           view={view}
           code={room.code}
           log={log}
-          capcom={capcom}
           soundOn={soundOn}
           soundDisabled={stopped}
           onToggleSound={toggleSound}
@@ -138,7 +133,6 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
         <h1 className={styles.sr}>TOUCHDOWN</h1>
         {follow && <FollowPill code={room.code} open={roomOpen} />}
         <div className={styles.headerActions}>
-          {capcom && <CapcomButton controller={capcom} />}
           <button type="button" className={styles.iconBtn} aria-label="Sonido" aria-pressed={soundOn} disabled={stopped} onClick={toggleSound}>
             <SoundIcon muted={!soundOn} />
           </button>
@@ -197,7 +191,6 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
         ) : (
           <StatusPanel phase={phase} mode={mode} hud={hud} frozen={paused} onAct={act} />
         )}
-        {capcom && <CapcomCaption controller={capcom} />}
         {!stopped && !waitingMonitor && (
           <Controls mode={mode} hud={controlsHud} pauseRef={pauseButton} onTogglePause={togglePause} onStop={stop} onAct={act} />
         )}

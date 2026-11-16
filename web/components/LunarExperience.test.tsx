@@ -12,7 +12,6 @@ interface FakeLunarApp {
 const harness = vi.hoisted(() => ({
   app: null as FakeLunarApp | null,
   apps: [] as FakeLunarApp[],
-  capcom: [] as { prepareForVR: ReturnType<typeof vi.fn> }[],
   enterVR: (() => Promise.resolve()) as () => Promise<void>,
 }));
 
@@ -67,16 +66,7 @@ vi.mock('@/lib/phases/pov', () => ({ PovPhase: class {} }));
 vi.mock('@/lib/phases/landing', () => ({ LandingPhase: class {} }));
 vi.mock('@/lib/phases/transmit', () => ({ TransmitPhase: class {} }));
 vi.mock('@/lib/mission/sites', () => ({ loadMissionData: vi.fn() }));
-vi.mock('@/lib/capcom/controller', () => ({
-  CapcomController: class {
-    prepareForVR = vi.fn(() => Promise.resolve());
-    constructor() { harness.capcom.push(this); }
-    dispose() {}
-  },
-}));
-vi.mock('@/lib/capcom/donkey-stage', () => ({ DonkeyStage: class { ok = true; setMood() {} dispose() {} } }));
-vi.mock('@/lib/capcom/debug', () => ({ installCapcomDebug: () => ({}) }));
-vi.mock('@/lib/capcom/vr-panel', () => ({ mountCapcomVrPanel: () => () => {} }));
+vi.mock('@/lib/donkey/donkey-stage', () => ({ DonkeyStage: class { ok = true; setMood() {} dispose() {} } }));
 vi.mock('./experience/MissionLayer', () => ({
   default: ({ planning }: { planning: boolean }) => <div data-testid="layer" data-planning={String(planning)} />,
 }));
@@ -128,7 +118,6 @@ async function mounted(xr?: Promise<boolean>) {
 beforeEach(() => {
   harness.app = null;
   harness.apps.length = 0;
-  harness.capcom.length = 0;
   harness.enterVR = () => Promise.resolve();
   FakeSocket.instances = [];
   vi.stubGlobal('WebSocket', FakeSocket);
@@ -187,7 +176,6 @@ describe('LunarExperience: answering "Voy en VR" with or without a headset', () 
   it('with a headset, goes straight to the session from the click, without opening the planner', async () => {
     const { app } = await mounted(Promise.resolve(true));
     choose('Voy en VR');
-    expect(harness.capcom[0]!.prepareForVR).toHaveBeenCalledTimes(1);
     expect(app.isHost).toBe(true);
     expect(planning()).toBe('false');
     await flush();

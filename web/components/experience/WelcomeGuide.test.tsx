@@ -8,7 +8,7 @@ import WelcomeGuide from './WelcomeGuide';
 const stages = vi.hoisted(() => [] as { canvas: HTMLCanvasElement; ok: boolean; setMood: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }[]);
 const webgl = vi.hoisted(() => ({ available: true }));
 
-vi.mock('@/lib/capcom/donkey-stage', () => ({
+vi.mock('@/lib/donkey/donkey-stage', () => ({
   DonkeyStage: class {
     ok = webgl.available;
     setMood = vi.fn();

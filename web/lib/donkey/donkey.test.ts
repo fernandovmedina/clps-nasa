@@ -1,23 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { CapcomSnapshot } from './controller';
 
 vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => ({ GLTFLoader: class {} }));
 vi.mock('three/examples/jsm/libs/meshopt_decoder.module.js', () => ({ MeshoptDecoder: {} }));
 
-const { BOUNCE, DonkeyGuide, bouncePose, donkeyMood } = await import('./donkey');
-
-const BASE: CapcomSnapshot = { state: 'listening', talking: false, question: '', answer: '', answerFinal: false, message: null, mic: 'granted' };
-
-describe('donkeyMood', () => {
-  it('mirrors the voice assistant', () => {
-    expect(donkeyMood({ ...BASE, state: 'unavailable' })).toBe('hidden');
-    expect(donkeyMood({ ...BASE, talking: true })).toBe('listening');
-    expect(donkeyMood({ ...BASE, state: 'speaking' })).toBe('speaking');
-    expect(donkeyMood({ ...BASE, state: 'thinking' })).toBe('speaking');
-    expect(donkeyMood(BASE)).toBe('idle');
-    expect(donkeyMood({ ...BASE, state: 'disconnected' })).toBe('idle');
-  });
-});
+const { BOUNCE, DonkeyGuide, bouncePose } = await import('./donkey');
 
 describe('bouncePose', () => {
   const style = BOUNCE.speaking;
@@ -44,7 +30,7 @@ describe('bouncePose', () => {
 });
 
 describe('DonkeyGuide', () => {
-  it('eases into a new mood without jumping and hides when CAPCOM is unavailable', () => {
+  it('eases into a new mood without jumping and hides when told to', () => {
     const d = new DonkeyGuide();
     let t = 0;
     const ys: number[] = [];

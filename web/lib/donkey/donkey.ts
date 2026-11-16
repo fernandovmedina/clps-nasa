@@ -2,27 +2,19 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { disposeObject } from '../phases/rocket-model';
-import type { CapcomSnapshot } from './controller';
 
 const MODEL_URL = '/models/donkey.glb';
 const TIMEOUT_MS = 20000;
-/** Height of the donkey next to the CAPCOM panel, in metres (the panel is 0.42 m wide). */
+/** Height of the donkey, in metres. */
 export const DONKEY_HEIGHT_M = 0.2;
-/** Yaw that turns the model's front toward +Z (the side of the panel that faces the viewer). */
+/** Yaw that turns the model's front toward +Z. */
 const MODEL_YAW = 0;
 /** The suit is lit by each phase's lights; a bit of self-illumination keeps it readable in lunar shadow or deep space. */
 const SELF_LIGHT = 0.45;
 const MOOD_DAMP = 6;
 
-/** What the donkey is doing: it mirrors the voice assistant so it reads as the one who talks. */
+/** How the donkey hops: calm while waiting, livelier while the welcome guide talks or asks. */
 export type DonkeyMood = 'hidden' | 'idle' | 'listening' | 'speaking';
-
-export function donkeyMood(snap: CapcomSnapshot): DonkeyMood {
-  if (snap.state === 'unavailable') return 'hidden';
-  if (snap.talking) return 'listening';
-  if (snap.state === 'speaking' || snap.state === 'thinking') return 'speaking';
-  return 'idle';
-}
 
 interface BounceStyle { period: number; height: number; squash: number; sway: number }
 
@@ -55,8 +47,8 @@ export function bouncePose(hops: number, style: BounceStyle): BouncePose {
 }
 
 /**
- * The Burro Pardo assistant: a small donkey in a space suit standing next to the CAPCOM panel and hopping while it
- * waits, listens or talks. Starts empty and fills in when the model loads; stays empty if it fails.
+ * The Burro Pardo mascot: a small donkey in a space suit hopping in place (in the welcome guide and beside the
+ * viewer in VR). Starts empty and fills in when the model loads; stays empty if it fails.
  */
 export class DonkeyGuide {
   readonly group = new THREE.Group();
@@ -137,7 +129,7 @@ function fit(model: THREE.Group): THREE.Group {
   model.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
-    mesh.raycast = () => {};  // sits on a pointer target (the panel): must not eat clicks or cost ray tests
+    mesh.raycast = () => {};  // decoration: must not eat clicks or cost ray tests
     for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
       const std = m as THREE.MeshStandardMaterial;
       if (!std.isMeshStandardMaterial) continue;

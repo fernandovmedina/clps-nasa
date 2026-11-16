@@ -47,7 +47,7 @@ TOUCHDOWN combines real JPL Horizons ephemerides with terrain horizons derived f
 - **Delay simulation:** shift the landing date by N days and see what changes.
 - **Mission report:** recommended site, operating windows and risks.
 - **Immersive experience (WebXR):** launch, orbital site ranking, surface view on real LOLA terrain, powered descent and data transmission, playable on desktop or Meta Quest 3S.
-- **CAPCOM voice assistant:** push-to-talk mission controller that answers questions about the mission using the same scenario data shown in the interface.
+- **Burro Pardo mascot:** a small donkey in a space suit that hops beside the viewer in VR and in the welcome guide (decoration only, no external services).
 
 ## Architecture
 
@@ -90,7 +90,6 @@ The system is fully serverless. All heavy computation is done offline, so no lon
 | REST API | Cloudflare Worker under `/api/*`, same origin as the web app |
 | Real-time sync | Cloudflare Durable Objects (`RoomHub`, WebSocket Hibernation API, SQLite storage) |
 | Hosting | Cloudflare Workers Static Assets (front end, heightmaps, textures) |
-| Voice assistant | Amazon Nova Sonic via Amazon Bedrock, with Cognito guest credentials |
 | CI/CD | GitHub Actions: CI on pull requests, automatic deployment on `main` |
 
 ## Methodology
@@ -187,10 +186,12 @@ See [`web/README.md`](web/README.md) for development shortcuts (`?phase=`, `?spe
 
 ## Deployment
 
-Every push to `main` runs CI and deploys to Cloudflare automatically (`.github/workflows/deploy.yml`, gated by the repository variable `CLOUDFLARE_DEPLOY`). A manual deployment can be run with:
+Deployment is manual; pushing to `main` does not deploy anything (CI only runs on pull requests). `worker/wrangler.jsonc` has no `account_id`, so Wrangler deploys to whichever Cloudflare account you are logged into:
 
 ```bash
-pnpm --filter @touchdown/worker deploy
+pnpm --filter @touchdown/worker exec wrangler login   # once
+pnpm --filter @touchdown/web build
+pnpm --filter @touchdown/worker run deploy
 pnpm --filter @touchdown/worker deploy:dry-run   # validate without deploying
 ```
 

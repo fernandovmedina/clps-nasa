@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import type { DonkeyMood } from '@/lib/capcom/donkey';
-import { DonkeyStage } from '@/lib/capcom/donkey-stage';
+import type { DonkeyMood } from '@/lib/donkey/donkey';
+import { DonkeyStage } from '@/lib/donkey/donkey-stage';
 import type { LunarApp } from '@/lib/engine/app';
 import { NARRATION_LINES } from '@/lib/engine/narration-lines';
 import dialog from './Dialog.module.css';

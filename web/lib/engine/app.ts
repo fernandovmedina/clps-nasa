@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Input } from './input';
 import { AudioEngine } from './audio';
 import { Avatar } from './avatar';
+import { VrDonkey } from '../donkey/vr-donkey';
 import { damp, lookQuat } from './util';
 import { loadMoonTextures, type MoonTextures } from './moon';
 import { Narrator } from './narration';
@@ -125,6 +126,8 @@ export class LunarApp {
   readonly exitPanel: Panel;
   /** First-person torso + IK arms, visible only in VR. See avatar.ts. */
   private avatar: Avatar;
+  /** The Burro Pardo hopping beside the viewer, visible only in VR. See vr-donkey.ts. */
+  private donkey: VrDonkey;
   private fade = { value: 1, target: 1, speed: 1, resolve: null as null | (() => void) };
   private transitioning = false;
   /** Bumped by stop/restart so a transition in flight does not swap the phase afterwards. */
@@ -164,7 +167,7 @@ export class LunarApp {
     this.fadeMesh.renderOrder = 1000;
     this.camera.add(this.fadeMesh);
 
-    // Exit button: fixed low on the left of the rig, mirroring the CAPCOM panel on the right,
+    // Exit button: fixed low on the left of the rig, mirroring the donkey on the right,
     // so it never floats over whatever panel the user is looking at.
     this.exitPanel = new Panel(640, 220, 0.26, (p, g) => {
       p.frame(g);
@@ -181,6 +184,8 @@ export class LunarApp {
     this.globalTargets.push(this.runPanel.mesh);
     this.avatar = new Avatar(this);
     this.rig.add(this.avatar.group);
+    this.donkey = new VrDonkey(this.eyeHeight);
+    this.rig.add(this.donkey.group);
     this.room = new RoomClient(opts.room ?? 'touchdown', opts.onRoomStatus, opts.onRoomChange);
     this.isHost = opts.isHost ?? true;
     this.follow = new PhaseFollow({
@@ -396,6 +401,7 @@ export class LunarApp {
     this.exitPanel.mesh.visible = genericPanels;
     this.exitPanel.update();
     this.avatar.update(frame);
+    this.donkey.update(vrUi, p.ownsRunControls === true);
     this.narrator.setMuted(this.audio.muted);
 
     const k = this.view.snap ? 1 : damp(this.view.rate, frame);
@@ -445,6 +451,7 @@ export class LunarApp {
     this.runPanel.dispose();
     this.exitPanel.dispose();
     this.avatar.dispose();
+    this.donkey.dispose();
     this.narrator.dispose();
     this.audio.dispose();
     this.input.dispose();
