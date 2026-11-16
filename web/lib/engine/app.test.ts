@@ -438,6 +438,33 @@ describe('LunarApp language hook', () => {
     app.dispose();
   });
 
+  it('draws the exit-VR button in the language in use and again after a language change', async () => {
+    const painted: string[] = [];
+    const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+      get: (target, key) => (key === 'fillText' ? (text: string) => { painted.push(text); } : key in target ? target[key] : () => undefined),
+      set: (target, key, value) => { target[key] = value; return true; },
+    });
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation((() => ctx) as never);
+    xrState.presenting = true;
+    const { app } = await boot();
+    tick();
+    expect(painted).toContain('✕ Salir de VR');
+    setLang('en', { persist: false });
+    painted.length = 0;
+    tick();
+    expect(painted).toContain('✕ Exit VR');
+    expect(painted).not.toContain('✕ Salir de VR');
+    app.dispose();
+  });
+
+  it('reports that WebXR is missing in the language in use', async () => {
+    const { app } = await boot();
+    await expect(app.enterVR()).rejects.toThrow('WebXR no disponible en este navegador');
+    setLang('en', { persist: false });
+    await expect(app.enterVR()).rejects.toThrow('WebXR is not available in this browser');
+    app.dispose();
+  });
+
   it('does nothing for phases without onLangChange, and follows the phase that is current after a switch', async () => {
     const onLangChange = vi.fn();
     const probe: Probe = { updates: [], made: 0, waiting: false, hudPanel: new Panel(64, 64, 0.1, () => undefined), exited: 0 };

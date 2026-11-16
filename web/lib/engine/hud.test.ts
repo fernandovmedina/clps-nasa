@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { setLang } from '@/lib/i18n';
 import {
-  RunState, collectActions, countdownFigure, fmtInt, fmtLanding, fmtLatLon, fmtPercent, fmtSigned, groupThousands, signalDelayS,
+  PHASE_LABELS, PHASE_ORDER, RunState, STATUS_LABELS, collectActions, countdownFigure, fmtInt, fmtLanding, fmtLatLon, fmtPercent, fmtSigned, groupThousands, signalDelayS,
   type PhaseHud,
 } from './hud';
 
@@ -116,5 +117,51 @@ describe('collectActions', () => {
     const text = JSON.stringify(hud);
     expect(text).toContain('"id":"go"');
     expect(text).not.toContain('run');
+  });
+});
+
+describe('shared labels in Spanish and English', () => {
+  it('PHASE_LABELS and STATUS_LABELS read in Spanish by default, with the same shape as before', () => {
+    expect(PHASE_ORDER.map((id) => PHASE_LABELS[id])).toEqual(['Despegue', 'Órbita y ranking', 'Vista del sitio', 'Alunizaje', 'Transmisión']);
+    expect(STATUS_LABELS).toEqual({ viable: 'Viable', marginal: 'Marginal', not_viable: 'No viable' });
+    expect(Object.keys(PHASE_LABELS)).toEqual(PHASE_ORDER);
+  });
+
+  it('resolve the language when read, so a held reference follows a language change', () => {
+    const labels = PHASE_LABELS;
+    expect(labels.landing).toBe('Alunizaje');
+    setLang('en', { persist: false });
+    expect(labels.landing).toBe('Landing');
+    expect(PHASE_ORDER.map((id) => PHASE_LABELS[id])).toEqual(['Launch', 'Orbit & ranking', 'Site view', 'Landing', 'Transmission']);
+    expect(STATUS_LABELS).toEqual({ viable: 'Viable', marginal: 'Marginal', not_viable: 'Not viable' });
+    expect(STATUS_LABELS.not_viable.toLowerCase()).toBe('not viable');
+  });
+
+  it('countdownFigure speaks both languages and accepts either phase label', () => {
+    expect(countdownFigure('T-3')).toEqual({ value: 'T − 3', caption: 'segundos para la ignición' });
+    expect(countdownFigure('IGNICIÓN')).toEqual({ value: 'Ignición', caption: 'encendido de motores' });
+    expect(countdownFigure('DESPEGUE')).toEqual({ value: 'Despegue', caption: 'rumbo a la Luna' });
+    setLang('en', { persist: false });
+    expect(countdownFigure('T-3')).toEqual({ value: 'T − 3', caption: 'seconds to ignition' });
+    expect(countdownFigure('IGNICIÓN')).toEqual({ value: 'Ignition', caption: 'engine start' });
+    expect(countdownFigure('IGNITION')).toEqual({ value: 'Ignition', caption: 'engine start' });
+    expect(countdownFigure('DESPEGUE')).toEqual({ value: 'Liftoff', caption: 'bound for the Moon' });
+    expect(countdownFigure('LIFTOFF')).toEqual({ value: 'Liftoff', caption: 'bound for the Moon' });
+    expect(countdownFigure('otra cosa')).toBeNull();
+  });
+
+  it('formats numbers, percentages and the landing date with the language in use', () => {
+    const date = new Date('2027-01-10T00:00:00Z');
+    expect(fmtInt(404378.4)).toBe(`404${NBSP}378`);
+    expect(fmtPercent(58.4)).toBe(`58${NBSP}%`);
+    expect(fmtLanding(date)).toBe('10 ene 2027 · 00:00 UTC');
+    setLang('en', { persist: false });
+    expect(fmtInt(404378.4)).toBe('404,378');
+    expect(fmtInt(999)).toBe('999');
+    expect(groupThousands('384,400 km')).toBe('384,400 km');
+    expect(fmtPercent(58.4)).toBe('58%');
+    expect(fmtLanding(date)).toBe('Jan 10, 2027 · 00:00 UTC');
+    expect(fmtLanding(new Date('2027-12-03T07:05:00Z'))).toBe('Dec 3, 2027 · 07:05 UTC');
+    expect(fmtLatLon(-89.5, -12.25)).toBe('−89.50°, 12.25° W');
   });
 });

@@ -1,5 +1,6 @@
+import { getLang, subscribe as subscribeLang, type Lang } from '@/lib/i18n';
 import {
-  NARRATION_AUDIO_DIR, NARRATION_LINES, NARRATION_MANIFEST_URL,
+  narrationAudioDir, narrationManifestUrl, narrationText,
   type NarrationId, type NarrationManifest,
 } from './narration-lines';
 
@@ -28,8 +29,9 @@ function splitIntoClauses(text: string): Clause[] {
 
 /**
  * Mission narrator. Fixed script lines (`say(id)`) play a pre-recorded clip in CAPCOM's own
- * voice (Nova 2 Sonic `carlos`, see narration-lines.ts), so the launch sounds like the same
- * person on every device. Anything without a clip - free text via `speak`, a clip that failed
+ * voice (Nova 2 Sonic `carlos` in Spanish, `matthew` in English, see narration-lines.ts), so the launch sounds like the same
+ * person on every device. Text and audio follow `getLang()` at the moment a line is said; the English clips live in
+ * /audio/narration/en/ with their own manifest. Anything without a clip - free text via `speak`, a clip that failed
  * to load, or a clip recorded for a different text - falls back to the browser's native TTS
  * (SpeechSynthesis) - no backend, no API key, works offline. Scoped to just "speak this line": each phase keeps its own one-shot flags
  * (same idiom already used everywhere in this engine, e.g. launch.ts's `countLabel` checks)
@@ -38,22 +40,27 @@ function splitIntoClauses(text: string): Clause[] {
  */
 export class Narrator {
   private synth: SpeechSynthesis | null = typeof window !== 'undefined' ? window.speechSynthesis : null;
-  private voice: SpeechSynthesisVoice | null = null;
+  private voices: Record<Lang, SpeechSynthesisVoice | null> = { es: null, en: null };
   private muted = false;
   private suspended = false;
   /** Bumped on every speak()/setMuted(true)/dispose() so an in-flight clause chain can tell
    *  it's been superseded and stop queuing further chunks instead of talking over the new line. */
   private gen = 0;
-  /** Pre-recorded clips by id; only ids whose recorded text still matches NARRATION_LINES. */
-  private clips = new Map<NarrationId, HTMLAudioElement>();
+  /** Pre-recorded clips by language and id; only ids whose recorded text still matches the script of that language. */
+  private clips: Record<Lang, Map<NarrationId, HTMLAudioElement>> = { es: new Map(), en: new Map() };
+  /** One manifest load per language, started the first time that language is in use. */
+  private loads = new Map<Lang, Promise<void>>();
+  private unsubscribeLang: (() => void) | null = null;
   private playing: HTMLAudioElement | null = null;
   /** Settles the `sayAndWait` in flight; `stopAll()` resolves it as 'stopped' because pausing a clip fires no `ended`. */
   private settle: ((outcome: SayOutcome) => void) | null = null;
-  /** Settles once the recorded clips are known (loaded, or loading failed). Never rejects. */
+  /** Settles once the recorded clips of the language in use at construction are known (loaded, or loading failed). Never rejects. */
   readonly ready: Promise<void>;
 
   constructor() {
-    this.ready = this.loadClips().catch(() => {});
+    this.ready = this.loadClips(getLang());
+    // Switching language loads the other language's clips (once); lines already playing finish in the language they began.
+    this.unsubscribeLang = subscribeLang(() => { void this.loadClips(getLang()); });
     if (!this.synth) return;
     this.pickVoice();
     // Chrome/Edge often return an empty voice list on the very first call.
@@ -68,8 +75,11 @@ export class Narrator {
     // too before giving up. Covers Windows SAPI (Sabina/Helena), macOS/iOS (Mónica/Paulina/
     // Juan/Jorge/Diego/Esperanza) and Chrome's remote "Google español".
     const byName = () => voices.find((v) => /spanish|español|espanol|\bspa\b|sabina|helena|m[oó]nica|paulina|\bjuan\b|jorge|diego|esperanza/i.test(v.name)) ?? null;
-    this.voice = byLang('es-mx') ?? byLang('es-us') ?? byLang('es-419') ?? byLang('es-es') ?? byLang('es') ?? byLang('spa') ?? byName();
-    if (voices.length && !this.voice) {
+    this.voices.es = byLang('es-mx') ?? byLang('es-us') ?? byLang('es-419') ?? byLang('es-es') ?? byLang('es') ?? byLang('spa') ?? byName();
+    // English: US first (the narration is written for en-US), then any English; the ISO 639-2 "eng" tag and a few known names as a last resort.
+    this.voices.en = byLang('en-us') ?? byLang('en-gb') ?? byLang('en') ?? byLang('eng')
+      ?? voices.find((v) => /english|\bzira\b|\bdavid\b|\bmark\b|samantha|alex|daniel/i.test(v.name)) ?? null;
+    if (voices.length && !this.voices.es) {
       // No Spanish voice installed on this device's TTS engine at all - no front-end code can
       // fix the accent from here, only installing a Spanish voice/language pack can. Setting
       // `lang` on the utterance anyway (see speakOne()) is the best effort left, but most
@@ -79,18 +89,25 @@ export class Narrator {
     }
   };
 
-  private async loadClips() {
+  private loadClips(lang: Lang): Promise<void> {
+    let load = this.loads.get(lang);
+    if (!load) { load = this.fetchClips(lang).catch(() => {}); this.loads.set(lang, load); }
+    return load;
+  }
+
+  private async fetchClips(lang: Lang) {
     if (typeof window === 'undefined' || typeof fetch !== 'function' || typeof Audio === 'undefined') return;
     try {
-      const res = await fetch(NARRATION_MANIFEST_URL);
+      const res = await fetch(narrationManifestUrl(lang));
       if (!res.ok) return;
       const manifest = (await res.json()) as NarrationManifest;
+      const dir = narrationAudioDir(lang);
       for (const [id, clip] of Object.entries(manifest.clips) as [NarrationId, NonNullable<NarrationManifest['clips'][NarrationId]>][]) {
         // A clip recorded for an older wording would say the wrong thing - TTS of the current text is better.
-        if (!clip || NARRATION_LINES[id] !== clip.text) continue;
-        const audio = new Audio(`${NARRATION_AUDIO_DIR}/${clip.file}`);
+        if (!clip || narrationText(id, lang) !== clip.text) continue;
+        const audio = new Audio(`${dir}/${clip.file}`);
         audio.preload = 'auto';
-        this.clips.set(id, audio);
+        this.clips[lang].set(id, audio);
       }
     } catch { /* no clips: every line uses TTS */ }
   }
@@ -123,8 +140,9 @@ export class Narrator {
   /** Says a scripted line in CAPCOM's recorded voice, or with TTS if its clip isn't available. */
   say(id: NarrationId) {
     if (this.muted || this.suspended) return;
-    const clip = this.clips.get(id);
-    if (!clip) { this.speak(NARRATION_LINES[id]); return; }
+    const lang = getLang();
+    const clip = this.clips[lang].get(id);
+    if (!clip) { this.speak(narrationText(id, lang), lang); return; }
     this.stopAll();
     const myGen = this.gen;
     clip.currentTime = 0;
@@ -134,7 +152,7 @@ export class Narrator {
       // Blocked or failed to decode: say it with TTS rather than stay silent.
       if (this.gen !== myGen) return;
       this.playing = null;
-      this.speak(NARRATION_LINES[id]);
+      this.speak(narrationText(id, lang), lang);
     });
   }
 
@@ -144,7 +162,8 @@ export class Narrator {
    * and the caller can retry from a click. Never rejects.
    */
   sayAndWait(id: NarrationId, onStart?: () => void): Promise<SayOutcome> {
-    const clip = this.clips.get(id);
+    const lang = getLang();
+    const clip = this.clips[lang].get(id);
     if (this.muted || this.suspended || (!clip && !this.synth)) return Promise.resolve('silent');
     this.stopAll();
     const myGen = this.gen;
@@ -155,8 +174,8 @@ export class Narrator {
       };
       this.settle = finish;
       const started = () => { if (this.gen === myGen) onStart?.(); };
-      const text = NARRATION_LINES[id];
-      if (!clip) { void this.speakAndReport(text, myGen, finish, started); return; }
+      const text = narrationText(id, lang);
+      if (!clip) { void this.speakAndReport(text, lang, myGen, finish, started); return; }
 
       clip.currentTime = 0;
       this.playing = clip;
@@ -168,33 +187,33 @@ export class Narrator {
         if (this.gen !== myGen) return; // paused by stop(): that rejects a pending play() with AbortError
         this.playing = null;
         if ((err as { name?: string } | null)?.name === 'NotAllowedError') { finish('blocked'); return; }
-        void this.speakAndReport(text, myGen, finish, started);
+        void this.speakAndReport(text, lang, myGen, finish, started);
       });
     });
   }
 
-  private async speakAndReport(text: string, myGen: number, finish: (outcome: SayOutcome) => void, started: () => void) {
+  private async speakAndReport(text: string, lang: Lang, myGen: number, finish: (outcome: SayOutcome) => void, started: () => void) {
     if (!this.synth) { finish('silent'); return; }
     // Chrome logs a console warning when speak() is called before any user gesture, and refuses it anyway.
     const activation = typeof navigator !== 'undefined' ? navigator.userActivation : undefined;
     if (activation && !activation.hasBeenActive) { finish('blocked'); return; }
-    const result = await this.speakClauses(splitIntoClauses(text), myGen, started);
+    const result = await this.speakClauses(splitIntoClauses(text), lang, myGen, started);
     if (result === 'blocked') finish('blocked');
     else if (result === 'done') finish('ended');
   }
 
-  /** Queues `text` as its own clause chain, cancelling whatever the narrator was still saying. */
-  speak(text: string) {
+  /** Queues `text` as its own clause chain, cancelling whatever the narrator was still saying. `lang` picks the TTS voice (default: the current language). */
+  speak(text: string, lang: Lang = getLang()) {
     if (!this.synth || this.muted || this.suspended) return;
     this.stopAll();
     const myGen = this.gen;
-    void this.speakClauses(splitIntoClauses(text), myGen);
+    void this.speakClauses(splitIntoClauses(text), lang, myGen);
   }
 
-  private async speakClauses(clauses: Clause[], myGen: number, onStart?: () => void): Promise<'done' | 'blocked' | 'superseded'> {
+  private async speakClauses(clauses: Clause[], lang: Lang, myGen: number, onStart?: () => void): Promise<'done' | 'blocked' | 'superseded'> {
     for (const [i, clause] of clauses.entries()) {
       if (this.gen !== myGen) return 'superseded'; // superseded by a newer speak()/mute - stop talking over it
-      const error = await this.speakOne(clause.text, i === 0 ? onStart : undefined);
+      const error = await this.speakOne(clause.text, lang, i === 0 ? onStart : undefined);
       if (this.gen !== myGen) return 'superseded';
       if (i === 0 && error === 'not-allowed') return 'blocked';
       if (clause.pauseAfterMs) await wait(clause.pauseAfterMs);
@@ -203,12 +222,13 @@ export class Narrator {
   }
 
   /** Resolves with the utterance's error code, or null when it was spoken. */
-  private speakOne(text: string, onStart?: () => void): Promise<string | null> {
+  private speakOne(text: string, lang: Lang, onStart?: () => void): Promise<string | null> {
     return new Promise((resolve) => {
       if (!this.synth) { resolve(null); return; }
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = this.voice?.lang ?? 'es-ES';
-      if (this.voice) u.voice = this.voice;
+      const voice = this.voices[lang];
+      u.lang = voice?.lang ?? (lang === 'en' ? 'en-US' : 'es-ES');
+      if (voice) u.voice = voice;
       // Slightly under 1x: a flat, instant "1.0" reads as rushed/robotic for short mission-
       // control lines - this is closer to how someone actually paces a status callout.
       u.rate = 0.94;
@@ -223,7 +243,10 @@ export class Narrator {
 
   dispose() {
     this.stopAll();
-    this.clips.clear();
+    this.unsubscribeLang?.();
+    this.unsubscribeLang = null;
+    this.clips.es.clear();
+    this.clips.en.clear();
     this.synth?.removeEventListener('voiceschanged', this.pickVoice);
   }
 }

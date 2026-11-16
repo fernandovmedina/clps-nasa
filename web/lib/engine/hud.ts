@@ -1,3 +1,5 @@
+import { getLang, t } from '@/lib/i18n';
+import { engineHudDict } from '@/lib/i18n/dicts/engine-hud';
 import type { PhaseName } from './app';
 
 export type HudTone = 'ok' | 'warn' | 'bad';
@@ -106,20 +108,21 @@ export class RunState {
   step(dt: number) { return this.current === 'running' ? dt : 0; }
 }
 
+/** Getters: el texto se resuelve al leerlo, en el idioma de ese momento, y los consumidores siguen leyendo `PHASE_LABELS[id]`. */
 export const PHASE_LABELS: Record<PhaseName, string> = {
-  launch: 'Despegue',
-  orbit: 'Órbita y ranking',
-  pov: 'Vista del sitio',
-  landing: 'Alunizaje',
-  transmit: 'Transmisión',
+  get launch() { return t(engineHudDict, 'phase.launch'); },
+  get orbit() { return t(engineHudDict, 'phase.orbit'); },
+  get pov() { return t(engineHudDict, 'phase.pov'); },
+  get landing() { return t(engineHudDict, 'phase.landing'); },
+  get transmit() { return t(engineHudDict, 'phase.transmit'); },
 };
 
 export const PHASE_ORDER: PhaseName[] = ['launch', 'orbit', 'pov', 'landing', 'transmit'];
 
 export const STATUS_LABELS: Record<SiteStatus, string> = {
-  viable: 'Viable',
-  marginal: 'Marginal',
-  not_viable: 'No viable',
+  get viable() { return t(engineHudDict, 'status.viable'); },
+  get marginal() { return t(engineHudDict, 'status.marginal'); },
+  get not_viable() { return t(engineHudDict, 'status.not_viable'); },
 };
 
 export const STATUS_TONES: Record<SiteStatus, HudTone> = {
@@ -134,11 +137,13 @@ const LIGHT_KM_PER_S = 299792.458;
 /** One-way signal delay (s) over `km`. */
 export const signalDelayS = (km: number) => km / LIGHT_KM_PER_S;
 
-/** "384,400 km" → "384 400 km" (non-breaking space as the thousands separator). */
+/** "384,400 km" → "384 400 km" (non-breaking space as the thousands separator); en inglés el texto queda con comas. */
 export function groupThousands(text: string): string {
+  if (getLang() === 'en') return text;
   return text.replace(/(\d),(?=\d{3}(?!\d))/g, `$1${NBSP}`);
 }
 
+/** Español: miles con espacio duro; inglés (en-US): comas. */
 export function fmtInt(n: number): string {
   return groupThousands(Math.round(n).toLocaleString('en-US'));
 }
@@ -150,16 +155,20 @@ export function fmtSigned(n: number, digits: number): string {
   return n < 0 && !isZero ? `−${text}` : text;
 }
 
+/** "58 %" (espacio duro) en español, "58%" en inglés. */
 export function fmtPercent(n: number): string {
-  return `${Math.round(n)}${NBSP}%`;
+  return t(engineHudDict, 'percent', { n: Math.round(n) });
 }
 
-const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const MONTH_KEYS = [
+  'month.0', 'month.1', 'month.2', 'month.3', 'month.4', 'month.5',
+  'month.6', 'month.7', 'month.8', 'month.9', 'month.10', 'month.11',
+] as const;
 
-/** "10 ene 2027 · 00:00 UTC" */
+/** "10 ene 2027 · 00:00 UTC" / "Jan 10, 2027 · 00:00 UTC" */
 export function fmtLanding(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
-  const day = `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+  const day = t(engineHudDict, 'landingDate', { d: date.getUTCDate(), mon: t(engineHudDict, MONTH_KEYS[date.getUTCMonth()]!), y: date.getUTCFullYear() });
   return `${day} · ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())} UTC`;
 }
 
@@ -167,12 +176,15 @@ export function fmtLatLon(lat: number, lon: number): string {
   return `${fmtSigned(lat, 2)}°, ${Math.abs(lon).toFixed(2)}° ${lon >= 0 ? 'E' : 'W'}`;
 }
 
-/** The launch countdown labels the phase draws on its 3D panel, as a headline figure. */
+/**
+ * The launch countdown labels the phase draws on its 3D panel, as a headline figure. Acepta la etiqueta en español
+ * ('IGNICIÓN', 'DESPEGUE') y en inglés ('IGNITION', 'LIFTOFF'): la fase del despegue puede dibujarla en cualquiera.
+ */
 export function countdownFigure(label: string): { value: string; caption: string } | null {
   const tick = /^T-(\d)$/.exec(label);
-  if (tick) return { value: `T − ${tick[1]}`, caption: 'segundos para la ignición' };
-  if (label === 'IGNICIÓN') return { value: 'Ignición', caption: 'encendido de motores' };
-  if (label === 'DESPEGUE') return { value: 'Despegue', caption: 'rumbo a la Luna' };
+  if (tick) return { value: t(engineHudDict, 'countdown.tickValue', { n: tick[1]! }), caption: t(engineHudDict, 'countdown.tickCaption') };
+  if (label === 'IGNICIÓN' || label === 'IGNITION') return { value: t(engineHudDict, 'countdown.ignitionValue'), caption: t(engineHudDict, 'countdown.ignitionCaption') };
+  if (label === 'DESPEGUE' || label === 'LIFTOFF') return { value: t(engineHudDict, 'countdown.liftoffValue'), caption: t(engineHudDict, 'countdown.liftoffCaption') };
   return null;
 }
 

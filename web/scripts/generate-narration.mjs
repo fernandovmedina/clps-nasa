@@ -3,8 +3,10 @@
  * Graba las líneas fijas del narrador con la misma voz que CAPCOM (Nova 2 Sonic, `carlos`)
  * y las guarda como WAV estáticos en web/public/audio/narration/, más un manifest.json.
  *
- * Uso (desde web/):  node scripts/generate-narration.mjs [id ...]
- *   Sin ids graba todas las líneas. Usa el mismo acceso de invitado (Cognito) que CAPCOM,
+ * Uso (desde web/):  node scripts/generate-narration.mjs [--lang es|en] [--voice <voz>] [id ...]
+ *   Sin ids graba todas las líneas. `--lang en` (por defecto `es`) graba NARRATION_LINES_EN con una voz inglesa de
+ *   Nova 2 Sonic (por defecto `matthew`; cámbiala con `--voice`) en web/public/audio/narration/en/, con su propio
+ *   manifest.json y un prompt de locución en inglés. En español la voz sigue siendo la de CAPCOM salvo que pases `--voice`. Usa el mismo acceso de invitado (Cognito) que CAPCOM,
  *   así que deja de funcionar cuando expira CAPCOM_ACCESS_EXPIRES_AT; los WAV ya generados
  *   siguen sirviendo para siempre porque son archivos estáticos.
  *
@@ -14,21 +16,57 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CognitoIdentityClient, GetIdCommand, GetOpenIdTokenCommand } from '@aws-sdk/client-cognito-identity';
 import { STSClient, AssumeRoleWithWebIdentityCommand } from '@aws-sdk/client-sts';
 import { BedrockRuntimeClient, InvokeModelWithBidirectionalStreamCommand } from '@aws-sdk/client-bedrock-runtime';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webDir = join(here, '..');
-const outDir = join(webDir, 'public', 'audio', 'narration');
+const narrationRoot = join(webDir, 'public', 'audio', 'narration');
+const LANGS = ['es', 'en'];
+const DEFAULT_VOICE = { en: 'matthew' };
+const outDirFor = (lang) => (lang === 'en' ? join(narrationRoot, 'en') : narrationRoot);
+
+/** `--lang es|en`, `--voice <voz>` (también `--lang=en`) e ids sueltos. Lanza ante un idioma o una opción desconocidos. */
+export function parseArgs(argv) {
+  const out = { lang: 'es', voice: null, ids: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    const [flag, inline] = arg.startsWith('--') ? arg.split(/=(.*)/s, 2) : [arg, undefined];
+    if (flag === '--lang' || flag === '--voice') {
+      const value = inline ?? argv[++i];
+      if (!value || value.startsWith('--')) throw new Error(`${flag} necesita un valor`);
+      if (flag === '--lang') {
+        if (!LANGS.includes(value)) throw new Error(`--lang debe ser ${LANGS.join(' o ')}, no «${value}»`);
+        out.lang = value;
+      } else out.voice = value;
+    } else if (arg.startsWith('--')) {
+      throw new Error(`opción desconocida: ${arg}`);
+    } else out.ids.push(arg);
+  }
+  return out;
+}
+
+/** Lee `export const <name> = { id: 'texto' (+ "texto")*, ... } as const` de narration-lines.ts (comillas simples o dobles). */
+export function extractLines(src, name) {
+  const block = src.match(new RegExp(`${name}\\s*=\\s*\\{([\\s\\S]*?)\\}\\s*as const`));
+  if (!block) throw new Error(`No encontré ${name} en lib/engine/narration-lines.ts`);
+  const str = `(?:'[^']*'|"[^"]*")`;
+  const lines = {};
+  // Cada entrada es `id: 'texto' (+ 'texto')*,`
+  for (const m of block[1].matchAll(new RegExp(`(\\w+):\\s*((?:${str}\\s*\\+?\\s*)+),`, 'g'))) {
+    lines[m[1]] = [...m[2].matchAll(new RegExp(str, 'g'))].map((p) => p[0].slice(1, -1)).join('');
+  }
+  return lines;
+}
 
 const MAX_ATTEMPTS = Number(process.env.NARRATION_ATTEMPTS ?? 4);
 const TURN_TIMEOUT_MS = 45_000;
 const SILENCE_FRAME = Buffer.alloc(512 * 2).toString('base64'); // 32 ms de silencio a 16 kHz
 
 /** Lee las constantes de los .ts del front para no duplicarlas (son literales simples). */
-async function readTsConstants() {
+async function readTsConstants(lang) {
   const config = await readFile(join(webDir, 'lib', 'capcom', 'config.ts'), 'utf8');
   const pick = (name) => {
     const m = config.match(new RegExp(`export const ${name}\\s*=\\s*'([^']+)'`));
@@ -37,13 +75,7 @@ async function readTsConstants() {
   };
   const rate = config.match(/export const CAPCOM_OUTPUT_SAMPLE_RATE\s*=\s*([\d_]+)/);
   const linesSrc = await readFile(join(webDir, 'lib', 'engine', 'narration-lines.ts'), 'utf8');
-  const block = linesSrc.match(/NARRATION_LINES\s*=\s*\{([\s\S]*?)\}\s*as const/);
-  if (!block) throw new Error('No encontré NARRATION_LINES en lib/engine/narration-lines.ts');
-  const lines = {};
-  // Cada entrada es `id: 'texto' (+ 'texto')*,`
-  for (const m of block[1].matchAll(/(\w+):\s*((?:'[^']*'\s*\+?\s*)+),/g)) {
-    lines[m[1]] = [...m[2].matchAll(/'([^']*)'/g)].map((p) => p[1]).join('');
-  }
+  const lines = extractLines(linesSrc, lang === 'en' ? 'NARRATION_LINES_EN' : 'NARRATION_LINES');
   return {
     region: pick('CAPCOM_REGION'),
     modelId: pick('CAPCOM_MODEL_ID'),
@@ -69,11 +101,21 @@ async function guestCredentials(cfg) {
   return { accessKeyId: c.AccessKeyId, secretAccessKey: c.SecretAccessKey, sessionToken: c.SessionToken };
 }
 
-const SYSTEM_PROMPT = [
-  'Eres CAPCOM, la voz de control de misión de TOUCHDOWN. Hablas en español con voz serena, cercana y profesional, como en una comunicación de radio.',
-  'Tu única tarea ahora es locutar: lee en voz alta, palabra por palabra, exactamente el texto que te envíe el usuario.',
-  'No respondas al texto, no saludes, no agregues ni quites palabras, no cambies el orden y no digas nada antes ni después.',
-].join(' ');
+const SYSTEM_PROMPTS = {
+  es: [
+    'Eres CAPCOM, la voz de control de misión de TOUCHDOWN. Hablas en español con voz serena, cercana y profesional, como en una comunicación de radio.',
+    'Tu única tarea ahora es locutar: lee en voz alta, palabra por palabra, exactamente el texto que te envíe el usuario.',
+    'No respondas al texto, no saludes, no agregues ni quites palabras, no cambies el orden y no digas nada antes ni después.',
+  ].join(' '),
+  en: [
+    "You are CAPCOM, the mission control voice of TOUCHDOWN. You speak English in a calm, warm and professional voice, like a radio call.",
+    'Your only task now is to narrate: read aloud, word for word, exactly the text the user sends you.',
+    'Do not reply to the text, do not greet, do not add or remove words, do not change the order, and say nothing before or after.',
+  ].join(' '),
+};
+
+/** El prompt de locución en el idioma de la línea. */
+export const systemPromptFor = (lang) => SYSTEM_PROMPTS[lang];
 
 const ev = (event) => ({ chunk: { bytes: new TextEncoder().encode(JSON.stringify({ event })) } });
 
@@ -108,7 +150,7 @@ async function recordOnce(client, cfg, text) {
     },
   } }));
   push(ev({ contentStart: { promptName, contentName: sysName, type: 'TEXT', interactive: false, role: 'SYSTEM', textInputConfiguration: { mediaType: 'text/plain' } } }));
-  push(ev({ textInput: { promptName, contentName: sysName, content: SYSTEM_PROMPT } }));
+  push(ev({ textInput: { promptName, contentName: sysName, content: systemPromptFor(cfg.lang) } }));
   push(ev({ contentEnd: { promptName, contentName: sysName } }));
   // Nova Sonic espera un stream de audio abierto aunque el turno sea de texto: se le manda silencio.
   push(ev({ contentStart: { promptName, contentName: audioName, type: 'AUDIO', interactive: true, role: 'USER', audioInputConfiguration: {
@@ -177,7 +219,7 @@ async function recordOnce(client, cfg, text) {
   return { pcm: Buffer.concat(chunks), transcript: (finals.length >= speculative.length ? finals : speculative).join(' ') };
 }
 
-const normalize = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ñ ]+/g, ' ').replace(/\s+/g, ' ').trim();
+export const normalize = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ñ ]+/g, ' ').replace(/\s+/g, ' ').trim();
 
 /** Recorta silencio al inicio y al final (deja 60 ms de aire) para que el audio entre a tiempo con la escena. */
 function trimSilence(pcm, sampleRate) {
@@ -202,8 +244,12 @@ function wav(pcm, sampleRate) {
 }
 
 async function main() {
-  const cfg = await readTsConstants();
-  const wanted = process.argv.slice(2);
+  const args = parseArgs(process.argv.slice(2));
+  const cfg = await readTsConstants(args.lang);
+  cfg.lang = args.lang;
+  cfg.voiceId = args.voice ?? DEFAULT_VOICE[args.lang] ?? cfg.voiceId;
+  const outDir = outDirFor(args.lang);
+  const wanted = args.ids;
   const ids = wanted.length ? wanted : Object.keys(cfg.lines);
   for (const id of ids) if (!cfg.lines[id]) throw new Error(`id desconocido: ${id}`);
 
@@ -245,4 +291,6 @@ async function main() {
   }
 }
 
-main().catch((error) => { console.error(error); process.exit(1); });
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => { console.error(error); process.exit(1); });
+}
