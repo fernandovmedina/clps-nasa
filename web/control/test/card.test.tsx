@@ -150,9 +150,9 @@ describe('scenario card, the score leads and the Sun and Earth are secondary row
     expect(sun.className).not.toMatch(/text-display|text-figure|text-lead|text-title/)
   })
 
-  it('labels the Sun row "Sol ahora" at the landing and with the hour once the cursor moves', async () => {
+  it('labels the Sun row "Sol al aterrizar" at the landing and with the hour once the cursor moves', async () => {
     const first = card(scenario('malapert-a', landing), true)
-    expect((await screen.findByTestId('sun-label')).textContent).toBe('Sol ahora')
+    expect((await screen.findByTestId('sun-label')).textContent).toBe('Sol al aterrizar')
     first.unmount()
     render(
       <I18nProvider lang="es">
