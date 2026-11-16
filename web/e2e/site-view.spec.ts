@@ -37,7 +37,7 @@ test('standing on Nobile Rim 2 the real terrain reads: the lower half of the vie
   test.skip(!(await page.evaluate(() => Boolean(document.createElement('canvas').getContext('webgl2')))), 'WebGL unavailable in this browser')
 
   const skip = page.getByRole('button', { name: 'Saltar' })
-  const vr = page.getByRole('button', { name: 'Voy en VR' })
+  const vr = page.getByRole('button', { name: 'Explorar la misión' })
   await expect(skip.or(vr).first()).toBeVisible({ timeout: 30_000 })
   await skip.click({ timeout: 2000 }).catch(() => {})
   await vr.click()
