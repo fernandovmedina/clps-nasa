@@ -8,9 +8,6 @@ export const es = {
   language: 'Idioma',
   languageEs: 'Español',
   languageEn: 'English',
-  theme: 'Tema',
-  themeToLight: 'Cambiar a tema claro',
-  themeToDark: 'Cambiar a tema oscuro',
 
   catalogTitle: 'Catálogo de sitios',
   searchLabel: 'Buscar sitio',
