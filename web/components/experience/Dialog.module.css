@@ -1,12 +1,14 @@
-/* Shared by the planner and the Mission Control dialog; both render inside .layer, which defines the tokens. */
-.veil { position: fixed; inset: 0; pointer-events: auto; }
-.veil[data-level='planner'] { z-index: 5; background: rgba(20, 20, 19, 0.35); }
-.veil[data-level='follow'] { z-index: 8; background: rgba(20, 20, 19, 0.45); }
-.veil[data-level='welcome'] { z-index: 10; background: rgba(20, 20, 19, 0.55); }
+/* Compartido por el planificador, el diálogo de Mission Control y la bienvenida; todos se pintan dentro de .layer o de la raíz de la bienvenida, que definen la sombra y los radios. */
+.veil { position: fixed; inset: 0; pointer-events: auto; background: var(--scrim); }
+.veil[data-level='planner'] { z-index: 5; }
+.veil[data-level='follow'] { z-index: 8; }
+.veil[data-level='welcome'] { z-index: 10; }
 
-.card { position: fixed; left: 50%; pointer-events: auto; display: flex; flex-direction: column; gap: 16px; padding: 24px;
-  border-radius: 16px; background: rgba(20, 20, 19, 0.94); border: 0.5px solid rgba(250, 249, 245, 0.18);
-  backdrop-filter: blur(12px); color: var(--ink); overflow-y: auto; overscroll-behavior: contain; }
+/* Panel de papel opaco: sin transparencia ni desenfoque, borde fino y una sombra muy sutil. */
+.card { --pad-x: 24px; --pad-y: 24px;
+  position: fixed; left: 50%; pointer-events: auto; display: flex; flex-direction: column; gap: 16px; padding: var(--pad-y) var(--pad-x);
+  border-radius: var(--radius-card); background: var(--bg-surface); border: 1px solid var(--line); box-shadow: var(--shadow-panel);
+  color: var(--label); overflow-y: auto; overscroll-behavior: contain; }
 .card[data-level='planner'] { z-index: 6; top: 88px; transform: translateX(-50%); width: min(640px, calc(100vw - 32px));
   max-height: calc(100vh - 104px); max-height: calc(100dvh - 104px); }
 .card[data-level='follow'] { z-index: 9; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 32px));
@@ -15,15 +17,15 @@
 .card[data-level='welcome'] { position: relative; left: auto; z-index: auto; flex: none; box-sizing: border-box; width: 100%; overflow: visible; }
 
 .form { display: flex; flex-direction: column; gap: 16px; }
-.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-text); }
 .title { font-size: 24px; font-weight: 650; line-height: 1.2; letter-spacing: -0.01em; }
-.lede { font-size: 14px; color: var(--soft); }
+.lede { font-size: 14px; color: var(--label-2); }
 .head { display: flex; flex-direction: column; gap: 6px; }
 
 .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.field > span { font-size: 12px; font-weight: 500; color: var(--dim); }
-.input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 8px;
-  border: 0.5px solid var(--edge); background: rgba(0, 0, 0, 0.35); color: var(--ink); color-scheme: dark;
+.field > span { font-size: 12px; font-weight: 500; color: var(--label-2); }
+.input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: var(--radius-control);
+  border: 1px solid var(--control-border); background: var(--bg-field); color: var(--label); color-scheme: light;
   font: 500 15px 'Inter Variable', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
 .input[data-size='lg'] { min-height: 56px; font-size: 28px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
 .input[aria-invalid='true'] { border-color: var(--bad); }
@@ -32,5 +34,5 @@
 .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 
 @media (max-width: 1023.98px) {
-  .card { padding: 18px 16px; gap: 14px; }
+  .card { --pad-x: 16px; --pad-y: 18px; gap: 14px; }
 }

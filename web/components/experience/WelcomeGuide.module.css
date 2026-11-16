@@ -1,19 +1,14 @@
 /* Rendered outside .layer (MissionLayer.module.css), so it carries the same tokens, font and resets itself. */
 .root {
-  --slate: #141413;
-  --ink: #FAF9F5;
-  --dim: #B0AEA5;
-  --soft: #C2C0B6;
-  --accent: #D97757;
-  --card: rgba(20, 20, 19, 0.86);
-  --edge: rgba(250, 249, 245, 0.4);
-  --hair: rgba(250, 249, 245, 0.16);
+  --shadow-panel: 0 1px 2px color-mix(in srgb, var(--label) 8%, transparent), 0 4px 16px color-mix(in srgb, var(--label) 6%, transparent);
+  --radius-card: 12px;
+  --radius-control: 8px;
 
-  position: fixed; inset: 0; z-index: 10; display: flex; pointer-events: none; color: var(--ink);
+  position: fixed; inset: 0; z-index: 10; display: flex; pointer-events: none; color: var(--label);
   font-family: 'Inter Variable', system-ui, sans-serif; font-size: 14px; line-height: 1.5; font-variant-numeric: tabular-nums;
 }
 .root :where(h2, p) { margin: 0; padding: 0; }
-.root button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; box-shadow: 0 0 0 5px var(--slate); }
+.root button:focus-visible { outline: 2px solid var(--label); outline-offset: 2px; box-shadow: 0 0 0 5px var(--bg-surface); }
 
 /* margin: auto centres the column and, if it ever outgrows a short screen, lets it scroll from the top instead of clipping it */
 .column {
@@ -28,13 +23,13 @@
 
 .live { display: flex; flex-direction: column; align-items: center; width: 100%; }
 .bubble {
-  position: relative; box-sizing: border-box; max-width: 100%; margin-top: 12px; padding: 14px 18px; border-radius: 16px;
-  background: rgba(20, 20, 19, 0.94); border: 0.5px solid rgba(250, 249, 245, 0.18); backdrop-filter: blur(12px);
+  position: relative; box-sizing: border-box; max-width: 100%; margin-top: 12px; padding: 14px 18px; border-radius: var(--radius-card);
+  background: var(--bg-surface); border: 1px solid var(--line); box-shadow: var(--shadow-panel);
   font-size: 16px; line-height: 1.45; text-align: center; text-wrap: balance;
 }
 .bubble::before {
   content: ''; position: absolute; left: 50%; top: -6px; width: 10px; height: 10px; transform: translateX(-50%) rotate(45deg);
-  background: rgba(20, 20, 19, 0.94); border-top: 0.5px solid rgba(250, 249, 245, 0.18); border-left: 0.5px solid rgba(250, 249, 245, 0.18);
+  background: var(--bg-surface); border-top: 1px solid var(--line); border-left: 1px solid var(--line);
 }
 .tap { min-width: 220px; margin-top: 12px; }
 .skip { position: absolute; top: 16px; right: 16px; z-index: 12; }

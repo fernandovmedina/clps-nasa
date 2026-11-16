@@ -1,4 +1,5 @@
-.root { position: fixed; inset: 0; background: #000; }
+.root { position: fixed; inset: 0; background: black; /* espacio negro del render 3D, no es UI */ color: var(--label); }
 .canvas { position: absolute; inset: 0; }
 .error { position: absolute; top: 88px; left: 50%; transform: translateX(-50%); z-index: 3; padding: 10px 16px; border-radius: 10px;
-  background: #141413; border: 1px solid #E58A7B; font-size: 13px; }
+  background: var(--bg-surface); border: 1px solid var(--bad); color: var(--label); font-size: 13px;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--label) 8%, transparent), 0 4px 16px color-mix(in srgb, var(--label) 6%, transparent); }

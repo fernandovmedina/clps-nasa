@@ -1,6 +1,10 @@
-import type { HudSide } from '@/lib/engine/hud';
+import type { HudRankRow, HudSide } from '@/lib/engine/hud';
+import type { RankRowExtras } from '@/lib/mission/sites';
 import { StatusIcon } from './icons';
 import styles from './MissionLayer.module.css';
+
+/** El caso NO CAER no es un sitio real: en vez de puntaje e icono lleva esta marca. */
+const DEMO_LABEL = 'Demo · falla simulada del motor';
 
 interface Props {
   side: HudSide;
@@ -36,21 +40,33 @@ export default function SidePanel({ side, frozen, onAct }: Props) {
           <p className={styles.note} data-align="start">Evaluando sitios…</p>
         ) : (
           <ol aria-label="Ranking de sitios">
-            {side.rows.map((r) => (
-              <li key={r.id}>
-                <button type="button" aria-pressed={r.selected} disabled={frozen} onClick={() => onAct(r.id)}>
-                  <span className={styles.rankNo}>{r.rank}</span>
-                  <span className={styles.rankName}>{r.name}</span>
-                  {r.delta ? (
-                    <span className={styles.delta} aria-label={`${r.delta > 0 ? 'sube' : 'baja'} ${Math.abs(r.delta)} puntos`}>
-                      {r.delta > 0 ? '↑' : '↓'}{Math.abs(r.delta)}
+            {side.rows.map((row) => {
+              const r: HudRankRow & RankRowExtras = row;
+              return (
+                <li key={r.id}>
+                  <button type="button" aria-pressed={r.selected} disabled={frozen} data-demo={r.demo ? '' : undefined} onClick={() => onAct(r.id)}>
+                    <span className={styles.rankNo}>{r.rank}</span>
+                    <span className={styles.rankText}>
+                      <span className={styles.rankName}>{r.name}</span>
+                      {!r.demo && r.note && <span className={styles.rankNote}>{r.note}</span>}
                     </span>
-                  ) : null}
-                  <span className={styles.rankScore}>{r.score}</span>
-                  <StatusIcon status={r.status} />
-                </button>
-              </li>
-            ))}
+                    {r.delta ? (
+                      <span className={styles.delta} aria-label={`${r.delta > 0 ? 'sube' : 'baja'} ${Math.abs(r.delta)} puntos`}>
+                        {r.delta > 0 ? '↑' : '↓'}{Math.abs(r.delta)}
+                      </span>
+                    ) : null}
+                    {r.demo ? (
+                      <span className={styles.rankDemo}>{DEMO_LABEL}</span>
+                    ) : (
+                      <>
+                        <span className={styles.rankScore}>{r.score}</span>
+                        <StatusIcon status={r.status} />
+                      </>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
           </ol>
         )}
       </div>
