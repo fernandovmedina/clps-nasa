@@ -6,10 +6,10 @@ import {
   CAPCOM_OUTPUT_SAMPLE_RATE,
   CAPCOM_REGION,
   CAPCOM_SESSION_LIMIT_MS,
-  CAPCOM_SYSTEM_PROMPT,
-  CAPCOM_VOICE_ID,
+  CAPCOM_SESSION_PROFILES,
   type CapcomEndpointing,
 } from './config';
+import { getLang, type Lang } from '../i18n';
 import { createGuestCredentialProvider } from './credentials';
 import {
   audioContentStart,
@@ -40,6 +40,8 @@ const CLOSE_TIMEOUT_MS = 4000;
 export interface CapcomSessionOptions {
   credentials?: CredentialsProvider
   transport?: TransportFactory
+  /** Idioma de la sesión (prompt de sistema y voz); por defecto el vigente al crearla. */
+  lang?: Lang
   voiceId?: string
   systemPrompt?: string
   tools?: CapcomTool[]
@@ -110,8 +112,9 @@ export class CapcomSession {
   constructor(options: CapcomSessionOptions = {}) {
     this.credentials = options.credentials ?? createGuestCredentialProvider();
     this.openTransport = options.transport ?? openBedrockTransport;
-    this.voiceId = options.voiceId ?? CAPCOM_VOICE_ID;
-    this.systemPromptText = options.systemPrompt ?? CAPCOM_SYSTEM_PROMPT;
+    const profile = CAPCOM_SESSION_PROFILES[options.lang ?? getLang()];
+    this.voiceId = options.voiceId ?? profile.voiceId;
+    this.systemPromptText = options.systemPrompt ?? profile.systemPrompt;
     this.endpointing = options.endpointing ?? CAPCOM_ENDPOINTING;
     for (const tool of options.tools ?? []) this.tools.set(tool.name, tool);
   }

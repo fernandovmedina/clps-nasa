@@ -1,4 +1,6 @@
 import type { LunarApp } from '../engine/app';
+import { subscribe as onLangChange, t } from '../i18n';
+import { capcomUiDict } from '../i18n/dicts/capcom-ui';
 import { Panel, UI } from '../engine/panel';
 import type { CapcomController, CapcomSnapshot } from './controller';
 import { DonkeyGuide, donkeyMood } from './donkey';
@@ -16,7 +18,8 @@ const BODY_LINES = 4;
 const DONKEY_GAP_M = 0.07;
 const DONKEY_TURN_RAD = -0.3;
 
-export const NEEDS_MIC_TEXT = 'Activa CAPCOM antes de entrar en VR';
+/** The Spanish text; the panel itself reads it in the current language. */
+export const NEEDS_MIC_TEXT = capcomUiDict.es.needsMic;
 
 export interface PanelText {
   status: string;
@@ -27,17 +30,17 @@ export interface PanelText {
 
 /** What the in-headset panel says for a given CAPCOM state. */
 export function describePanel(snap: CapcomSnapshot): PanelText {
-  if (snap.state === 'unavailable') return { status: 'CAPCOM no disponible', tone: 'bad', body: '', hint: '' };
+  if (snap.state === 'unavailable') return { status: t(capcomUiDict, 'unavailable'), tone: 'bad', body: '', hint: '' };
   const needsMic = snap.mic !== 'granted' && !snap.talking && (snap.state === 'disconnected' || snap.state === 'error');
-  if (needsMic) return { status: 'Sin micrófono', tone: 'warn', body: NEEDS_MIC_TEXT, hint: 'Permite el micrófono en la página y vuelve a entrar.' };
-  if (snap.state === 'error') return { status: 'Sin conexión', tone: 'bad', body: snap.message ?? '', hint: 'Mantén A para reintentar' };
-  const status = snap.talking ? 'Escuchando…'
-    : snap.state === 'connecting' ? 'Conectando…'
-    : snap.state === 'thinking' ? 'Pensando…'
-    : snap.state === 'speaking' ? 'Hablando…'
-    : snap.state === 'listening' ? 'Listo' : 'En espera';
+  if (needsMic) return { status: t(capcomUiDict, 'noMic'), tone: 'warn', body: t(capcomUiDict, 'needsMic'), hint: t(capcomUiDict, 'micHint') };
+  if (snap.state === 'error') return { status: t(capcomUiDict, 'noConnection'), tone: 'bad', body: snap.message ?? '', hint: t(capcomUiDict, 'retryHint') };
+  const status = t(capcomUiDict, snap.talking ? 'statusListening'
+    : snap.state === 'connecting' ? 'statusConnecting'
+    : snap.state === 'thinking' ? 'statusThinking'
+    : snap.state === 'speaking' ? 'statusSpeaking'
+    : snap.state === 'listening' ? 'statusReady' : 'statusIdle');
   const tone = snap.talking || snap.state === 'speaking' ? 'ok' : 'dim';
-  return { status, tone, body: snap.answer || snap.question, hint: 'Mantén A para hablar' };
+  return { status, tone, body: snap.answer || snap.question, hint: t(capcomUiDict, 'talkHint') };
 }
 
 function wrap(g: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
@@ -77,7 +80,7 @@ export function mountCapcomVrPanel(app: LunarApp, controller: CapcomController):
       hint.forEach((line, i) => g.fillText(line, 28, H - 22 - (hint.length - 1 - i) * 28));
     }
     if (snap.state !== 'unavailable') {
-      p.button(g, 'talk', W - 196, H - 70, 168, 52, snap.talking ? 'Soltar' : 'Hablar', () => (snap.talking ? controller.release() : controller.press()), snap.talking ? 'primary' : 'ghost');
+      p.button(g, 'talk', W - 196, H - 70, 168, 52, t(capcomUiDict, snap.talking ? 'release' : 'talk'), () => (snap.talking ? controller.release() : controller.press()), snap.talking ? 'primary' : 'ghost');
     }
   });
   const placeAt = (azimuthDeg: number, depressionDeg: number) => {
@@ -105,9 +108,11 @@ export function mountCapcomVrPanel(app: LunarApp, controller: CapcomController):
   app.rig.add(panel.mesh);
   app.globalTargets.push(panel.mesh);
 
+  const offLang = onLangChange(() => panel.invalidate());
   const offState = controller.subscribe(() => { panel.invalidate(); donkey.setMood(donkeyMood(controller.getSnapshot())); });
   const offButton = app.input.onAButton((held) => (held ? controller.press() : controller.release()));
   return () => {
+    offLang();
     offState();
     offButton();
     const at = app.globalTargets.indexOf(panel.mesh);

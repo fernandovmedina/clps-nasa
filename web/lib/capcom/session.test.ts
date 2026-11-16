@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { setLang } from '@/lib/i18n';
+import { CAPCOM_SYSTEM_PROMPT, CAPCOM_SYSTEM_PROMPT_EN } from './config';
 import { bytesToBase64 } from './protocol';
 import { CapcomSession } from './session';
 import type { CapcomEvent, CapcomTool, CapcomTransport, InputEvent, ServerEvent } from './types';
@@ -210,5 +212,57 @@ describe('CapcomSession', () => {
     await flush();
     expect(session.state).toBe('closed');
     expect(events.at(-1)).toEqual({ type: 'closed', reason: 'server' });
+  });
+});
+
+describe('CapcomSession language', () => {
+  async function opened(setup: () => void, options: { lang?: 'es' | 'en' } = {}) {
+    const fake = fakeTransport();
+    let initial: InputEvent[] = [];
+    setup();
+    const session = new CapcomSession({
+      credentials: async () => ({ accessKeyId: 'a', secretAccessKey: 'b' }),
+      transport: async (o) => { initial = o.initial; return fake.transport; },
+      ...options,
+    });
+    await session.start();
+    const voice = (initial[1]!.event.promptStart as { audioOutputConfiguration: { voiceId: string } }).audioOutputConfiguration.voiceId;
+    const prompt = (initial[3]!.event.textInput as { content: string }).content;
+    return { voice, prompt, session };
+  }
+
+  it('opens in Spanish with carlos and the Spanish prompt by default', async () => {
+    const { voice, prompt } = await opened(() => setLang('es', { persist: false }));
+    expect(voice).toBe('carlos');
+    expect(prompt).toBe(CAPCOM_SYSTEM_PROMPT);
+  });
+
+  it('opens in English with the matthew voice and the English prompt', async () => {
+    const { voice, prompt } = await opened(() => setLang('en', { persist: false }));
+    expect(voice).toBe('matthew');
+    expect(prompt).toBe(CAPCOM_SYSTEM_PROMPT_EN);
+    expect(prompt).toMatch(/^You are CAPCOM/);
+    expect(prompt).toMatch(/You always speak English/);
+    expect(prompt).not.toMatch(/Eres CAPCOM|español/);
+  });
+
+  it('keeps the same tool names, format and figure rules in the English prompt', () => {
+    for (const name of ['estado_del_viaje', 'analisis_del_sitio', 'comparar_sitios', 'datos_de_mision']) expect(CAPCOM_SYSTEM_PROMPT_EN).toContain(name);
+    expect(CAPCOM_SYSTEM_PROMPT_EN).toMatch(/ALWAYS comes from the tools/);
+    expect(CAPCOM_SYSTEM_PROMPT_EN).toMatch(/at most three short sentences and 40 words/);
+    expect(CAPCOM_SYSTEM_PROMPT_EN).toMatch(/<score>\/100/);
+  });
+
+  it('takes the language when the session is created, so a later change does not touch an open session', async () => {
+    const { session } = await opened(() => setLang('es', { persist: false }));
+    setLang('en', { persist: false });
+    expect(session.state).toBe('listening');
+    const next = await opened(() => undefined);
+    expect(next.voice).toBe('matthew');
+  });
+
+  it('lets an explicit language win over the current one', async () => {
+    const { voice } = await opened(() => setLang('es', { persist: false }), { lang: 'en' });
+    expect(voice).toBe('matthew');
   });
 });
