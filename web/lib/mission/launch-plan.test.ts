@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { setLang } from '@/lib/i18n';
 import {
   DEFAULT_LANDING,
   TRANSIT_DAYS,
@@ -14,6 +15,8 @@ import {
   opensPlanner,
   parseLaunchInputs,
   topSites,
+  transitHint,
+  transitValue,
   SOUTH_POLE_MAX_LAT,
   withLandingParam,
 } from './launch-plan';
@@ -201,5 +204,34 @@ describe('opensPlanner', () => {
   it('does not open for Mission Control', () => {
     expect(opensPlanner('', false)).toBe(false);
     expect(opensPlanner('?room=ZZZZ', false)).toBe(false);
+  });
+});
+
+describe('English text', () => {
+  it('writes the plan date with an English month and the same UTC time', () => {
+    setLang('en', { persist: false });
+    expect(formatPlanDate(iso('2027-01-10T00:00:00Z'))).toBe('Jan 10, 2027 · 00:00 UTC');
+    expect(formatPlanDate(iso('2027-09-03T07:05:00Z'))).toBe('Sep 3, 2027 · 07:05 UTC');
+    expect(formatPlanDate(iso('2027-12-31T23:59:00Z'))).toBe('Dec 31, 2027 · 23:59 UTC');
+  });
+
+  it('explains an empty launch and an arrival outside the data in English, with English dates', () => {
+    setLang('en', { persist: false });
+    expect(checkLaunch(null, RANGE)).toEqual({ ok: false, reason: 'invalid', message: 'Pick a valid launch date and time.' });
+    const late = checkLaunch(iso('2027-12-27T12:01:00Z'), RANGE);
+    if (late.ok) throw new Error('unreachable');
+    expect(late.reason).toBe('out-of-range');
+    expect(late.message).toBe(
+      'The arrival (Jan 1, 2028 · 00:01 UTC) falls outside the mission data: it must land between Nov 1, 2026 · 00:00 UTC and Jan 1, 2028 · 00:00 UTC. '
+      + 'Launch between Oct 27, 2026 · 12:00 UTC and Dec 27, 2027 · 12:00 UTC.',
+    );
+  });
+
+  it('states the transit as an assumption in both languages', () => {
+    expect(transitHint()).toBe('Tránsito directo de 4.5 días (supuesto)');
+    expect(transitValue()).toBe('4.5 días (supuesto)');
+    setLang('en', { persist: false });
+    expect(transitHint()).toBe('Direct transit of 4.5 days (assumed)');
+    expect(transitValue()).toBe('4.5 days (assumed)');
   });
 });

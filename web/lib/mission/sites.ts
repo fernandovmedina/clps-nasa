@@ -9,6 +9,8 @@
  */
 import type { EphemerisFile, GlobalFile, HorizonFile, HorizonSource, Region, Site, SitesFile, TerrainInfo, Track } from '@touchdown/core';
 import { sphericalHorizon, trackFromFile } from '@touchdown/core';
+import { t } from '../i18n';
+import { missionDataDict } from '../i18n/dicts/mission-data';
 import { readLandingParams } from './landing-param';
 import { DEFAULT_LANDING } from './launch-plan';
 import { loadTerrainPatch, type TerrainPatch } from './terrain';
@@ -44,13 +46,21 @@ export interface SiteInput {
 export const NO_CAER_SITE_ID = 'no-caer';
 const NO_CAER_SOURCE_ID = 'malapert-massif';
 
-/** Note shown wherever NO CAER appears next to real sites (ranking row, pin, tools). */
-export const DEMO_CRASH_NOTE = 'Caso de demostración · falla simulada del motor';
+/**
+ * The NO CAER note in Spanish, fixed: for the CAPCOM tools (their output is Spanish for the model) and Spanish assertions.
+ * Anything shown on screen asks demoCrashNote(), which follows the current language.
+ */
+export const DEMO_CRASH_NOTE = missionDataDict.es['demo.crashNote'];
 
-const CONTRAST_NOTES: Partial<Record<Region, string>> = {
-  equatorial: 'Contraste · ecuatorial',
-  'mid-latitude': 'Contraste · latitud media',
-  'far-side': 'Contraste · lado oculto',
+/** Note shown wherever NO CAER appears next to real sites (ranking row, pin, tools), in the current language. */
+export function demoCrashNote(): string {
+  return t(missionDataDict, 'demo.crashNote');
+}
+
+const CONTRAST_KEYS: Partial<Record<Region, 'contrast.equatorial' | 'contrast.midLatitude' | 'contrast.farSide'>> = {
+  equatorial: 'contrast.equatorial',
+  'mid-latitude': 'contrast.midLatitude',
+  'far-side': 'contrast.farSide',
 };
 
 /** Extra data a ranking row carries beyond HudRankRow: what the DOM list and the tools read to tell demo and contrast sites apart. */
@@ -58,22 +68,18 @@ export interface RankRowExtras { note?: string; demo?: boolean }
 
 /** The demo note for NO CAER, the contrast label for sites outside the south pole, nothing for the rest. */
 export function rankingNote(site: Pick<SiteInput, 'crash' | 'region'>): string | undefined {
-  if (site.crash) return DEMO_CRASH_NOTE;
-  return site.region ? CONTRAST_NOTES[site.region] : undefined;
+  if (site.crash) return demoCrashNote();
+  const key = site.region ? CONTRAST_KEYS[site.region] : undefined;
+  return key ? t(missionDataDict, key) : undefined;
 }
 
 function noCaerSite(sites: SiteInput[]): SiteInput | null {
   const src = sites.find((s) => s.id === NO_CAER_SOURCE_ID) ?? sites.find((s) => s.hasTerrain) ?? sites[0];
   if (!src) return null;
-  return {
-    ...src,
-    id: NO_CAER_SITE_ID,
-    name: 'NO CAER',
-    lat: -86.6,
-    lon: -12,
-    note: 'Caso de demostración, no es un sitio real: el descenso termina en impacto.',
-    crash: true,
-  };
+  const site: SiteInput = { ...src, id: NO_CAER_SITE_ID, name: 'NO CAER', lat: -86.6, lon: -12, crash: true };
+  // A getter, so the note follows the language in force when it is read, not the one at load time.
+  Object.defineProperty(site, 'note', { get: () => t(missionDataDict, 'demo.siteNote'), enumerable: true, configurable: true });
+  return site;
 }
 
 export interface MissionData {
@@ -100,7 +106,7 @@ async function fetchJson<T>(url: string): Promise<T> {
  * animation.
  */
 export async function loadMissionData(onProgress: (p: number, msg: string) => void): Promise<MissionData> {
-  onProgress(0, 'Cargando catálogo de sitios · NASA LOLA + JPL Horizons');
+  onProgress(0, t(missionDataDict, 'load.catalog'));
   const [catalog, global, terrains] = await Promise.all([
     fetchJson<SitesFile>('/data/sites.json'),
     fetchJson<GlobalFile>('/data/global.json'),
@@ -110,14 +116,14 @@ export async function loadMissionData(onProgress: (p: number, msg: string) => vo
   const sites: SiteInput[] = [];
   for (let i = 0; i < catalog.sites.length; i++) {
     const s = catalog.sites[i]!;
-    onProgress((i + 0.5) / catalog.sites.length, `Efemérides y horizonte · ${s.name}`);
+    onProgress((i + 0.5) / catalog.sites.length, t(missionDataDict, 'load.ephemeris', { name: s.name }));
     const [ephemeris, horizon] = await Promise.all([
       fetchJson<EphemerisFile>(`/data/ephemeris/${s.id}.json`),
       fetchJson<HorizonFile>(`/data/horizons/${s.id}.json`),
     ]);
     let terrain: TerrainPatch | undefined;
     if (s.has_terrain) {
-      onProgress((i + 0.8) / catalog.sites.length, `Terreno LOLA (heightmap) · ${s.name}`);
+      onProgress((i + 0.8) / catalog.sites.length, t(missionDataDict, 'load.terrain', { name: s.name }));
       const info = terrains[s.id];
       if (!info) throw new Error(`sitio ${s.id} marca has_terrain pero falta en terrains.json`);
       terrain = await loadTerrainPatch(info);
@@ -143,7 +149,7 @@ export async function loadMissionData(onProgress: (p: number, msg: string) => vo
   const demo = noCaerSite(sites);
   if (demo) sites.push(demo);
 
-  onProgress(1, 'Datos listos');
+  onProgress(1, t(missionDataDict, 'load.ready'));
   const ephemerisRange = {
     start: new Date(catalog.ephemeris_range.start),
     end: new Date(catalog.ephemeris_range.end),
@@ -180,9 +186,9 @@ export function devFallbackMission(): MissionData {
     earth_range_km: flat(384_400),
   };
   const site: SiteInput = {
-    id: 'dev-fallback', name: 'Sitio de desarrollo (sin datos reales)',
+    id: 'dev-fallback', name: t(missionDataDict, 'dev.name'),
     lat: -85, lon: 0, elevationKm: 3, slopeDeg: DEFAULT_SLOPE_DEG,
-    note: 'Fallback de desarrollo — no es un sitio real, solo para ?phase=... sin pasar por loadMissionData.',
+    note: t(missionDataDict, 'dev.note'),
     track, horizon: sphericalHorizon('dev-fallback'), hasTerrain: false,
     horizonSource: 'spherical', ephemerisSource: 'DEV_FALLBACK_NOT_REAL',
   };

@@ -1,4 +1,6 @@
 import { fmtLanding } from '../engine/hud';
+import { getLang, locale, t } from '../i18n';
+import { missionDataDict } from '../i18n/dicts/mission-data';
 import type { LandingRange } from './landing-param';
 import { readLandingParams } from './landing-param';
 import { evaluateSites, type SiteMetrics } from './scoring';
@@ -11,6 +13,7 @@ export const TRANSIT_DAYS = 4.5;
 export const DEFAULT_LANDING = new Date(Date.UTC(2027, 0, 10, 0, 0));
 
 const DAY_MS = 86_400_000;
+const pad = (n: number) => String(n).padStart(2, '0');
 const ANY_RANGE: LandingRange = { start: new Date(0), end: new Date(8.64e15) };
 
 export function landingFromLaunch(launch: Date): Date {
@@ -21,8 +24,24 @@ export function launchFromLanding(landing: Date): Date {
   return new Date(landing.getTime() - TRANSIT_DAYS * DAY_MS);
 }
 
-/** "10 ene 2027 · 00:00 UTC" */
-export const formatPlanDate = fmtLanding;
+/** "10 ene 2027 · 00:00 UTC" in Spanish, "Jan 10, 2027 · 00:00 UTC" in English. */
+export function formatPlanDate(date: Date): string {
+  if (getLang() === 'es') return fmtLanding(date);
+  const day = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date);
+  return `${day} · ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())} UTC`;
+}
+
+const daysText = () => TRANSIT_DAYS.toLocaleString(locale());
+
+/** "Tránsito directo de 4.5 días (supuesto)" / "Direct transit of 4.5 days (assumed)". */
+export function transitHint(): string {
+  return t(missionDataDict, 'plan.transitHint', { days: daysText() });
+}
+
+/** "4.5 días (supuesto)" / "4.5 days (assumed)". */
+export function transitValue(): string {
+  return t(missionDataDict, 'plan.transitValue', { days: daysText() });
+}
 
 /** The same rule as the landing parameter and the delay button: inside the ephemeris range, ends included. */
 export function isLandingInRange(landing: Date, range: LandingRange): boolean {
@@ -41,7 +60,7 @@ export type LaunchCheck =
 
 export function checkLaunch(launch: Date | null, range: LandingRange): LaunchCheck {
   if (!launch || !Number.isFinite(launch.getTime())) {
-    return { ok: false, reason: 'invalid', message: 'Elige una fecha y una hora de despegue válidas.' };
+    return { ok: false, reason: 'invalid', message: t(missionDataDict, 'plan.invalid') };
   }
   const landing = landingFromLaunch(launch);
   if (isLandingInRange(landing, range)) return { ok: true, landing };
@@ -49,8 +68,13 @@ export function checkLaunch(launch: Date | null, range: LandingRange): LaunchChe
   return {
     ok: false,
     reason: 'out-of-range',
-    message: `La llegada (${formatPlanDate(landing)}) queda fuera de los datos de la misión: debe caer entre ${formatPlanDate(range.start)} y ${formatPlanDate(range.end)}. `
-      + `Despega entre ${formatPlanDate(launches.start)} y ${formatPlanDate(launches.end)}.`,
+    message: t(missionDataDict, 'plan.outOfRange', {
+      arrival: formatPlanDate(landing),
+      start: formatPlanDate(range.start),
+      end: formatPlanDate(range.end),
+      launchStart: formatPlanDate(launches.start),
+      launchEnd: formatPlanDate(launches.end),
+    }),
   };
 }
 
@@ -60,8 +84,6 @@ export const SOUTH_POLE_MAX_LAT = -60;
 export function topSites(sites: SiteInput[], landing: Date, count = 3): SiteMetrics[] {
   return evaluateSites(sites.filter((s) => s.lat <= SOUTH_POLE_MAX_LAT), landing).slice(0, count);
 }
-
-const pad = (n: number) => String(n).padStart(2, '0');
 
 /** Values for <input type="date"> and <input type="time"> (UTC). */
 export function launchInputs(launch: Date): { date: string; time: string } {
