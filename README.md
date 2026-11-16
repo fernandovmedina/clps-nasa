@@ -47,6 +47,11 @@ TOUCHDOWN combines real JPL Horizons ephemerides with terrain horizons derived f
 - **Delay simulation:** shift the landing date by N days and see what changes.
 - **Mission report:** recommended site, operating windows and risks.
 - **Immersive experience (WebXR):** launch, orbital site ranking, surface view on real LOLA terrain, powered descent and data transmission, playable on desktop or Meta Quest 3S.
+- **Welcome guide and roles:** on load, the Burro Pardo greets the visitor and asks whether they join in VR or as a Monitor; a lone judge gets a direct way into the experience.
+- **Launch planner and follow mode:** the launch countdown starts in every client of the room, and a Monitor can follow the crew's phase live using a shared tracking code («Seguimiento»).
+- **Mission Control control room:** live mission data, the inspector's view on screen during the surface phases, and links back to the user's own mission.
+- **Contrast and demo sites in the ranking:** the orbit ranking flags contrast sites and a clearly labeled `NO CAER` demo site whose descent ends in a crash (illustrative, not real data).
+- **Paper theme:** a single shared palette for Mission Control, the experience UI and the in-world VR panels, with automated WCAG AA contrast checks.
 - **Burro Pardo mascot:** a small donkey in a space suit that hops beside the viewer in VR and in the welcome guide (decoration only, no external services).
 
 ## Architecture
@@ -90,7 +95,7 @@ The system is fully serverless. All heavy computation is done offline, so no lon
 | REST API | Cloudflare Worker under `/api/*`, same origin as the web app |
 | Real-time sync | Cloudflare Durable Objects (`RoomHub`, WebSocket Hibernation API, SQLite storage) |
 | Hosting | Cloudflare Workers Static Assets (front end, heightmaps, textures) |
-| CI/CD | GitHub Actions: CI on pull requests, automatic deployment on `main` |
+| CI/CD | GitHub Actions: CI on pull requests only (pipeline pytest, unit tests, typecheck, lint, build, Wrangler dry run, e2e in 6 shards); deployment is manual |
 
 ## Methodology
 
@@ -141,7 +146,7 @@ clps-nasa/
 ├── worker/     Cloudflare Worker (/api/*), Durable Object (/ws), wrangler.jsonc
 ├── web/        Next.js static export: Mission Control and the WebXR experience
 ├── vr/         WebXR sandboxes and prototypes (not the production app)
-├── docs/       Notes on the challenge's official data sources
+├── docs/       Notes on the challenge's official data sources, plus images/ (git tree snapshot)
 ├── CLAUDE.md   Full project context and data contract
 └── README.md
 ```
@@ -194,6 +199,27 @@ pnpm --filter @touchdown/web build
 pnpm --filter @touchdown/worker run deploy
 pnpm --filter @touchdown/worker deploy:dry-run   # validate without deploying
 ```
+
+## Branches and git history
+
+All work is done on short-lived branches and merged into `main` through pull requests. Prefixes in use:
+
+| Prefix | Purpose | Examples |
+|---|---|---|
+| `feat/*` | New features (hackathon, Nov 14–15) | `feat/mission-control`, `feat/launch-planner`, `feat/vr-arms-suit`, `feat/welcome-donkey-3d` |
+| `fix/*` | Bug fixes | `fix/descent-terrain`, `fix/room-continuity`, `fix/cockpit-depth` |
+| `ci/*` | CI workflow changes | `ci/workflows`, `ci/shard-six`, `ci/restore-verify` |
+| `refino/*` | Post-hackathon polish (Nov 16), grouped into integration branches | `refino/tema-papel`, `refino/vista-del-sitio`, `refino/entrada-juez` |
+| `refino/integracion*` | Integration branches that collect `refino/*` work before a single PR to `main` | `refino/integracion` (PR #38), `refino/integracion-3` (PR #39) |
+| `release/*` | Demo release fixes | `release/demo-fixes` |
+
+`lunar-vr` is the original standalone WebXR prototype; it was never merged and is kept for reference only.
+
+The snapshot below shows every remote branch (`git log --graph --remotes --simplify-by-decoration`) as of November 16, 2026:
+
+![Git tree of all remote branches](docs/images/git-tree.png)
+
+To regenerate it, fetch everything first (`git fetch --all --prune`) and rerun the command above.
 
 ## Data contract
 
