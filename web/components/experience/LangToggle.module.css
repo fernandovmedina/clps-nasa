@@ -1,0 +1,7 @@
+/* Mismo segmentado que Mission Control (TopBar): grupo con fondo elevado, el botón activo resalta con el papel. */
+.group { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--radius-control); background: var(--bg-raised); pointer-events: auto; }
+.opt { min-width: 44px; min-height: 44px; padding: 0 10px; cursor: pointer; border: 1px solid transparent; border-radius: calc(var(--radius-control) - 2px);
+  background: transparent; color: var(--label-2); font: 600 14px/1.2 'Inter Variable', system-ui, sans-serif; transition: background-color 0.15s; }
+.opt:hover:not([aria-pressed='true']) { background: var(--bg-selected); color: var(--label); }
+.opt[aria-pressed='true'] { background: var(--bg-toggle-on); color: var(--label); border-color: var(--line-strong); }
+.opt:focus-visible { outline: 2px solid var(--label); outline-offset: 2px; }

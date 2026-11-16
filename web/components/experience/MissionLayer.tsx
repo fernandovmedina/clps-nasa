@@ -10,6 +10,7 @@ import Controls from './Controls';
 import FollowMissionDialog from './FollowMissionDialog';
 import FollowPill from './FollowPill';
 import { CheckIcon, SoundIcon } from './icons';
+import LangToggle from './LangToggle';
 import LaunchPlanner from './LaunchPlanner';
 import { announce, describeMission } from './mission';
 import { controlHrefFor } from '@/lib/mission/control-link';
@@ -139,6 +140,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
         {follow && <FollowPill code={room.code} open={roomOpen} />}
         <div className={styles.headerActions}>
           {capcom && <CapcomButton controller={capcom} />}
+          <LangToggle onChange={refresh} />
           <button type="button" className={styles.iconBtn} aria-label="Sonido" aria-pressed={soundOn} disabled={stopped} onClick={toggleSound}>
             <SoundIcon muted={!soundOn} />
           </button>

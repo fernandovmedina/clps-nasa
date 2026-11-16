@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import '@fontsource-variable/inter';
 import '@/styles/tokens.css';
 import '../globals.css';
+import { BOOT_SCRIPT } from '@/control/lib/prefs';
 
 export const metadata: Metadata = {
   title: 'Lunar South Pole · Site Planner',
@@ -12,7 +13,10 @@ export const viewport: Viewport = { width: 'device-width', initialScale: 1, them
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

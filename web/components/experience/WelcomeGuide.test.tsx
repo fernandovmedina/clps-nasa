@@ -3,6 +3,7 @@ import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LunarApp } from '@/lib/engine/app';
 import type { SayOutcome } from '@/lib/engine/narration';
+import { setLang } from '@/lib/i18n';
 import WelcomeGuide from './WelcomeGuide';
 
 const stages = vi.hoisted(() => [] as { canvas: HTMLCanvasElement; ok: boolean; setMood: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }[]);
@@ -480,5 +481,66 @@ describe('WelcomeGuide', () => {
       await settle(lines[0], 'ended');
       expect(dialog()).not.toBeNull();
     });
+  });
+});
+
+describe('WelcomeGuide in English', () => {
+  const SUBTITLE_EN = 'Welcome to TOUCHDOWN. I\'m the Space Donkey, your guide. Together we\'ll pick where and when to land at the Moon\'s south pole.';
+
+  it('subtitles, asks and offers the way in in natural English', async () => {
+    setLang('en', { persist: false });
+    const onChoose = vi.fn();
+    const { app, lines } = fakeApp();
+    render(<WelcomeGuide app={app} onChoose={onChoose} />);
+    await flush();
+    expect(screen.getByRole('button', { name: 'Skip' })).toBeTruthy();
+    await start(lines[0]);
+    expect(screen.getByText(SUBTITLE_EN)).toBeTruthy();
+    await settle(lines[0], 'ended');
+    const card = screen.getByRole('dialog', { name: 'Welcome to TOUCHDOWN' });
+    expect(card.textContent).toContain('Space Donkey');
+    expect(screen.getByText('Compare lunar south pole landing sites and dates with real NASA data')).toBeTruthy();
+    expect(screen.getByText('For VR, open it in the Meta Quest browser')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Follow someone\'s mission (with a code)' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Site and date analysis' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Explore the mission' }));
+    expect(onChoose).toHaveBeenCalledWith('vr');
+  });
+
+  it('says «Enter VR» when the browser has WebXR', async () => {
+    setLang('en', { persist: false });
+    setXr('vr');
+    const { app, lines } = fakeApp();
+    render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+    await flush();
+    await settle(lines[0], 'ended');
+    expect(screen.getByRole('button', { name: 'Enter VR' })).toBeTruthy();
+    expect(screen.queryByText('For VR, open it in the Meta Quest browser')).toBeNull();
+  });
+
+  it('asks to tap in English when the browser blocks the voice', async () => {
+    setLang('en', { persist: false });
+    const { app, lines } = fakeApp();
+    render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+    await flush();
+    await settle(lines[0], 'blocked');
+    expect(screen.getByRole('button', { name: 'Tap to start' })).toBeTruthy();
+  });
+
+  it('switches language live without restarting the voice or losing the step', async () => {
+    const { app, lines, narrator } = fakeApp();
+    render(<WelcomeGuide app={app} onChoose={vi.fn()} />);
+    await flush();
+    await start(lines[0]);
+    expect(screen.getByText(SUBTITLE)).toBeTruthy();
+    act(() => setLang('en', { persist: false }));
+    expect(screen.getByText(SUBTITLE_EN)).toBeTruthy();
+    expect(narrator.sayAndWait).toHaveBeenCalledTimes(1);
+    expect(narrator.stop).not.toHaveBeenCalled();
+    await settle(lines[0], 'ended');
+    expect(screen.getByRole('button', { name: 'Explore the mission' })).toBeTruthy();
+    act(() => setLang('es', { persist: false }));
+    expect(screen.getByRole('button', { name: PRIMARY })).toBeTruthy();
+    expect(narrator.sayAndWait).toHaveBeenCalledTimes(1);
   });
 });

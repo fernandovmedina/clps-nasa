@@ -4,7 +4,8 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { DonkeyMood } from '@/lib/capcom/donkey';
 import { DonkeyStage } from '@/lib/capcom/donkey-stage';
 import type { LunarApp } from '@/lib/engine/app';
-import { NARRATION_LINES } from '@/lib/engine/narration-lines';
+import { welcomeDict } from '@/lib/i18n/dicts/welcome';
+import { useT } from '@/lib/i18n/react';
 import dialog from './Dialog.module.css';
 import layer from './MissionLayer.module.css';
 import styles from './WelcomeGuide.module.css';
@@ -26,9 +27,6 @@ const NO_ENGINE_MS = 4000;
 /** However it goes wrong (a clip that never resolves, a stuck TTS), the question appears this long after the voice was asked for. */
 const SPEECH_CAP_MS = 15_000;
 const SILENT_SUBTITLE_MS = 6500;
-/** What the voice says, shown as the subtitle. */
-const SUBTITLE = NARRATION_LINES.welcome;
-
 const MOOD: Record<Step, DonkeyMood> = { start: 'idle', tap: 'idle', speaking: 'speaking', modal: 'listening' };
 
 interface Controls { skip: () => void; retry: () => void }
@@ -42,6 +40,7 @@ interface Controls { skip: () => void; retry: () => void }
  */
 export default function WelcomeGuide({ app, onChoose }: Props) {
   const titleId = useId();
+  const t = useT(welcomeDict);
   const card = useRef<HTMLDivElement>(null);
   const tapButton = useRef<HTMLButtonElement>(null);
   const [step, setStep] = useState<Step>('start');
@@ -171,11 +170,11 @@ export default function WelcomeGuide({ app, onChoose }: Props) {
       <div className={styles.column}>
         <DonkeyView mood={MOOD[step]} />
         <div className={styles.live} aria-live="polite">
-          {step === 'speaking' && <p className={styles.bubble}>{SUBTITLE}</p>}
+          {step === 'speaking' && <p className={styles.bubble}>{t('subtitle')}</p>}
         </div>
         {step === 'tap' && (
           <button ref={tapButton} type="button" className={`${layer.btn} ${styles.tap}`} data-variant="cta" onClick={retry}>
-            Toca para empezar
+            {t('tap')}
           </button>
         )}
         {step === 'modal' && (
@@ -189,25 +188,25 @@ export default function WelcomeGuide({ app, onChoose }: Props) {
             onKeyDown={trapTab}
           >
             <div className={dialog.head}>
-              <p className={dialog.eyebrow}>Burrito espacial</p>
-              <h2 id={titleId} className={dialog.title}>Bienvenido a TOUCHDOWN</h2>
-              <p className={dialog.lede}>Compara sitios y fechas de alunizaje en el polo sur con datos reales de NASA</p>
+              <p className={dialog.eyebrow}>{t('eyebrow')}</p>
+              <h2 id={titleId} className={dialog.title}>{t('title')}</h2>
+              <p className={dialog.lede}>{t('lede')}</p>
             </div>
             <div className={styles.roles}>
               <button type="button" className={layer.btn} data-variant="cta" disabled={done} onClick={() => choose('vr')}>
-                {hasVr ? 'Entrar en VR' : 'Explorar la misión'}
+                {hasVr ? t('enterVr') : t('explore')}
               </button>
-              {!hasVr && <p className={styles.hint}>Para VR, ábrelo en el navegador del Meta Quest</p>}
+              {!hasVr && <p className={styles.hint}>{t('vrHint')}</p>}
               <button type="button" className={layer.btn} disabled={done} onClick={() => choose('monitor')}>
-                Seguir la misión de alguien (con código)
+                {t('follow')}
               </button>
             </div>
-            <a className={styles.more} href="/mission-control/">Análisis de sitios y fechas</a>
+            <a className={styles.more} href="/mission-control/">{t('analysis')}</a>
           </div>
         )}
       </div>
       {step !== 'modal' && (
-        <button type="button" className={`${layer.btn} ${styles.skip}`} onClick={skip}>Saltar</button>
+        <button type="button" className={`${layer.btn} ${styles.skip}`} onClick={skip}>{t('skip')}</button>
       )}
     </div>
   );
