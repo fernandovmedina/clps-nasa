@@ -1,12 +1,15 @@
-import { PHASE_LABELS, PHASE_ORDER, type HudSide, type PhaseHud, type RunMode, type SiteStatus } from '@/lib/engine/hud';
+import { PHASE_ORDER, type HudSide, type PhaseHud, type RunMode, type SiteStatus } from '@/lib/engine/hud';
 import type { PhaseName } from '@/lib/engine/app';
+import { fmtPlanDate, phaseLabel } from './ui-text';
 import { readLandingParams } from '@/lib/mission/landing-param';
-import { currentLanding, formatPlanDate, launchFromLanding } from '@/lib/mission/launch-plan';
+import { t } from '@/lib/i18n';
+import { missionDict } from '@/lib/i18n/dicts/ui-mission';
+import { currentLanding, launchFromLanding } from '@/lib/mission/launch-plan';
 import { earthMoonDistanceKm } from '@/lib/phases/launch-telemetry';
 import { fmtHours, type SiteMetrics } from '@/lib/mission/scoring';
-import { rankingNote, type MissionData } from '@/lib/mission/sites';
+import type { MissionData } from '@/lib/mission/sites';
 
-export interface MissionInfo { site: string; launch: string; landing: string }
+export interface MissionInfo { site: string; launch: string; landing: string; launchAt: number; landingAt: number }
 
 const ANY_RANGE = { start: new Date(0), end: new Date(8.64e15) };
 
@@ -20,19 +23,20 @@ export function describeMission(src: { data: MissionData | null; selected: SiteM
   const requested = readLandingParams(params, ANY_RANGE);
   const data = src.data;
   const byRequest = data?.requestedSiteId ? data.sites.find((s) => s.id === data.requestedSiteId)?.name : undefined;
-  const site = src.selected?.site.name ?? byRequest ?? (requested?.site && !data ? 'Cargando sitio…' : 'Por elegir en la órbita');
+  const site = src.selected?.site.name ?? byRequest ?? (requested?.site && !data ? t(missionDict, 'site.loading') : t(missionDict, 'site.pending'));
   const landing = currentLanding(data, search);
-  return { site, launch: `Despegue ${formatPlanDate(launchFromLanding(landing))}`, landing: `Llegada ${formatPlanDate(landing)}` };
+  const launchDate = launchFromLanding(landing);
+  return { site, launchAt: launchDate.getTime(), landingAt: landing.getTime(), launch: t(missionDict, 'plan.launch', { date: fmtPlanDate(launchDate) }), landing: t(missionDict, 'plan.landing', { date: fmtPlanDate(landing) }) };
 }
 
 /** What the polite live region says when the run mode or the phase changes; empty when nothing changed. */
 export function announce(prev: { phase: PhaseName; mode: RunMode }, next: { phase: PhaseName; mode: RunMode }): string {
   if (prev.mode !== next.mode) {
-    if (next.mode === 'paused') return 'Simulación pausada.';
-    if (next.mode === 'stopped') return 'La misión se detuvo.';
-    return prev.mode === 'stopped' ? 'Misión reiniciada desde el despegue.' : 'Simulación reanudada.';
+    if (next.mode === 'paused') return t(missionDict, 'announce.paused');
+    if (next.mode === 'stopped') return t(missionDict, 'announce.stopped');
+    return t(missionDict, prev.mode === 'stopped' ? 'announce.restarted' : 'announce.resumed');
   }
-  if (prev.phase !== next.phase) return `Fase ${PHASE_ORDER.indexOf(next.phase) + 1} de ${PHASE_ORDER.length}: ${PHASE_LABELS[next.phase]}.`;
+  if (prev.phase !== next.phase) return t(missionDict, 'announce.phase', { n: PHASE_ORDER.indexOf(next.phase) + 1, total: PHASE_ORDER.length, phase: phaseLabel(next.phase) });
   return '';
 }
 
@@ -70,9 +74,11 @@ export interface SiteSummary {
   note?: string;
 }
 
+/** The contrast label of a site outside the south pole, in the current language (the demo case carries none: it shows the demo mark instead). */
 function extras(m: SiteMetrics): { demo?: true; note?: string } {
-  const note = rankingNote(m.site);
-  return { ...(m.site.crash ? { demo: true as const } : {}), ...(note && !m.site.crash ? { note } : {}) };
+  if (m.site.crash) return { demo: true as const };
+  const region = m.site.region;
+  return region === 'equatorial' || region === 'mid-latitude' || region === 'far-side' ? { note: t(missionDict, `contrast.${region}`) } : {};
 }
 
 export function summarizeSite(m: SiteMetrics | null): SiteSummary | null {

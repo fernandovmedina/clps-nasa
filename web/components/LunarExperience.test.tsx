@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setLang } from '@/lib/i18n';
 import LunarExperience from './LunarExperience';
 
 interface FakeLunarApp {
@@ -205,6 +206,16 @@ describe('LunarExperience: answering "Voy en VR" with or without a headset', () 
     await flush();
     expect(screen.getByRole('alert').textContent).toContain('No se pudo iniciar VR');
     expect(planning()).toBe('true');
+  });
+
+  it('words the VR failure in English when the language is English, keeping the cause', async () => {
+    harness.enterVR = () => Promise.reject(new Error('refused'));
+    await mounted(Promise.resolve(true));
+    choose('Voy en VR');
+    act(() => setLang('en', { persist: false }));
+    await flush();
+    await flush();
+    expect(screen.getByRole('alert').textContent).toBe('Could not start VR: Error: refused');
   });
 
   it('opens the planner when there is no headset', async () => {

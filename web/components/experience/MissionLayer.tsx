@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LunarApp } from '@/lib/engine/app';
 import type { CapcomController } from '@/lib/capcom/controller';
-import { PHASE_LABELS, PHASE_ORDER, collectActions } from '@/lib/engine/hud';
+import { PHASE_ORDER, collectActions } from '@/lib/engine/hud';
+import { missionDict } from '@/lib/i18n/dicts/ui-mission';
+import { useT } from '@/lib/i18n/react';
 import { CapcomButton, CapcomCaption } from './Capcom';
 import ControlRoom, { EMPTY_LOG, nextLog, seenOf } from './ControlRoom';
 import Controls from './Controls';
@@ -18,6 +20,7 @@ import MissionBlock from './MissionBlock';
 import SidePanel from './SidePanel';
 import StatusPanel from './StatusPanel';
 import { useHudSnapshot, type HudSnapshot } from './useHudSnapshot';
+import { phaseLabel } from './ui-text';
 import styles from './MissionLayer.module.css';
 
 interface Props {
@@ -34,9 +37,8 @@ interface Props {
   openFollowOnMount?: boolean;
 }
 
-const NO_VR = 'VR no disponible aquí · ábrelo en el navegador del Quest (HTTPS)';
-
-const IDLE: HudSnapshot = {
+/** The snapshot before the app exists; a function because the mission text depends on the language of the moment. */
+const idle = (): HudSnapshot => ({
   phase: 'launch',
   mode: 'running',
   muted: false,
@@ -46,12 +48,13 @@ const IDLE: HudSnapshot = {
   site: null,
   ranking: [],
   moonKm: null,
-};
+});
 
 /** DOM control layer over the 3D scene: phases, mission, the phase's own data and the run controls. */
 export default function MissionLayer({ app, vr, onEnterVR, room, capcom, planning = false, onPlanning, openFollowOnMount = false }: Props) {
+  const t = useT(missionDict);
   const { snap, refresh } = useHudSnapshot(app);
-  const view = snap ?? IDLE;
+  const view = snap ?? idle();
   const { phase, mode, muted, hud, mission, roomOpen } = view;
   const stopped = mode === 'stopped';
   const paused = mode === 'paused';
@@ -141,14 +144,14 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
         <div className={styles.headerActions}>
           {capcom && <CapcomButton controller={capcom} />}
           <LangToggle onChange={refresh} />
-          <button type="button" className={styles.iconBtn} aria-label="Sonido" aria-pressed={soundOn} disabled={stopped} onClick={toggleSound}>
+          <button type="button" className={styles.iconBtn} aria-label={t('sound')} aria-pressed={soundOn} disabled={stopped} onClick={toggleSound}>
             <SoundIcon muted={!soundOn} />
           </button>
           {follow ? (
-            <button type="button" className={styles.btn} onClick={room.onLeave}>Salir</button>
+            <button type="button" className={styles.btn} onClick={room.onLeave}>{t('leave')}</button>
           ) : (
             <>
-              <button type="button" className={styles.btn} aria-haspopup="dialog" onClick={() => setFollowing(true)}>Seguir la misión</button>
+              <button type="button" className={styles.btn} aria-haspopup="dialog" onClick={() => setFollowing(true)}>{t('follow')}</button>
               <button
                 type="button"
                 className={styles.btn}
@@ -156,26 +159,26 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
                 disabled={planner}
                 aria-disabled={!canVR}
                 aria-describedby={canVR ? undefined : 'vr-unavailable'}
-                title={canVR ? undefined : NO_VR}
+                title={canVR ? undefined : t('noVr')}
                 onClick={canVR ? onEnterVR : undefined}
               >
-                Entrar en VR
+                {t('enterVr')}
               </button>
-              {!canVR && <span id="vr-unavailable" className={styles.sr}>{NO_VR}</span>}
+              {!canVR && <span id="vr-unavailable" className={styles.sr}>{t('noVr')}</span>}
             </>
           )}
         </div>
       </header>
 
       <div className={styles.rail}>
-        <ol className={styles.phases} aria-label="Fases de la misión">
+        <ol className={styles.phases} aria-label={t('phases')}>
           {PHASE_ORDER.map((id, i) => {
             const state = stopped ? 'pending' : i < current ? 'done' : i === current ? 'current' : 'pending';
             return (
               <li key={id} data-state={state} aria-current={state === 'current' ? 'step' : undefined}>
                 <span className={styles.dot} aria-hidden="true">{state === 'done' ? <CheckIcon /> : i + 1}</span>
-                <span className={styles.phaseName}>{PHASE_LABELS[id]}</span>
-                {state === 'done' && <span className={styles.sr}>(completada)</span>}
+                <span className={styles.phaseName}>{phaseLabel(id)}</span>
+                {state === 'done' && <span className={styles.sr}>{t('done')}</span>}
               </li>
             );
           })}
@@ -184,17 +187,17 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
       </div>
 
       {hud && !stopped && (
-        <section className={styles.side} aria-label="Datos de la fase">
+        <section className={styles.side} aria-label={t('sideLabel')}>
           <SidePanel side={hud.side} frozen={paused} onAct={act} />
         </section>
       )}
 
       <div className={styles.bottom}>
         {waitingMonitor && hud ? (
-          <section className={styles.status} role="status" aria-label="Estado de la misión">
+          <section className={styles.status} role="status" aria-label={t('missionStatus')}>
             <p className={styles.figureRow}><span className={styles.figure} data-testid="figure">{hud.figure.value}</span></p>
             {hud.detail && <p className={styles.detail}>{hud.detail}</p>}
-            <p className={styles.small}>Modo seguimiento: los controles de la misión los tiene la tripulación.</p>
+            <p className={styles.small}>{t('followMode')}</p>
           </section>
         ) : (
           <StatusPanel phase={phase} mode={mode} hud={hud} frozen={paused} onAct={act} />
@@ -207,10 +210,10 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
 
       {stopped && (
         <section className={styles.stopped} aria-labelledby="stopped-title">
-          <h2 id="stopped-title">Misión detenida</h2>
-          <p>La simulación se detuvo en la fase de {PHASE_LABELS[phase].toLowerCase()} y el sonido está apagado. La fecha y el sitio elegidos se conservan.</p>
-          <button ref={restartButton} type="button" className={styles.btn} data-variant="cta" onClick={restart}>Reiniciar desde el despegue</button>
-          <a className={styles.btn} href={controlHref}>Análisis de sitios y fechas</a>
+          <h2 id="stopped-title">{t('stoppedTitle')}</h2>
+          <p>{t('stoppedBody', { phase: phaseLabel(phase).toLowerCase() })}</p>
+          <button ref={restartButton} type="button" className={styles.btn} data-variant="cta" onClick={restart}>{t('restart')}</button>
+          <a className={styles.btn} href={controlHref}>{t('analysis')}</a>
         </section>
       )}
 

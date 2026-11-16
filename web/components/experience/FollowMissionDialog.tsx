@@ -1,6 +1,9 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
+import { followDict } from '@/lib/i18n/dicts/ui-follow';
+import { missionDict } from '@/lib/i18n/dicts/ui-mission';
+import { useT } from '@/lib/i18n/react';
 import dialog from './Dialog.module.css';
 import layer from './MissionLayer.module.css';
 
@@ -17,12 +20,14 @@ const FOCUSABLE = 'input:not(:disabled), button:not(:disabled)';
 
 /** "Seguir una misión": the tracking code the crew shares turns this client into its follower. */
 export default function FollowMissionDialog({ code, onJoin, onClose, onExplore }: Props) {
+  const t = useT(followDict);
+  const tm = useT(missionDict);
   const titleId = useId();
   const errorId = useId();
   const root = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<'same' | 'invalid' | null>(null);
 
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -52,7 +57,7 @@ export default function FollowMissionDialog({ code, onJoin, onClose, onExplore }
     e.preventDefault();
     const next = value.trim().toUpperCase();
     if (!next || !onJoin(next)) {
-      setError(next === code ? 'Ya estás en esa sala' : 'Código no válido');
+      setError(next === code ? 'same' : 'invalid');
       return;
     }
     onClose();
@@ -72,14 +77,14 @@ export default function FollowMissionDialog({ code, onJoin, onClose, onExplore }
       >
         <form className={dialog.form} noValidate onSubmit={submit}>
           <div className={dialog.head}>
-            <p className={dialog.eyebrow}>Seguimiento</p>
-            <h2 id={titleId} className={dialog.title}>Seguir una misión</h2>
-            <p className={dialog.lede}>Escribe el código de seguimiento de quien va a despegar. Verás su misión en vivo: el despegue, la órbita, el alunizaje y la transmisión.</p>
-            <p className={dialog.lede}>Lo muestra la pantalla de quien despega, en el panel de su misión, como «Código de seguimiento».</p>
+            <p className={dialog.eyebrow}>{t('eyebrow')}</p>
+            <h2 id={titleId} className={dialog.title}>{t('title')}</h2>
+            <p className={dialog.lede}>{t('ledeCode')}</p>
+            <p className={dialog.lede}>{t('ledeWhere', { label: tm('block.code') })}</p>
           </div>
 
           <label className={dialog.field}>
-            <span>Código de seguimiento</span>
+            <span>{t('field')}</span>
             <input
               ref={field}
               className={dialog.input}
@@ -94,16 +99,16 @@ export default function FollowMissionDialog({ code, onJoin, onClose, onExplore }
               onChange={(e) => { setValue(e.target.value); setError(null); }}
             />
           </label>
-          {error && <p id={errorId} role="alert" className={dialog.error}>{error}</p>}
+          {error && <p id={errorId} role="alert" className={dialog.error}>{t(error)}</p>}
 
           <div className={dialog.actions}>
-            <button type="button" className={layer.btn} onClick={onClose}>Cancelar</button>
-            <button type="submit" className={layer.btn} data-variant="cta">Conectar</button>
+            <button type="button" className={layer.btn} onClick={onClose}>{t('cancel')}</button>
+            <button type="submit" className={layer.btn} data-variant="cta">{t('connect')}</button>
           </div>
           {onExplore && (
             <p className={dialog.lede}>
-              ¿No tienes código?{' '}
-              <button type="button" className={layer.linkBtn} onClick={onExplore}>Explora la misión tú mismo</button>
+              {t('noCode')}{' '}
+              <button type="button" className={layer.linkBtn} onClick={onExplore}>{t('explore')}</button>
             </p>
           )}
         </form>

@@ -13,6 +13,8 @@
 .top h1 span { font-size: 14px; font-weight: 400; letter-spacing: 0; color: var(--label-2); }
 .source { flex: 1 1 auto; font-size: 13px; color: var(--label-2); }
 .actions { display: flex; align-items: center; gap: 8px; }
+/* The follow pill keeps the width of its text and its padding (the layer's p reset zeroed it, leaving the code against the border). */
+.top > p:not(.source) { flex: none; padding: 0 16px; }
 
 .phases { display: flex; flex-wrap: wrap; gap: 8px 28px; }
 .phases li { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--label-2); }

@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LunarApp, PhaseName } from '@/lib/engine/app';
 import type { PhaseHud, RunMode } from '@/lib/engine/hud';
 import type { RoomStatus } from '@/lib/sync/room-client';
-import { EMPTY_LOG, nextLog, readingsOf, seenOf } from './ControlRoom';
+import { setLang } from '@/lib/i18n';
+import { EMPTY_LOG, entryText, nextLog, readingsOf, seenOf } from './ControlRoom';
 import MissionLayer from './MissionLayer';
 import type { HudSnapshot } from './useHudSnapshot';
 
@@ -187,9 +188,20 @@ describe('ControlRoom', () => {
 });
 
 describe('nextLog', () => {
+  it('keeps the plan as dates: a language change adds no entry and rewords the existing one', () => {
+    const mission = { site: '', launch: '', landing: '', launchAt: Date.UTC(2027, 0, 5, 12), landingAt: Date.UTC(2027, 0, 10) };
+    const open = { phase: 'launch', mode: 'running', muted: false, hud: waitingHud(), mission, roomOpen: true, site: null, ranking: [], moonKm: null } as HudSnapshot;
+    const first = nextLog(EMPTY_LOG, seenOf(open), 'ABCD');
+    setLang('en', { persist: false });
+    const after = nextLog(first, seenOf({ ...open, mission: { ...mission, launch: 'Launch', landing: 'Landing' } }), 'ABCD');
+    expect(after).toBe(first);
+    const plan = first.entries.find((e) => e.key === 'log.plan')!;
+    expect(entryText(plan.key, plan.vars)).toBe('Plan received · Launch Jan 5, 2027 · 12:00 UTC · Landing Jan 10, 2027 · 00:00 UTC');
+  });
+
   const view = (over: Partial<HudSnapshot> = {}): HudSnapshot => ({
     phase: 'launch', mode: 'running', muted: false, hud: waitingHud(),
-    mission: { site: 'Por elegir en la órbita', launch: 'Despegue 5 ene 2027 · 12:00 UTC', landing: 'Llegada 10 ene 2027 · 00:00 UTC' },
+    mission: { site: 'Por elegir en la órbita', launch: 'Despegue 5 ene 2027 · 12:00 UTC', landing: 'Llegada 10 ene 2027 · 00:00 UTC', launchAt: 1799150400000, landingAt: 1799539200000 },
     roomOpen: false, site: null, ranking: [], moonKm: null, ...over,
   });
   const at = new Date('2027-01-05T12:00:07Z');
@@ -212,7 +224,7 @@ describe('nextLog', () => {
 
   it('logs a new plan, the start once, the site, and the pause and stop', () => {
     let s = nextLog(EMPTY_LOG, seenOf(view({ roomOpen: true })), 'ABCD', at);
-    s = nextLog(s, seenOf(view({ roomOpen: true, mission: { site: '', launch: 'Despegue 20 ene 2027 · 12:00 UTC', landing: 'Llegada 25 ene 2027 · 00:00 UTC' } })), 'ABCD', at);
+    s = nextLog(s, seenOf(view({ roomOpen: true, mission: { site: '', launch: 'Despegue 20 ene 2027 · 12:00 UTC', landing: 'Llegada 25 ene 2027 · 00:00 UTC', launchAt: 1800446400000, landingAt: 1800835200000 } })), 'ABCD', at);
     expect(s.entries[0]!.text).toContain('Plan recibido · Despegue 20 ene 2027');
     s = nextLog(s, seenOf(view({ roomOpen: true, hud: { ...waitingHud(), waiting: false } })), 'ABCD', at);
     expect(s.entries[0]!.text).toBe('Despegue iniciado');

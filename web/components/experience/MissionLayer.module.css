@@ -185,7 +185,8 @@
   .controls { grid-area: controls; }
   .header[data-follow] { display: flex; flex-wrap: wrap; justify-content: flex-end; }
   .followPill { order: -1; flex: 1 1 100%; justify-content: center; white-space: normal; padding: 6px 14px; }
-  .headerActions { gap: 4px; }
+  .header { min-width: 0; }
+  .headerActions { gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; box-sizing: border-box; }
   .headerActions .btn[data-vr='no'] { display: none; }
   .rail { gap: 8px; padding: 8px 12px; }
   .phases { flex-direction: row; align-items: center; gap: 8px; }

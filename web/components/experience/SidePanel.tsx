@@ -1,10 +1,11 @@
 import type { HudRankRow, HudSide } from '@/lib/engine/hud';
+import { tn } from '@/lib/i18n';
+import { missionDict } from '@/lib/i18n/dicts/ui-mission';
+import { useT } from '@/lib/i18n/react';
 import type { RankRowExtras } from '@/lib/mission/sites';
 import { StatusIcon } from './icons';
 import styles from './MissionLayer.module.css';
-
-/** El caso NO CAER no es un sitio real: en vez de puntaje e icono lleva esta marca. */
-const DEMO_LABEL = 'Demo · falla simulada del motor';
+import { demoLabel } from './ui-text';
 
 interface Props {
   side: HudSide;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export default function SidePanel({ side, frozen, onAct }: Props) {
+  const t = useT(missionDict);
   if (side.kind === 'readouts') {
     return (
       <>
@@ -35,11 +37,11 @@ export default function SidePanel({ side, frozen, onAct }: Props) {
   if (side.kind === 'ranking') {
     return (
       <div className={styles.ranking}>
-        <div className={styles.rankHead}><h2>{side.title}</h2><span>Puntaje</span></div>
+        <div className={styles.rankHead}><h2>{side.title}</h2><span>{t('side.score')}</span></div>
         {side.rows.length === 0 ? (
-          <p className={styles.note} data-align="start">Evaluando sitios…</p>
+          <p className={styles.note} data-align="start">{t('side.evaluating')}</p>
         ) : (
-          <ol aria-label="Ranking de sitios">
+          <ol aria-label={t('side.ranking')}>
             {side.rows.map((row) => {
               const r: HudRankRow & RankRowExtras = row;
               return (
@@ -51,12 +53,12 @@ export default function SidePanel({ side, frozen, onAct }: Props) {
                       {!r.demo && r.note && <span className={styles.rankNote}>{r.note}</span>}
                     </span>
                     {r.delta ? (
-                      <span className={styles.delta} aria-label={`${r.delta > 0 ? 'sube' : 'baja'} ${Math.abs(r.delta)} puntos`}>
+                      <span className={styles.delta} aria-label={tn(missionDict, r.delta > 0 ? 'delta.up' : 'delta.down', Math.abs(r.delta))}>
                         {r.delta > 0 ? '↑' : '↓'}{Math.abs(r.delta)}
                       </span>
                     ) : null}
                     {r.demo ? (
-                      <span className={styles.rankDemo}>{DEMO_LABEL}</span>
+                      <span className={styles.rankDemo}>{demoLabel()}</span>
                     ) : (
                       <>
                         <span className={styles.rankScore}>{r.score}</span>
