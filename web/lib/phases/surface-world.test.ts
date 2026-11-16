@@ -276,6 +276,15 @@ describe('horizonte LOLA', () => {
 describe('fichas de papel en el 3D', () => {
   const named = (world: SurfaceWorld, name: string) => world.scene.getObjectByName(name) as THREE.Sprite;
 
+  it('SOL y TIERRA dibujan sin prueba de profundidad y sobre el relieve, para que la loma no corte la ficha', () => {
+    const world = worldFor('nobile-rim-2');
+    for (const n of ['label:SOL', 'label:TIERRA']) {
+      const s = named(world, n);
+      expect((s.material as THREE.SpriteMaterial).depthTest).toBe(false);
+      expect(s.renderOrder).toBeGreaterThanOrEqual(21);
+    }
+  });
+
   it('SOL, TIERRA, ZONA DE ALUNIZAJE, el horizonte y el fantasma de la Tierra: papel, tinta y ninguna ficha oscura', () => {
     const world = worldFor('nobile-rim-2');
     const sprites = [named(world, 'label:SOL'), named(world, 'label:TIERRA'), named(world, 'label:ZONA'), world.horizonLabel, world.earthGhost!.group.getObjectByName('label:fantasma') as THREE.Sprite];

@@ -24,7 +24,7 @@ export function ensureSelection(app: LunarApp): SiteMetrics {
 }
 
 /** Elevación geométrica y posición respecto al horizonte LOLA, con las mismas cifras en el HUD y en el panel 3D. */
-export function skyElevationText(sky: SkyPos, site: { horizonSource: string } = { horizonSource: 'lola' }) {
+export function skyElevationText(sky: SkyPos, site: { horizonSource: string }) {
   const value = `${fmtSigned(sky.elevation, 2)}°`;
   const horizon = sky.elevation - sky.aboveHorizon;
   const side = sky.aboveHorizon >= 0 ? 'sobre' : 'bajo';

@@ -14,10 +14,12 @@ const sky = (azimuth: number, elevation: number, aboveHorizon: number): SkyPos =
 };
 const metrics = (sun: SkyPos, earth: SkyPos) => ({ sun, earth }) as SiteMetrics;
 
+const lola = { horizonSource: 'lola' };
+
 describe('etiquetas del HUD', () => {
   it('la elevación dice las dos referencias: el plano local y el horizonte LOLA', () => {
-    expect(skyElevationText(sky(93, 1.06, 3.83)).full).toBe('1.06° de elevación · 3.83° sobre el horizonte LOLA (−2.77°)');
-    expect(skyElevationText(sky(296, 1.3, -5.69)).full).toBe('1.30° de elevación · 5.69° bajo el horizonte LOLA (6.99°)');
+    expect(skyElevationText(sky(93, 1.06, 3.83), lola).full).toBe('1.06° de elevación · 3.83° sobre el horizonte LOLA (−2.77°)');
+    expect(skyElevationText(sky(296, 1.3, -5.69), lola).full).toBe('1.30° de elevación · 5.69° bajo el horizonte LOLA (6.99°)');
   });
 
   it('con horizonte esférico las cifras hablan del horizonte geométrico, no de LOLA', () => {
@@ -103,7 +105,7 @@ describe('Nobile Rim 2 con datos reales', () => {
   });
 
   it('el texto de la Tierra usa las cifras del escenario', () => {
-    const text = skyElevationText(m.earth);
+    const text = skyElevationText(m.earth, m.site);
     expect(text.value).toBe('1.30°');
     expect(text.detail).toMatch(/^de elevación · 5\.69° bajo el horizonte LOLA \(6\.9[89]°\)$/);
   });

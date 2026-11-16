@@ -216,7 +216,10 @@ export class SurfaceWorld {
     sc.add(earth, earthGlow);
 
     const lbl = (text: string, sub: string, dir: THREE.Vector3, accent: string) => {
-      const s = paperLabel([{ text, size: 52, weight: 800 }, { text: sub, size: 34, muted: true }], 420, { accent, name: `label:${text}` });
+      const s = paperLabel([{ text, size: 52, weight: 800 }, { text: sub, size: 40, muted: true }], 460, { accent, name: `label:${text}` });
+      // sin prueba de profundidad: la loma del horizonte no debe cortar la ficha (como «Horizonte LOLA» y el fantasma)
+      (s.material as THREE.SpriteMaterial).depthTest = false;
+      s.renderOrder = 21;
       s.position.copy(dir).multiplyScalar(2200).add(new THREE.Vector3(0, 270, 0)); // sobre el cuerpo: bajo él lo taparía el relieve
       return s;
     };
