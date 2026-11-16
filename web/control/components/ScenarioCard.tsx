@@ -1,13 +1,12 @@
 'use client'
 
 import { useEffect } from 'react'
-import { Copy, Earth, Rocket, Sun, Sunrise, Sunset, X } from 'lucide-react'
+import { Copy, Earth, Rocket, Sunrise, Sunset, X } from 'lucide-react'
 import { useI18n, type Translate } from '@/control/i18n'
 import { UnknownSiteError } from '@/control/lib/data'
 import { formatNumber } from '@/control/lib/format'
 import { countdown, formatDuration, type CountdownResult } from '@/control/lib/countdown'
 import { launchHref } from '@/control/lib/launch'
-import { maskedBy } from '@/control/lib/scenario'
 import type { CardModel } from '@/control/lib/useCardModel'
 import { useCardModel } from '@/control/lib/useCardModel'
 import { DAY_MS, HOUR_MS, formatUtc, fromInputValue, shiftIso, toInputValue, formatUtcDate } from '@/control/lib/time'
@@ -17,7 +16,7 @@ import {
   SCENARIO_LETTERS,
   type Scenario,
 } from '@/control/lib/types'
-import { Delta, Field, MetricBar, NumberField, StatusChange, StatusPill } from './CardParts'
+import { BodyReading, Delta, Field, MetricBar, NumberField, StatusChange, StatusPill } from './CardParts'
 import { Panorama } from './Panorama'
 import { SkyDiagram, skyDomain } from './SkyDiagram'
 import { Timeline } from './Timeline'
@@ -186,12 +185,8 @@ export function ScenarioCard(props: Props) {
       : null
     const hours = (n: number) => t('hoursUnit', { n: fmt(n) })
     const countdownCtx = { landingMs: ok.landingMs, dataEndMs: data.seriesEndMs }
-    const maskedText = (body: { el: number; horizonEl: number; visible: boolean; az: number } | undefined) => {
-      const m = body ? maskedBy(body) : null
-      return m ? t('maskedDetail', { el: fmt(m.el), horizon: fmt(m.horizonEl), gap: fmt(m.gap) }) : null
-    }
-    const sunMasked = maskedText(bodies?.sun)
-    const earthMasked = maskedText(bodies?.earth)
+    const cursorHour = Math.round(cursor)
+    const atNow = cursor <= 0
     const siteTitle = name
     const desc = {
       panorama: t('panoramaDesc', {
@@ -226,40 +221,26 @@ export function ScenarioCard(props: Props) {
           <div className="grid content-start gap-6">
             <div className="flex flex-nowrap items-center gap-x-4" data-testid="status-score">
               <StatusPill status={response.status} />
-              <p className="num whitespace-nowrap text-title" data-testid="score">
+              <p className="num flex items-baseline gap-2 whitespace-nowrap" data-testid="score">
                 <span className="sr-only">{t('score')}: </span>
-                {t('scoreValue', { n: response.score })}
+                <span className="text-display" data-score-value>
+                  {response.score}
+                </span>{' '}
+                <span className="text-title text-label-2">{t('scoreMax')}</span>
               </p>
             </div>
-            <div className="grid gap-1">
-              <p className="flex items-center gap-2 text-label text-label-2">
-                <Sun size={16} aria-hidden="true" style={{ color: 'var(--sun)' }} />
-                {t('solarElevation')} · {t('atCursor')}
-              </p>
-              <p className="num text-display" data-testid="sun-elevation">
-                {bodies ? `${fmt(bodies.sun.el)}°` : '–'}
-              </p>
-              <p className="num text-caption text-label-2">
-                {t('solarAzimuth')} {bodies ? `${fmt(bodies.sun.az)}°` : '–'} · {sunState}
-              </p>
-              {sunMasked && (
-                <p className="num text-caption text-label-2" data-testid="sun-masked">
-                  {sunMasked}
-                </p>
-              )}
-            </div>
-            <div className="num flex flex-wrap items-center gap-x-3 gap-y-1 text-body">
-              <Earth size={18} aria-hidden="true" style={{ color: 'var(--earth)' }} />
-              <span>
-                {t('earthElevation')} {bodies ? `${fmt(bodies.earth.el)}°` : '–'}
-              </span>
-              <span className="text-label-2">{earthState}</span>
-              {earthMasked && (
-                <span className="basis-full text-caption text-label-2" data-testid="earth-masked">
-                  {earthMasked}
-                </span>
-              )}
-            </div>
+            <ul className="grid gap-3" data-testid="body-readings">
+              <BodyReading
+                kind="sun"
+                label={t(atNow ? 'sunNow' : 'sunAtCursor', { n: cursorHour })}
+                body={bodies?.sun}
+              />
+              <BodyReading
+                kind="earth"
+                label={t(atNow ? 'earthNow' : 'earthAtCursor', { n: cursorHour })}
+                body={bodies?.earth}
+              />
+            </ul>
           </div>
           <div className="slate grid content-start gap-3 rounded-[10px] p-4">
             <SkyDiagram
@@ -444,21 +425,29 @@ export function ScenarioCard(props: Props) {
             {selected && multiple && <li className="rounded-full bg-selected px-2.5 py-1">{t('selected')}</li>}
           </ul>
         )}
-        <div className="grid grid-cols-1 gap-3 @sm:grid-cols-[minmax(0,1fr)_112px]">
-          <Field label={t('landing')}>
-            {(id) => (
-              <input
-                id={id}
-                className="field num"
-                type="datetime-local"
-                value={toInputValue(scenario.landing)}
-                onChange={(e) => {
-                  const iso = fromInputValue(e.target.value)
-                  if (iso) props.onLanding(iso)
-                }}
-              />
-            )}
-          </Field>
+        <div className="grid grid-cols-1 gap-3 @sm:grid-cols-[minmax(0,1fr)_112px] @sm:items-end">
+          <div className="grid gap-2" data-testid="landing-block">
+            <div className="grid gap-1">
+              <p className="text-label text-label-2">{t('landing')}</p>
+              <p className="num text-title @sm:text-lead whitespace-nowrap" data-testid="landing-utc">
+                {formatUtc(Date.parse(scenario.landing))}
+              </p>
+            </div>
+            <Field label={t('landingEdit')}>
+              {(id) => (
+                <input
+                  id={id}
+                  className="field num"
+                  type="datetime-local"
+                  value={toInputValue(scenario.landing)}
+                  onChange={(e) => {
+                    const iso = fromInputValue(e.target.value)
+                    if (iso) props.onLanding(iso)
+                  }}
+                />
+              )}
+            </Field>
+          </div>
           <Field label={t('duration')}>
             {(id) => (
               <NumberField
@@ -471,10 +460,7 @@ export function ScenarioCard(props: Props) {
             )}
           </Field>
         </div>
-        <div className="num grid gap-1 text-caption text-label-2">
-          <p data-testid="landing-utc">
-            {t('landingUtc')}: {formatUtc(Date.parse(scenario.landing))}
-          </p>
+        <div className="num grid gap-1 text-caption text-label-2" data-testid="landing-shift">
           {delayDays !== 0 && (
             <p data-testid="shifted-landing">
               {t('delayedLanding')}: {formatUtc(Date.parse(shiftIso(scenario.landing, delayDays)))}

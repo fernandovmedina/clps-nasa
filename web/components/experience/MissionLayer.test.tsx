@@ -74,11 +74,11 @@ describe('MissionLayer', () => {
     expect(screen.queryByText('La misión, paso a paso')).toBeNull();
   });
 
-  it('makes Mission Control a button, not a link, and keeps a link to the analysis in the mission block', async () => {
+  it('makes Seguir la misión a button, not a link, and keeps a link to the analysis in the mission block', async () => {
     mount(fakeApp(launchHud()));
     await tick();
-    expect(screen.queryByRole('link', { name: 'Mission Control' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Mission Control' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Seguir la misión' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Seguir la misión' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Análisis de sitios y fechas' }).getAttribute('href')).toBe(DEFAULT_CONTROL_HREF);
     expect(screen.queryByRole('link', { name: 'Cambiar fecha o sitio' })).toBeNull();
   });
@@ -105,7 +105,9 @@ describe('MissionLayer', () => {
     const block = screen.getByRole('region', { name: 'Misión' });
     expect(within(block).getByText('Despegue 5 ene 2027 · 12:00 UTC')).toBeTruthy();
     expect(within(block).getByText('Llegada 10 ene 2027 · 00:00 UTC')).toBeTruthy();
-    expect(within(block).getByText('Código Mission Control')).toBeTruthy();
+    expect(within(block).getByText('Código de seguimiento')).toBeTruthy();
+    expect(within(block).getByText('Quien lo escriba en «Seguir la misión» verá tu misión en vivo.')).toBeTruthy();
+    expect(within(block).queryByText(/Mission Control/)).toBeNull();
     expect(within(block).getByTestId('room-code').textContent).toBe('ABCD');
     expect(screen.queryByText('Unirse a otra sala')).toBeNull();
     expect(screen.queryByRole('textbox', { name: 'Código de sala' })).toBeNull();

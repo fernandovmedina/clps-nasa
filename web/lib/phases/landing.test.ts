@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { T_TOUCH, impactShakeAmplitude, touchdownJolt, watchReducedMotion } from './landing';
+import { LandingPhase, T_TOUCH, impactShakeAmplitude, touchdownJolt, watchReducedMotion } from './landing';
+import { RAW_RELIEF_NOTE } from './pov';
 
 /** A matchMedia whose answer can be flipped, as when the person changes the system setting mid-flight. */
 function stubMatchMedia(matches: boolean) {
@@ -58,5 +59,21 @@ describe('camera shake on the desktop', () => {
     expect(touchdownJolt(T_TOUCH + 0.5, false, false)).toBe(0);
     expect(touchdownJolt(T_TOUCH + 0.02, true, false)).toBe(0);
     expect(touchdownJolt(T_TOUCH + 0.02, false, true)).toBe(0);
+  });
+});
+
+describe('rótulo del relieve en el HUD del alunizaje', () => {
+  const hudNote = (hasTerrain: boolean, crash = false) => {
+    const fake = { world: { m: { site: { lat: -80, lon: 1, hasTerrain, horizonSource: 'lola', crash } } }, crash, t: 0, alt: 50, vs: 0, hs: 0, fuel: 50, touched: false };
+    const hud = (LandingPhase.prototype as unknown as { controlHud(): { side: { note?: string } } }).controlHud.call(fake);
+    return hud.side.note;
+  };
+
+  it('con heightmap RAW dice qué es dato LOLA y qué es ilustrativo', () => {
+    expect(hudNote(true)).toBe(RAW_RELIEF_NOTE);
+  });
+
+  it('sin heightmap RAW conserva el rótulo de relieve cercano ilustrativo', () => {
+    expect(hudNote(false)).toBe('Relieve cercano ilustrativo · horizonte real LOLA');
   });
 });

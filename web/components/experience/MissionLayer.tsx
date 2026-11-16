@@ -101,6 +101,8 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
   const planner = planning && !follow && app !== null;
   const closePlanner = useCallback(() => { onPlanning?.(false); refresh(); }, [onPlanning, refresh]);
   const closeFollowing = useCallback(() => setFollowing(false), []);
+  // Without a code the way on is the main route: the planner while the launch has not started, else back to the mission.
+  const explore = useCallback(() => { setFollowing(false); if (prelaunch) onPlanning?.(true); }, [prelaunch, onPlanning]);
   const waitingMonitor = follow && prelaunch;
   const controlsHud = planner && hud?.primary ? { ...hud, primary: { ...hud.primary, disabled: true } } : hud;
 
@@ -144,7 +146,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
             <button type="button" className={styles.btn} onClick={room.onLeave}>Salir</button>
           ) : (
             <>
-              <button type="button" className={styles.btn} aria-haspopup="dialog" onClick={() => setFollowing(true)}>Mission Control</button>
+              <button type="button" className={styles.btn} aria-haspopup="dialog" onClick={() => setFollowing(true)}>Seguir la misión</button>
               <button
                 type="button"
                 className={styles.btn}
@@ -213,7 +215,7 @@ export default function MissionLayer({ app, vr, onEnterVR, room, capcom, plannin
       <div className={styles.sr} role="status" aria-live="polite" aria-atomic="true">{announced.text}</div>
 
       {planner && <LaunchPlanner app={app} code={room.code} onClose={closePlanner} suspendEscape={following} />}
-      {following && <FollowMissionDialog code={room.code} onJoin={room.onJoin} onClose={closeFollowing} />}
+      {following && <FollowMissionDialog code={room.code} onJoin={room.onJoin} onClose={closeFollowing} onExplore={explore} />}
     </div>
   );
 }

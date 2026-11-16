@@ -110,8 +110,9 @@ const planning = () => screen.getByTestId('layer').getAttribute('data-planning')
 
 /** The welcome greets before it asks: Saltar, there from the first render, goes straight to the two role buttons. */
 function choose(name: 'Voy en VR' | 'Sigo la misión (Monitor)') {
+  const label = name === 'Voy en VR' ? /^(Entrar en VR|Explorar la misión)$/ : 'Seguir la misión de alguien (con código)';
   fireEvent.click(screen.getByRole('button', { name: 'Saltar' }));
-  fireEvent.click(screen.getByRole('button', { name }));
+  fireEvent.click(screen.getByRole('button', { name: label }));
 }
 
 async function mounted(xr?: Promise<boolean>) {

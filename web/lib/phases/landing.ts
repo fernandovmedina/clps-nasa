@@ -4,7 +4,7 @@ import type { LoopControl } from '../engine/audio';
 import { Particles } from '../engine/particles';
 import { cockpitTexture, glowTexture } from '../engine/textures';
 import { clamp01, damp, disposeTree, rand, smooth } from '../engine/util';
-import { ensureSelection } from './pov';
+import { ensureSelection, nearReliefNote } from './pov';
 import { CabinConsole } from './landing-console';
 import { surfaceFor, type SurfaceWorld } from './surface-world';
 import { fmtInt, fmtLatLon, fmtPercent, type PhaseHud } from '../engine/hud';
@@ -348,7 +348,7 @@ export class LandingPhase implements Phase {
 
   controlHud(): PhaseHud {
     const site = this.world.m.site;
-    if (this.crash && this.t >= T_FAIL) return this.crashHud(site.lat, site.lon);
+    if (this.crash && this.t >= T_FAIL) return this.crashHud(site);
     const status = this.touched ? 'Luz de contacto · motor apagado' : this.t < T_BRAKE ? 'Descenso motorizado · aproximación' : 'Descenso terminal · vertical';
     const toTouch = Math.max(0, T_TOUCH - this.t);
     const progress = clamp01(this.t / T_TOUCH);
@@ -365,11 +365,12 @@ export class LandingPhase implements Phase {
           { label: 'Luz de contacto', value: this.touched ? 'Encendida' : 'Apagada' },
           { label: 'Zona de alunizaje', value: fmtLatLon(site.lat, site.lon), size: 'md' },
         ],
+        note: nearReliefNote(site),
       },
     };
   }
 
-  private crashHud(lat: number, lon: number): PhaseHud {
+  private crashHud(site: Parameters<typeof nearReliefNote>[0]): PhaseHud {
     const exploded = this.impactAt >= 0;
     return {
       figure: exploded
@@ -385,8 +386,9 @@ export class LandingPhase implements Phase {
           { label: 'Motor principal', value: 'Falla' },
           { label: 'Combustible', value: fmtPercent(this.fuel) },
           { label: 'Luz de contacto', value: exploded ? 'Impacto' : 'Apagada' },
-          { label: 'Zona de alunizaje', value: fmtLatLon(lat, lon), size: 'md' },
+          { label: 'Zona de alunizaje', value: fmtLatLon(site.lat, site.lon), size: 'md' },
         ],
+        note: nearReliefNote(site),
       },
     };
   }

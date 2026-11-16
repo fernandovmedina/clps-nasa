@@ -4,11 +4,11 @@ import FollowMissionDialog from './FollowMissionDialog';
 
 afterEach(cleanup);
 
-function mount(onJoin: (code: string) => boolean = () => true) {
+function mount(onJoin: (code: string) => boolean = () => true, onExplore?: () => void) {
   const join = vi.fn(onJoin);
   const onClose = vi.fn();
-  render(<FollowMissionDialog code="ABCD" onJoin={join} onClose={onClose} />);
-  const field = screen.getByLabelText('Código de la misión') as HTMLInputElement;
+  render(<FollowMissionDialog code="ABCD" onJoin={join} onClose={onClose} onExplore={onExplore} />);
+  const field = screen.getByLabelText('Código de seguimiento') as HTMLInputElement;
   return { join, onClose, field };
 }
 
@@ -18,8 +18,10 @@ describe('FollowMissionDialog', () => {
     const dialog = screen.getByRole('dialog');
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     expect(dialog.getAttribute('aria-labelledby')).toBe(screen.getByRole('heading', { level: 2, name: 'Seguir una misión' }).id);
-    expect(screen.getByText('Mission Control', { selector: 'p' })).toBeTruthy();
-    expect(screen.getByText('Escribe el código que te dio quien va a despegar. Verás su misión en vivo: el despegue, la órbita, el alunizaje y la transmisión.')).toBeTruthy();
+    expect(screen.queryByText('Mission Control')).toBeNull();
+    expect(screen.getByText('Seguimiento', { selector: 'p' })).toBeTruthy();
+    expect(screen.getByText('Escribe el código de seguimiento de quien va a despegar. Verás su misión en vivo: el despegue, la órbita, el alunizaje y la transmisión.')).toBeTruthy();
+    expect(screen.getByText('Lo muestra la pantalla de quien despega, en el panel de su misión, como «Código de seguimiento».')).toBeTruthy();
     expect(document.activeElement).toBe(field);
     expect(field.getAttribute('autocomplete')).toBe('off');
     expect(field.maxLength).toBe(64);
@@ -78,5 +80,32 @@ describe('FollowMissionDialog', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(2);
     expect(join).not.toHaveBeenCalled();
+  });
+
+  it('offers «¿No tienes código? Explora la misión tú mismo» and goes back to the main route without joining', () => {
+    const onExplore = vi.fn();
+    const { join, onClose } = mount(undefined, onExplore);
+    expect(screen.getByText('¿No tienes código?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Explora la misión tú mismo' }));
+    expect(onExplore).toHaveBeenCalledTimes(1);
+    expect(join).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('does not offer the explore route when nobody can take it', () => {
+    mount();
+    expect(screen.queryByRole('button', { name: 'Explora la misión tú mismo' })).toBeNull();
+  });
+
+  it('keeps Tab inside the dialog with the explore button as the last stop', () => {
+    mount(undefined, vi.fn());
+    const card = screen.getByRole('dialog');
+    const last = screen.getByRole('button', { name: 'Explora la misión tú mismo' });
+    const first = screen.getByLabelText('Código de seguimiento');
+    last.focus();
+    fireEvent.keyDown(card, { key: 'Tab' });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(card, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
   });
 });

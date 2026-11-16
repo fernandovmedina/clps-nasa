@@ -149,9 +149,10 @@ describe('LaunchPlanner', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
     mount();
-    expect(screen.getByText('Código para Mission Control')).toBeTruthy();
+    expect(screen.getByText('Código de seguimiento')).toBeTruthy();
     expect(screen.getByTestId('planner-code').textContent).toBe('ABCD');
-    expect(screen.getByText(/Compártelo ahora: quien lo use en «/)).toBeTruthy();
+    expect(screen.getByText('Compártelo ahora: quien lo escriba en «Seguir la misión» verá tu misión en vivo.')).toBeTruthy();
+    expect(screen.queryByText(/Mission Control/)).toBeNull();
 
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Copiar código' })); });
     expect(writeText).toHaveBeenCalledTimes(1);

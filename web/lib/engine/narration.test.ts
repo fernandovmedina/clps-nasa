@@ -131,7 +131,7 @@ describe('Narrator.sayAndWait', () => {
     pause() { this.paused = true; }
   }
 
-  const WELCOME_CLIP = { welcome: { file: 'welcome.wav', text: 'Bienvenido a touchdown. Soy el burrito espacial, tu guía. ¿Vas en VR, o sigues la misión en Mission Control?', durationMs: 6758 } };
+  const WELCOME_CLIP = { welcome: { file: 'welcome.wav', text: 'Bienvenido a TOUCHDOWN. Soy el burrito espacial, tu guía. Vamos a elegir dónde y cuándo alunizar en el polo sur de la Luna.', durationMs: 6758 } };
 
   function stubManifest(clips: Record<string, { file: string; text: string; durationMs: number }> = WELCOME_CLIP) {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ voiceId: 'carlos', modelId: 'm', clips }) })));
@@ -239,7 +239,7 @@ describe('Narrator.sayAndWait', () => {
       const narrator = await readyNarrator();
       const onStart = vi.fn();
       await expect(narrator.sayAndWait('welcome', onStart)).resolves.toBe('ended');
-      expect(spoken.join(' ')).toContain('Bienvenido a touchdown.');
+      expect(spoken.join(' ')).toContain('Bienvenido a TOUCHDOWN.');
       expect(onStart).toHaveBeenCalledTimes(1);
       narrator.dispose();
     });

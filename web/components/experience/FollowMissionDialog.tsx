@@ -9,12 +9,14 @@ interface Props {
   code: string;
   onJoin: (code: string) => boolean;
   onClose: () => void;
+  /** Back to the main route for someone with no code: explore the mission alone. Hidden when absent. */
+  onExplore?: () => void;
 }
 
 const FOCUSABLE = 'input:not(:disabled), button:not(:disabled)';
 
-/** "Seguir una misión": the code the crew shares turns this client into its monitor. */
-export default function FollowMissionDialog({ code, onJoin, onClose }: Props) {
+/** "Seguir una misión": the tracking code the crew shares turns this client into its follower. */
+export default function FollowMissionDialog({ code, onJoin, onClose, onExplore }: Props) {
   const titleId = useId();
   const errorId = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -70,13 +72,14 @@ export default function FollowMissionDialog({ code, onJoin, onClose }: Props) {
       >
         <form className={dialog.form} noValidate onSubmit={submit}>
           <div className={dialog.head}>
-            <p className={dialog.eyebrow}>Mission Control</p>
+            <p className={dialog.eyebrow}>Seguimiento</p>
             <h2 id={titleId} className={dialog.title}>Seguir una misión</h2>
-            <p className={dialog.lede}>Escribe el código que te dio quien va a despegar. Verás su misión en vivo: el despegue, la órbita, el alunizaje y la transmisión.</p>
+            <p className={dialog.lede}>Escribe el código de seguimiento de quien va a despegar. Verás su misión en vivo: el despegue, la órbita, el alunizaje y la transmisión.</p>
+            <p className={dialog.lede}>Lo muestra la pantalla de quien despega, en el panel de su misión, como «Código de seguimiento».</p>
           </div>
 
           <label className={dialog.field}>
-            <span>Código de la misión</span>
+            <span>Código de seguimiento</span>
             <input
               ref={field}
               className={dialog.input}
@@ -97,6 +100,12 @@ export default function FollowMissionDialog({ code, onJoin, onClose }: Props) {
             <button type="button" className={layer.btn} onClick={onClose}>Cancelar</button>
             <button type="submit" className={layer.btn} data-variant="cta">Conectar</button>
           </div>
+          {onExplore && (
+            <p className={dialog.lede}>
+              ¿No tienes código?{' '}
+              <button type="button" className={layer.linkBtn} onClick={onExplore}>Explora la misión tú mismo</button>
+            </p>
+          )}
         </form>
       </div>
     </>

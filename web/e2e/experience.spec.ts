@@ -32,9 +32,10 @@ async function confirmPlan(page: Page) {
 /**
  * The Burrito espacial's welcome gate, shown on every full load of `/` unless `?phase=` skips it. It greets by voice
  * first (or waits for a tap when the browser blocks audio); Saltar, there until the question is up, goes straight to it.
+ * The headless browser has no immersive-vr, so the main action is «Explorar la misión», the desktop route.
  */
 async function chooseRole(page: Page, role: 'vr' | 'monitor' = 'vr') {
-  const target = page.getByRole('button', { name: role === 'vr' ? 'Voy en VR' : 'Sigo la misión (Monitor)' })
+  const target = page.getByRole('button', { name: role === 'vr' ? 'Explorar la misión' : 'Seguir la misión de alguien (con código)' })
   const skip = page.getByRole('button', { name: 'Saltar' })
   await expect(skip.or(target).first()).toBeVisible({ timeout: 30_000 })
   await skip.click({ timeout: 2000 }).catch(() => {})
@@ -56,7 +57,7 @@ async function reachOrbit(page: Page) {
   await expect(page.getByRole('button', { name: 'Preconfirmar punto' })).toBeEnabled({ timeout: 120_000 })
 }
 
-test('the team experience mounts its canvas at / without console errors and offers the site analysis and Mission Control', async ({ page }) => {
+test('the team experience mounts its canvas at / without console errors and offers the site analysis and following a mission', async ({ page }) => {
   const errors: string[] = []
   const failed: string[] = []
   page.on('console', (m) => {
@@ -80,8 +81,8 @@ test('the team experience mounts its canvas at / without console errors and offe
     await expect(page.locator('canvas')).toHaveCount(1)
     await expect(page.getByRole('list', { name: 'Fases de la misión' })).toBeVisible()
     await expect(currentStep(page)).toContainText('Despegue')
-    await expect(page.getByRole('button', { name: 'Mission Control' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Mission Control' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Seguir la misión', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Seguir la misión', exact: true })).toHaveCount(0)
     await expect(page.getByRole('heading', { level: 1, name: 'TOUCHDOWN' })).toHaveCount(1)
     await expect(page.getByText('La misión, paso a paso')).toHaveCount(0)
     await page.waitForTimeout(1500)
@@ -99,6 +100,45 @@ test('the team experience mounts its canvas at / without console errors and offe
   await page.goto('/mission-control/')
   await expect(page).toHaveURL(/\/mission-control\/(\?.*)?$/)
   await expect(page.locator('main')).toHaveAttribute('aria-busy', 'false')
+})
+
+test('a judge alone on desktop, without XR, reaches the orbit with one obvious click and no code', async ({ page }) => {
+  test.setTimeout(300_000)
+  await page.addInitScript(() => { Object.defineProperty(navigator, 'xr', { configurable: true, value: undefined }) })
+  await page.goto('/?speed=20')
+  test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+
+  const explore = page.getByRole('button', { name: 'Explorar la misión', exact: true })
+  const skip = page.getByRole('button', { name: 'Saltar' })
+  await expect(skip.or(explore).first()).toBeVisible({ timeout: 30_000 })
+  await skip.click({ timeout: 2000 }).catch(() => {})
+  const welcome = page.getByRole('dialog', { name: 'Bienvenido a TOUCHDOWN' })
+  await expect(explore).toBeVisible({ timeout: 30_000 })
+  await expect(welcome.getByText('Compara sitios y fechas de alunizaje en el polo sur con datos reales de NASA')).toBeVisible()
+  await expect(welcome.getByText('Para VR, ábrelo en el navegador del Meta Quest')).toBeVisible()
+  await expect(welcome.getByRole('button', { name: 'Entrar en VR' })).toHaveCount(0)
+  await expect(welcome.getByRole('link', { name: 'Análisis de sitios y fechas' })).toHaveAttribute('href', '/mission-control/')
+  await expect(welcome.getByRole('textbox')).toHaveCount(0)
+  await explore.click()
+
+  await confirmPlan(page)
+  await expect(start(page)).toBeEnabled({ timeout: 30_000 })
+  await reachOrbit(page)
+  await expect(followDialog(page)).toHaveCount(0)
+  await expect(page.getByRole('textbox')).toHaveCount(0)
+})
+
+test('the follow dialog opened from the welcome sends someone without a code to the planner with «Explora la misión tú mismo»', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.goto('/')
+  test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+  await chooseRole(page, 'monitor')
+  const dialog = followDialog(page)
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('Lo muestra la pantalla de quien despega, en el panel de su misión, como «Código de seguimiento».')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Explora la misión tú mismo' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(planner(page)).toBeVisible()
 })
 
 test('?vr=preview shows the VR interface without the DOM control layer and without console errors', async ({ page }) => {
@@ -315,7 +355,7 @@ test.describe('narrow screens', () => {
 
 const roomCode = (page: Page) => page.getByTestId('room-code')
 const roomInUrl = (page: Page) => new URL(page.url()).searchParams.get('room')
-const followPill = (page: Page) => page.getByText(/Mission Control · siguiendo la misión/)
+const followPill = (page: Page) => page.getByText(/Seguimiento · siguiendo la misión/)
 
 async function openRoom(page: Page, query = '', role: 'vr' | 'monitor' = 'vr') {
   await page.setViewportSize({ width: 640, height: 480 })
@@ -327,7 +367,8 @@ async function openRoom(page: Page, query = '', role: 'vr' | 'monitor' = 'vr') {
 
 async function expectRole(page: Page, role: 'host' | 'monitor') {
   await expect(followPill(page)).toHaveCount(role === 'monitor' ? 1 : 0)
-  await expect(page.getByText('Código Mission Control', { exact: true })).toHaveCount(role === 'host' ? 1 : 0)
+  // The planner (open at first) has its own «Código de seguimiento» heading: the mission block's label is the one that tells the role.
+  await expect(page.getByRole('region', { name: 'Misión' }).getByText('Código de seguimiento', { exact: true })).toHaveCount(role === 'host' ? 1 : 0)
   await expect(page.getByRole('region', { name: role === 'host' ? 'Misión' : 'Misión que sigues' })).toBeVisible()
 }
 
@@ -343,10 +384,10 @@ async function goThroughMissionControl(page: Page, role: 'vr' | 'monitor' = 'vr'
 }
 
 async function followFromDialog(page: Page, code: string) {
-  await page.getByRole('button', { name: 'Mission Control' }).click()
+  await page.getByRole('button', { name: 'Seguir la misión', exact: true }).click()
   const dialog = followDialog(page)
   await expect(dialog).toBeVisible()
-  await dialog.getByLabel('Código de la misión').fill(code)
+  await dialog.getByLabel('Código de seguimiento').fill(code)
   await dialog.getByRole('button', { name: 'Conectar' }).click()
   return dialog
 }
@@ -407,9 +448,9 @@ test('as host, following an invalid code or the own room shows an error and chan
   test.setTimeout(360_000)
   await openRoom(page)
   const code = (await roomCode(page).textContent()) ?? ''
-  await page.getByRole('button', { name: 'Mission Control' }).click()
+  await page.getByRole('button', { name: 'Seguir la misión', exact: true }).click()
   const dialog = followDialog(page)
-  const field = dialog.getByLabel('Código de la misión')
+  const field = dialog.getByLabel('Código de seguimiento')
   const alert = dialog.getByRole('alert')
 
   for (const [typed, message] of [['AB CD', 'Código no válido'], ['AB.CD', 'Código no válido'], [code, 'Ya estás en esa sala']]) {
@@ -493,7 +534,7 @@ test('the planner opens first: pick a date, see the plan change, confirm and beg
   await expect(block.getByText('Despegue 20 ene 2027 · 12:00 UTC')).toBeVisible()
   await expect(block.getByText('Llegada 25 ene 2027 · 00:00 UTC')).toBeVisible()
   await expect(figure(page)).toHaveText('Listo')
-  await expect(page.getByText(/Mission Control puede conectarse con el código/)).toBeVisible()
+  await expect(page.getByText(/Quien te siga puede conectarse con el código/)).toBeVisible()
   await expect(block.getByRole('link', { name: 'Análisis de sitios y fechas' })).toHaveCount(0)
 
   await block.getByRole('button', { name: 'Cambiar lanzamiento' }).click()
@@ -509,18 +550,18 @@ test('the planner opens first: pick a date, see the plan change, confirm and beg
   await expect(block.getByRole('link', { name: 'Análisis de sitios y fechas' })).toBeVisible()
 })
 
-test('the Mission Control dialog exists, validates the code and cancels with Escape', async ({ page }) => {
+test('the follow dialog exists, validates the code and cancels with Escape', async ({ page }) => {
   test.setTimeout(120_000)
   await page.goto('/')
   test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
   await chooseRole(page, 'vr')
   await expect(planner(page)).toBeVisible()
 
-  await page.getByRole('button', { name: 'Mission Control' }).click()
+  await page.getByRole('button', { name: 'Seguir la misión', exact: true }).click()
   const dialog = followDialog(page)
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('heading', { name: 'Seguir una misión' })).toBeVisible()
-  const field = dialog.getByLabel('Código de la misión')
+  const field = dialog.getByLabel('Código de seguimiento')
   await expect(field).toBeFocused()
   await expect(field).toHaveAttribute('autocomplete', 'off')
 

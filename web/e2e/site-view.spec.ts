@@ -37,7 +37,7 @@ test('standing on Nobile Rim 2 the real terrain reads: the lower half of the vie
   test.skip(!(await page.evaluate(() => Boolean(document.createElement('canvas').getContext('webgl2')))), 'WebGL unavailable in this browser')
 
   const skip = page.getByRole('button', { name: 'Saltar' })
-  const vr = page.getByRole('button', { name: 'Voy en VR' })
+  const vr = page.getByRole('button', { name: 'Explorar la misión' })
   await expect(skip.or(vr).first()).toBeVisible({ timeout: 30_000 })
   await skip.click({ timeout: 2000 }).catch(() => {})
   await vr.click()
@@ -58,6 +58,8 @@ test('standing on Nobile Rim 2 the real terrain reads: the lower half of the vie
   await expect(page.getByText(/oculta desde la superficie · requiere relevo/)).toBeVisible()
   await expect(page.getByText('Temperatura aprox.')).toBeVisible()
   await expect(page.getByText('58/100 · Marginal')).toBeVisible()
+  // El DEM es dato real; los cráteres menores y la textura del suelo no, y la pantalla lo dice.
+  await expect(page.getByText(/Relieve: LOLA 80 m\/px · cráteres menores y textura del suelo ilustrativos/)).toBeVisible()
   await expect(page.getByRole('button', { name: 'Mirar al Sol' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Mirar a la Tierra' })).toBeEnabled()
 
