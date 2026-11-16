@@ -413,7 +413,7 @@ JSON messages with a `type` field:
 - [x] Infra: front-end hosting → static Next.js on S3 + CloudFront; `/api/*` on a Lambda behind the same CloudFront (Nov 4, **obsolete, see below**)
 - [x] Infra: final decision → **Cloudflare Workers + Durable Objects** instead of AWS (Nov 14); no AWS resources were ever created, nothing to tear down
 - [x] Infra/Data: real pipeline (`pipeline/`), `core/` (`@touchdown/core`) and `worker/` (REST API + `RoomHub` Durable Object) integrated into the repo, with tests passing (Nov 14)
-- [x] Infra: GitHub Actions (CI on PRs + Cloudflare deploy on `main`) configured and verified (Nov 14)
+- [x] Infra: GitHub Actions (CI on PRs + Cloudflare deploy on `main`) configured and verified (Nov 14). **Nov 16:** `deploy.yml` removed — CI on PRs only (pipeline pytest, core/worker/web tests, typecheck, lint, build, Wrangler dry run, e2e in 6 shards); deployment is manual
 - [x] Infra: deployed to Cloudflare — `https://touchdown.villabruno2.workers.dev` (Nov 14). Tokens still live in the personal account of whoever built `worker/`; they should be moved to a team account if the project continues after the hackathon.
 - [ ] Web: wireframes for comparator, timeline, countdowns and report
 - [ ] Pitch: final name, logo, palette, demo script, review past winners
@@ -430,7 +430,14 @@ JSON messages with a `type` field:
 
 ### Scope
 - **Minimum to present:** 3 sites with real terrain, ephemerides, polar diagram, timeline, countdowns, comparison of 2 scenarios, VR with terrain and Sun/Earth, site and time synchronization.
-- **If time allows:** full catalog with custom coordinates, synchronized markers, exportable report, educational mode, voice assistant in VR, Sun and Earth as disks.
+- **If time allows:** full catalog with custom coordinates, synchronized markers, exportable report, educational mode, ~~voice assistant in VR~~ (built as CAPCOM on Nov 15, removed Nov 16), Sun and Earth as disks.
+
+### What was built (Nov 14–16) and branch history
+All work lands on `main` through pull requests from short-lived branches. A snapshot of every remote branch lives in `docs/images/git-tree.png` (shown in the README; regenerate with `git fetch --all --prune` and `git log --graph --remotes --simplify-by-decoration`).
+- **`feat/*`, `fix/*`, `ci/*` (Nov 14–15, hackathon):** Mission Control at `/mission-control` (`web/app/(control)/`) and the experience at `/` (`web/app/(experience)/`); real Moon Trek textures, rocket, launch tower, lander and astronaut models; VR suit arms with IK and cabin console; procedural audio and recorded launch narration; launch planner with a room-wide countdown; Mission Control control room with the inspector view and phase-follow mode; ranking by energy/comms/overlap/night (`feat/ranking-score`); the `NO CAER` demo site (hard-coded, labeled as demo, descent ends in a crash); Burro Pardo welcome guide that asks "VR or Monitor"; CI with e2e in 6 shards.
+- **`refino/*` (Nov 16, polish), merged via `refino/integracion` (PR #38) and `refino/integracion-3` (PR #39):** single paper theme with shared tokens and AA contrast tests (`tema-papel`, `experiencia-papel`, `paneles-vr-papel`); site view opening on the Sun–Earth sky with Lommel-Seeliger terrain lighting and the far mesh matched to the LOLA horizon (`vista-del-sitio`, `pulido-3d`); honest orbit ranking — scores out of 100, `NO CAER` shown as DEMO, contrast sites flagged (`honestidad-orbita`); narration limited to the criteria the score really uses (`narracion`); Mission Control fixes and links to the user's mission (`mission-control-correcciones`, `enlaces-mision`); scenario card led by status and score with a UTC landing reading and "at landing" wording (`tarjeta-mc`); a clear way in for a lone judge and the «Seguimiento» tracking code (`entrada-juez`); illustrative near relief labeled as such for LOLA sites (`alunizaje-lola`).
+- **Nov 16 (`main`):** CAPCOM voice assistant and all AWS settings removed; auto-deploy workflow removed.
+- **`lunar-vr`:** original standalone WebXR prototype, never merged; kept for reference only.
 
 ---
 
@@ -458,8 +465,6 @@ JSON messages with a `type` field:
 - PDS Geosciences – LOLA: https://pds-geosciences.wustl.edu/missions/lro/lola.htm
 - Moon Trek: https://trek.nasa.gov/moon/
 - Quickmap: https://quickmap.lroc.asu.edu/
-- Unity MCP (official): https://docs.unity3d.com/Packages/com.unity.ai.assistant@2.17/manual/integration/unity-mcp-get-started.html
-- Unity-MCP (IvanMurzak): https://github.com/IvanMurzak/Unity-MCP
 - Repositories from other teams working on this challenge (competition):
   - https://github.com/shrestha-droid/clps-lunar-mission-browser
   - https://github.com/0Aaheed0/SeleneSight
