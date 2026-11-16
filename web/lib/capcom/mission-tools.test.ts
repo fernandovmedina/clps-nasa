@@ -191,6 +191,20 @@ describe('mission tools', () => {
     });
   });
 
+  it('estado_del_viaje marks the borrowed readings as a demo case when NO CAER is the chosen site', async () => {
+    const hud: PhaseHud = {
+      figure: { value: '2.1°', caption: 'Tierra sobre el horizonte' },
+      side: { kind: 'sky', blocks: [{ kind: 'earth', label: 'Tierra', value: '2.1°', detail: 'x', shareLabel: '40 %' } as never] },
+    };
+    const demo = await call(source({ phase: 'pov', hud, ranking: WITH_DEMO, selected: NO_CAER }), 'estado_del_viaje');
+    expect(demo.es_caso_de_demostracion).toBe(true);
+    expect(demo.nota_sitio).toMatch(/demostración/);
+    expect(demo.nota_sitio).toMatch(/Malapert Massif/);
+    const real = await call(source({ phase: 'pov', hud }), 'estado_del_viaje');
+    expect(real).not.toHaveProperty('es_caso_de_demostracion');
+    expect(real).not.toHaveProperty('nota_sitio');
+  });
+
   it('never writes to the app', async () => {
     const src = source({ phase: 'launch', hud: launchHud });
     const frozen = Object.freeze({ ...src, ranking: Object.freeze([...src.ranking]) as SiteMetrics[] });

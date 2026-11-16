@@ -66,6 +66,12 @@ function estadoDelViaje(app: MissionSource) {
   if (!hud) return { ...base, nota: 'Esta fase no muestra lecturas en pantalla.' };
   return {
     ...base,
+    ...(app.selected?.site.crash
+      ? {
+          es_caso_de_demostracion: true,
+          nota_sitio: `${DEMO_CRASH_NOTE}. Las lecturas en pantalla (cifras, Sol, Tierra, iluminación) están prestadas de Malapert Massif y no son del sitio.`,
+        }
+      : {}),
     ...(state === 'esperando_despegue' ? { nota: 'El despegue no ha comenzado: la persona aún no pulsa «Comenzar despegue», no hay cuenta regresiva.' } : {}),
     cifra_principal: {
       valor: tidy(hud.figure.value),
