@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setLang } from '@/lib/i18n';
 import { CapcomController, type CapcomHost, type CapcomSnapshot, type SessionLike } from './controller';
 import type { CapcomEvent } from './types';
-import { CAPCOM_ACCESS_EXPIRES_AT } from './config';
+import { CAPCOM_ACCESS_EXPIRES_AT, CAPCOM_IDLE_CLOSE_MS } from './config';
 
 const AFTER_EXPIRY = new Date(Date.parse(CAPCOM_ACCESS_EXPIRES_AT) + 1000);
 
@@ -414,5 +415,68 @@ describe('CapcomController', () => {
     expect(t.sessions[0]!.closed).toBe(1);
     expect(t.capture.stop).toHaveBeenCalled();
     expect(t.playerSpies.close).toHaveBeenCalled();
+  });
+});
+
+describe('CapcomController language', () => {
+  it('shows its messages in English and follows a later language change', async () => {
+    setLang('en', { persist: false });
+    const t = setup({ startError: new Error('Failed to fetch') });
+    t.controller.press();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.snap()).toMatchObject({ state: 'error', message: 'Could not reach CAPCOM · press to retry.' });
+    setLang('es', { persist: false });
+    expect(t.snap().message).toBe('No se pudo conectar con CAPCOM · pulsa para reintentar.');
+  });
+
+  it('says it is unavailable in English', () => {
+    setLang('en', { persist: false });
+    vi.setSystemTime(AFTER_EXPIRY);
+    const t = setup();
+    expect(t.snap()).toMatchObject({ state: 'unavailable', message: 'CAPCOM unavailable' });
+  });
+
+  it('English microphone message when the permission is denied', async () => {
+    setLang('en', { persist: false });
+    const t = setup({ captureError: new Error('NotAllowedError') });
+    t.controller.press();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.snap().message).toBe('Allow the microphone to talk to CAPCOM.');
+  });
+
+  it('opens each session in the language of that moment and never cuts an open one when the language changes', async () => {
+    setLang('es', { persist: false });
+    const t = setup();
+    t.controller.press();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.loadSession).toHaveBeenLastCalledWith(expect.any(Array), 'es');
+
+    setLang('en', { persist: false });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.sessions[0]!.closed).toBe(0);
+    expect(t.snap().state).toBe('listening');
+
+    // The open session's tools keep speaking Spanish.
+    const spanishTools = (t.loadSession.mock.calls as unknown[][])[0]![0] as Array<{ name: string; run: (i: unknown) => unknown }>;
+    expect(spanishTools.find((x) => x.name === 'datos_de_mision')!.run({})).toMatchObject({ disponible: false, motivo: 'Los datos de la misión todavía se están cargando.' });
+
+    t.controller.release();
+    await vi.advanceTimersByTimeAsync(CAPCOM_IDLE_CLOSE_MS + 2000);
+    expect(t.sessions[0]!.closed).toBe(1);
+    t.controller.press();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.loadSession).toHaveBeenLastCalledWith(expect.any(Array), 'en');
+    const englishTools = (t.loadSession.mock.calls as unknown[][])[1]![0] as Array<{ name: string; run: (i: unknown) => unknown }>;
+    expect(englishTools.find((x) => x.name === 'datos_de_mision')!.run({})).toMatchObject({ disponible: false, motivo: 'The mission data is still loading.' });
+  });
+
+  it('stops listening to the language after dispose', () => {
+    const t = setup();
+    const publish = vi.spyOn(t.controller as unknown as { publish: () => void }, 'publish');
+    setLang('en', { persist: false });
+    expect(publish).toHaveBeenCalledTimes(1);
+    t.controller.dispose();
+    setLang('es', { persist: false });
+    expect(publish).toHaveBeenCalledTimes(1);
   });
 });

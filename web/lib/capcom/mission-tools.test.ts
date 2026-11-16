@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { PhaseHud, RunMode } from '../engine/hud';
 import type { PhaseName } from '../engine/app';
 import type { SiteMetrics } from '../mission/scoring';
+import { setLang } from '@/lib/i18n';
 import { createMissionTools, type MissionSource } from './mission-tools';
 
 const NBSP = String.fromCharCode(160);
@@ -209,5 +210,61 @@ describe('mission tools', () => {
     const src = source({ phase: 'launch', hud: launchHud });
     const frozen = Object.freeze({ ...src, ranking: Object.freeze([...src.ranking]) as SiteMetrics[] });
     for (const t of createMissionTools(frozen as MissionSource)) await expect(Promise.resolve(t.run({}))).resolves.toBeDefined();
+  });
+});
+
+describe('mission tools in English', () => {
+  beforeEach(() => setLang('en', { persist: false }));
+
+  it('keeps the Spanish tool and field names but hands CAPCOM English text', async () => {
+    const out = await call(source(), 'analisis_del_sitio');
+    expect(out).toMatchObject({ sitio: 'Malapert A (IM-1 Odysseus)', puntaje_de_100: 61, estado: 'Marginal', es_el_sitio_elegido: true });
+    expect(out.resumen).toBe('Malapert A (IM-1 Odysseus): score 61/100, Marginal. Sunlit 62% of the mission and Earth visible 40% of the time.');
+    expect(out.sol.proximo_atardecer).toBe('120.4 h after landing');
+    expect(out.tierra.proxima_puesta_de_la_tierra).toBe('does not set during the 14 days evaluated');
+    expect(out.horizonte).toBe('real, computed from the LOLA terrain');
+  });
+
+  it('translates status and the below-the-horizon phrases', async () => {
+    const out = await call(source(), 'analisis_del_sitio', { sitio: 'Nobile Rim 1' });
+    expect(out.estado).toBe('Not viable');
+    expect(out.sol.proximo_atardecer).toBe('The Sun was already below the horizon at landing');
+  });
+
+  it('explains the ranking in English', async () => {
+    const out = await call(source(), 'comparar_sitios');
+    expect(out.mejores_sitios[0]).toMatchObject({ puesto: 1, puntaje_de_100: 82, estado: 'Viable' });
+    expect(out.mejores_sitios[0].por_que).toBe('Sunlit 62% and Earth visible 40% of the 14 days; its main limit is the direct-to-Earth (DTE) link. Longest night: 48.2 h.');
+  });
+
+  it('gives the phase and its notes in English', async () => {
+    const out = await call(source({ phase: 'launch', mode: 'stopped' }), 'estado_del_viaje');
+    expect(out).toMatchObject({ fase: 'Liftoff', estado_de_la_mision: 'detenida' });
+    expect(out.nota).toMatch(/^The mission is stopped/);
+    expect((await call(source({ phase: 'pov' }), 'estado_del_viaje')).fase).toBe('Site view');
+  });
+
+  it('answers the missing-data cases in English', async () => {
+    expect((await call(source({ ranking: [] }), 'comparar_sitios')).motivo).toBe('The sites have not been evaluated yet: the ranking appears in the orbit phase.');
+    expect((await call(source(), 'analisis_del_sitio', { sitio: 'Atlantis' })).motivo).toBe('There is no site named "Atlantis" in the catalog.');
+    expect((await call(source({ selected: null }), 'analisis_del_sitio')).motivo).toBe('No site has been chosen yet; name one.');
+  });
+
+  it('calls the demo case what it is in English', async () => {
+    const out = await call(source({ ranking: WITH_DEMO, selected: NO_CAER }), 'analisis_del_sitio');
+    expect(out).toMatchObject({ es_caso_de_demostracion: true, nota: 'Demo case · simulated engine failure' });
+    expect(out.resumen).toMatch(/^NO CAER is not a real site/);
+  });
+
+  it('datos_de_mision notes the unknown delay in English', async () => {
+    const out = await call(source({ phase: 'pov' }), 'datos_de_mision');
+    expect(out.nota_retraso).toMatch(/^The applied delay is only known in the orbit phase/);
+  });
+
+  it('uses the language it was created in, not the one current when it runs', async () => {
+    const tools = createMissionTools(source(), 'es');
+    setLang('en', { persist: false });
+    const out = (await tools.find((x) => x.name === 'analisis_del_sitio')!.run({})) as { resumen: string };
+    expect(out.resumen).toMatch(/puntaje 61 de 100/);
   });
 });

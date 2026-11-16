@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LunarApp } from '../engine/app';
+import { setLang } from '@/lib/i18n';
 import type { CapcomController, CapcomSnapshot } from './controller';
 
-const made: Array<{ invalidate: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; mesh: { onBeforeRender?: () => void; add: ReturnType<typeof vi.fn> } }> = [];
+const made: Array<{ draw: (p: unknown, g: unknown) => void; invalidate: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; mesh: { onBeforeRender?: () => void; add: ReturnType<typeof vi.fn> } }> = [];
 const donkeys: Array<{ group: object; setMood: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }> = [];
 
 vi.mock('./donkey', () => ({
@@ -21,11 +22,12 @@ vi.mock('../engine/panel', () => ({
   UI: { font: 'x', text: '#fff', dim: '#aaa', ok: '#0f0', warn: '#ff0', bad: '#f00' },
   Panel: class {
     mesh: { onBeforeRender?: () => void; add: ReturnType<typeof vi.fn> } = { add: vi.fn() };
+    draw: (p: unknown, g: unknown) => void;
     invalidate = vi.fn();
     update = vi.fn();
     dispose = vi.fn();
     place = vi.fn(() => this);
-    constructor() { made.push(this); }
+    constructor(_w: number, _h: number, _m: number, draw: (p: unknown, g: unknown) => void) { this.draw = draw; made.push(this); }
   },
 }));
 
@@ -118,5 +120,51 @@ describe('mountCapcomVrPanel', () => {
     expect(offState).toHaveBeenCalled();
     expect(made[0]!.dispose).toHaveBeenCalled();
     expect(donkeys[0]!.dispose).toHaveBeenCalled();
+  });
+});
+
+describe('CAPCOM VR panel in English', () => {
+  beforeEach(() => { setLang('en', { persist: false }); made.length = 0; donkeys.length = 0; });
+
+  it('describes every state in English', () => {
+    expect(describePanel({ ...BASE, mic: 'unknown' })).toMatchObject({ status: 'No microphone', body: 'Turn on CAPCOM before entering VR', hint: 'Allow the microphone in the page, then re-enter.' });
+    expect(describePanel({ ...BASE, state: 'listening', talking: true })).toMatchObject({ status: 'Listening…', hint: 'Hold A to talk' });
+    expect(describePanel({ ...BASE, state: 'connecting' }).status).toBe('Connecting…');
+    expect(describePanel({ ...BASE, state: 'thinking' }).status).toBe('Thinking…');
+    expect(describePanel({ ...BASE, state: 'speaking' }).status).toBe('Speaking…');
+    expect(describePanel({ ...BASE, state: 'listening' }).status).toBe('Ready');
+    expect(describePanel({ ...BASE, state: 'disconnected' }).status).toBe('Standby');
+    expect(describePanel({ ...BASE, state: 'error', message: 'x' })).toMatchObject({ status: 'No connection', hint: 'Hold A to retry' });
+    expect(describePanel({ ...BASE, state: 'unavailable' })).toMatchObject({ status: 'CAPCOM unavailable', hint: '' });
+  });
+
+  function mount(snapshot: CapcomSnapshot) {
+    let subscribed = 0;
+    const app = { eyeHeight: 1.6, rig: { add: vi.fn() }, globalTargets: [] as unknown[], input: { onAButton: () => () => {} } } as unknown as LunarApp;
+    const controller = { getSnapshot: () => snapshot, subscribe: () => { subscribed++; return () => {}; }, press: vi.fn(), release: vi.fn() } as unknown as CapcomController;
+    return { unmount: mountCapcomVrPanel(app, controller), subscribed: () => subscribed };
+  }
+
+  it('draws the English text and the English talk button', () => {
+    mount({ ...BASE, state: 'listening' });
+    const drawn: string[] = [];
+    const g = new Proxy({ measureText: () => ({ width: 10 }), fillText: (text: string) => { drawn.push(text); } } as Record<string, unknown>, {
+      get: (target, key: string) => (key in target ? target[key] : () => {}),
+      set: () => true,
+    });
+    const button = vi.fn();
+    made[0]!.draw({ frame: vi.fn(), button }, g);
+    expect(drawn).toContain('Ready');
+    expect(drawn.join(' ')).toContain('Hold A to talk');
+    expect(button.mock.calls[0]![6]).toBe('Talk');
+  });
+
+  it('invalidates its panel when the language changes and stops listening on unmount', () => {
+    const { unmount } = mount(BASE);
+    setLang('es', { persist: false });
+    expect(made[0]!.invalidate).toHaveBeenCalledTimes(1);
+    unmount();
+    setLang('en', { persist: false });
+    expect(made[0]!.invalidate).toHaveBeenCalledTimes(1);
   });
 });

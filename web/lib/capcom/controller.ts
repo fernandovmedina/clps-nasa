@@ -1,4 +1,6 @@
 import type { LunarApp } from '../engine/app';
+import { getLang, subscribe as onLangChange, t, type Lang } from '../i18n';
+import { capcomUiDict } from '../i18n/dicts/capcom-ui';
 import { PcmPlayer } from './audio-playback';
 import { startMicrophoneCapture, type MicrophoneCapture } from './audio-capture';
 import {
@@ -48,7 +50,8 @@ export type CaptureLike = Pick<MicrophoneCapture, 'stop'>;
 export type CapcomHost = MissionSource & Pick<LunarApp, 'audio' | 'narrator'>;
 
 export interface CapcomDeps {
-  loadSession: (tools: CapcomTool[]) => Promise<SessionLike>;
+  /** `lang` es el idioma de la sesión: su prompt de sistema y su voz. */
+  loadSession: (tools: CapcomTool[], lang?: Lang) => Promise<SessionLike>;
   createPlayer: () => PlayerLike;
   startCapture: (onFrame: (pcm: Int16Array) => void) => Promise<CaptureLike>;
   now: () => number;
@@ -56,10 +59,7 @@ export interface CapcomDeps {
   debug?: (event: CapcomEvent | { type: 'ui'; snapshot: CapcomSnapshot }) => void;
 }
 
-export const CAPCOM_UNAVAILABLE = 'CAPCOM no disponible';
-const MIC_MESSAGE = 'Permite el micrófono para hablar con CAPCOM.';
-const LOST_MESSAGE = 'CAPCOM perdió la conexión · pulsa para reintentar.';
-const CONNECT_MESSAGE = 'No se pudo conectar con CAPCOM · pulsa para reintentar.';
+type ErrorKey = 'micMessage' | 'lostMessage' | 'connectMessage';
 const ACCESS_LOST = /AccessDenied|NotAuthorized|ExpiredToken|UnrecognizedClient|InvalidIdentityToken/i;
 const MAX_PENDING_FRAMES = 320;
 const MIN_HOLD_MS = 350;
@@ -68,11 +68,11 @@ const DRAIN_GRACE_MS = 1500;
 const SPEAKING_WATCHDOG_MS = 45_000;
 const CHECK_MS = 1000;
 
-async function defaultLoadSession(tools: CapcomTool[], provider: { current: unknown }) {
+async function defaultLoadSession(tools: CapcomTool[], lang: Lang | undefined, provider: { current: unknown }) {
   const [{ CapcomSession }, { createGuestCredentialProvider }] = await Promise.all([import('./session'), import('./credentials')]);
   const credentials = (provider.current ??= createGuestCredentialProvider()) as ReturnType<typeof createGuestCredentialProvider>;
   credentials.invalidate();
-  return new CapcomSession({ credentials, tools, endpointing: CAPCOM_ENDPOINTING });
+  return new CapcomSession({ credentials, tools, lang, endpointing: CAPCOM_ENDPOINTING });
 }
 
 /** The guest access is gone for good (expired, or AWS refuses it); anything else (network, timeout, socket) is worth retrying. */
@@ -125,7 +125,8 @@ export class CapcomController {
   private pressedAt = 0;
   private disposed = false;
   private unavailable = false;
-  private errorMessage: string | null = null;
+  private errorKey: ErrorKey | null = null;
+  private offLang: (() => void) | null = null;
   private sessionOff: (() => void) | null = null;
 
   private awaitingUser = false;
@@ -141,7 +142,7 @@ export class CapcomController {
 
   constructor(private readonly host: CapcomHost, deps: Partial<CapcomDeps> = {}) {
     this.deps = {
-      loadSession: deps.loadSession ?? ((tools) => defaultLoadSession(tools, this.credentialsRef)),
+      loadSession: deps.loadSession ?? ((tools, lang) => defaultLoadSession(tools, lang, this.credentialsRef)),
       createPlayer: deps.createPlayer ?? (() => new PcmPlayer()),
       startCapture: deps.startCapture ?? startMicrophoneCapture,
       now: deps.now ?? Date.now,
@@ -149,8 +150,10 @@ export class CapcomController {
     };
     if (this.deps.now() >= Date.parse(CAPCOM_ACCESS_EXPIRES_AT)) {
       this.unavailable = true;
-      this.snap = { ...this.snap, state: 'unavailable', message: CAPCOM_UNAVAILABLE };
+      this.snap = { ...this.snap, state: 'unavailable', message: this.messageText() };
     }
+    // The language only changes what the messages say; an open session keeps the language it was opened in.
+    this.offLang = onLangChange(() => this.publish());
     void readMicPermission().then((mic) => { if (!this.disposed && this.snap.mic === 'unknown') this.publish({ mic }); });
   }
 
@@ -174,7 +177,7 @@ export class CapcomController {
     this.lastActivity = now;
     if (this.speaking) this.interrupt();
     this.clearThinking();
-    this.errorMessage = null;
+    this.errorKey = null;
     this.awaitingUser = true;
     this.questionParts = [];
     this.speculative = [];
@@ -194,7 +197,7 @@ export class CapcomController {
     this.session?.setMuted(true);
     const held = this.deps.now() - this.pressedAt;
     this.lastActivity = this.deps.now();
-    if (held >= MIN_HOLD_MS && !this.errorMessage) this.startThinking();
+    if (held >= MIN_HOLD_MS && !this.errorKey) this.startThinking();
     this.publish({ talking: false });
   }
 
@@ -210,6 +213,8 @@ export class CapcomController {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.offLang?.();
+    this.offLang = null;
     this.listeners.clear();
     void this.closeSession();
     this.keepCapture = false;
@@ -220,17 +225,22 @@ export class CapcomController {
 
   private uiState(talking: boolean): CapcomUiState {
     if (this.unavailable) return 'unavailable';
-    if (this.errorMessage) return 'error';
+    if (this.errorKey) return 'error';
     if (this.speaking) return 'speaking';
     if (this.connecting) return 'connecting';
     if (this.thinking && !talking) return 'thinking';
     return this.ready ? 'listening' : 'disconnected';
   }
 
+  private messageText(): string | null {
+    if (this.unavailable) return t(capcomUiDict, 'unavailable');
+    return this.errorKey ? t(capcomUiDict, this.errorKey) : null;
+  }
+
   private publish(changes: Partial<Omit<CapcomSnapshot, 'state' | 'message'>> = {}) {
     if (this.disposed) return;
     const next = { ...this.snap, ...changes };
-    this.snap = { ...next, state: this.uiState(next.talking), message: this.unavailable ? CAPCOM_UNAVAILABLE : this.errorMessage };
+    this.snap = { ...next, state: this.uiState(next.talking), message: this.messageText() };
     this.deps.debug?.({ type: 'ui', snapshot: this.snap });
     for (const listener of [...this.listeners]) listener();
   }
@@ -255,7 +265,7 @@ export class CapcomController {
         this.capture = await this.deps.startCapture((frame) => this.onFrame(frame));
         this.publish({ mic: 'granted' });
       } catch {
-        this.errorMessage = MIC_MESSAGE;
+        this.errorKey = 'micMessage';
         this.publish({ mic: 'denied', talking: false });
         this.session?.setMuted(true);
       } finally {
@@ -290,7 +300,9 @@ export class CapcomController {
     this.publish();
     try {
       await this.closing;
-      const session = await this.deps.loadSession(createMissionTools(this.host));
+      // One language per session: the prompt, the voice and what the tools say are all fixed here.
+      const lang = getLang();
+      const session = await this.deps.loadSession(createMissionTools(this.host, lang), lang);
       const off = session.subscribe((event) => this.onEvent(event));
       try {
         await session.start();
@@ -330,7 +342,7 @@ export class CapcomController {
     this.endSpeaking();
     this.clearThinking();
     if (isAccessLost(error, this.deps.now())) this.unavailable = true;
-    else this.errorMessage = CONNECT_MESSAGE;
+    else this.errorKey = 'connectMessage';
     void this.teardown();
     this.publish({ talking: false });
   }
@@ -456,7 +468,7 @@ export class CapcomController {
     this.endSpeaking();
     this.clearThinking();
     void this.teardown().then(() => {
-      this.errorMessage = LOST_MESSAGE;
+      this.errorKey = 'lostMessage';
       this.publish({ talking: false });
     });
   }
