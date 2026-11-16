@@ -8,7 +8,8 @@ import type { LunarApp } from '../engine/app';
 import { evaluateSites, horizonAt, type SiteMetrics } from '../mission/scoring';
 import type { SiteInput } from '../mission/sites';
 import { decodeTerrainPatch, terrainRoughness, type TerrainPatch } from '../mission/terrain';
-import { SurfaceWorld, SUN_CORE_DEG, earthOcclusionLabel, patchGroundLight } from './surface-world';
+import { palette } from '../ui/palette';
+import { SurfaceWorld, SUN_CORE_DEG, earthOcclusionLabel, horizonName, patchGroundLight } from './surface-world';
 
 // El modelo del módulo y el astronauta se descargan por red: aquí no aportan nada a la geometría.
 vi.mock('./lander-model', () => ({ loadLanderModel: async () => null }));
@@ -30,11 +31,34 @@ function fakeCtx(): CanvasRenderingContext2D {
   return fn as CanvasRenderingContext2D;
 }
 
+/** Lo que se pintó en cada lienzo: la prueba lee de ahí los colores de las fichas, sin leer píxeles. */
+interface CanvasLog { fills: string[]; strokes: string[]; texts: { text: string; color: string }[] }
+const canvasLogs = new Map<unknown, CanvasLog & { ctx: CanvasRenderingContext2D }>();
 beforeEach(() => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- getContext tiene sobrecargas que no admiten un solo retorno
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => fakeCtx() as any);
+  canvasLogs.clear();
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+    const known = canvasLogs.get(this);
+    if (known) return known.ctx as never;
+    const base = fakeCtx() as unknown as Record<string | symbol, unknown>;
+    const log = { fills: [] as string[], strokes: [] as string[], texts: [] as { text: string; color: string }[], ctx: null as unknown as CanvasRenderingContext2D };
+    let fill = '';
+    log.ctx = new Proxy(base, {
+      get: (t, key) => (key === 'measureText' ? (s: string) => ({ width: s.length * 14 })
+        : key === 'fillText' ? (text: string) => log.texts.push({ text, color: fill })
+        : key === 'fillStyle' ? fill : t[key]),
+      set: (_t, key, value) => {
+        if (key === 'fillStyle') { if (typeof value === 'string') { fill = value; log.fills.push(fill); } }
+        if (key === 'strokeStyle' && typeof value === 'string') log.strokes.push(value);
+        return true;
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    canvasLogs.set(this, log);
+    return log.ctx as never;
+  });
 });
 afterEach(() => vi.restoreAllMocks());
+const logOf = (sprite: THREE.Sprite) => canvasLogs.get((sprite.material.map as THREE.CanvasTexture).image)!;
+const DARK = /^rgba?\(\s*20\s*,\s*20\s*,\s*19/;
 
 const catalog = json<SitesFile>('data/sites.json');
 const terrains = json<Record<string, TerrainInfo>>('data/terrains.json');
@@ -113,7 +137,12 @@ describe('contorno fantasma de la Tierra', () => {
     expect(earth.aboveHorizon).toBeLessThan(0);
     const ghost = world.earthGhost;
     expect(ghost).not.toBeNull();
+    // el contorno solo aparece en la vista del sitio: nace oculto y pov.ts lo enciende al entrar
+    expect(ghost!.group.visible).toBe(false);
+    world.setSiteViewLabels(true);
     expect(ghost!.group.visible).toBe(true);
+    world.setSiteViewLabels(false);
+    expect(ghost!.group.visible).toBe(false);
     expect(ghost!.label).toBe(`Tierra tapada por el relieve · ${(-earth.aboveHorizon).toFixed(1)}°`);
     expect(ghost!.label).toBe('Tierra tapada por el relieve · 5.7°');
     const lines = ghost!.group.children.filter((o) => (o as THREE.Line).isLine);
@@ -218,8 +247,63 @@ describe('horizonte LOLA', () => {
     const mat = line.material as THREE.LineBasicMaterial;
     expect(mat.transparent).toBe(true);
     expect(mat.opacity).toBeLessThanOrEqual(0.5);
+    // la etiqueta solo se muestra en la vista del sitio: nace oculta y pov.ts la enciende al entrar
+    expect(world.horizonLabel.visible).toBe(false);
+    world.setSiteViewLabels(true);
     expect(world.horizonLabel.visible).toBe(true);
     expect(world.horizonLabelText).toBe('Horizonte LOLA');
+  });
+
+  it('con horizonte esférico (sitio sintético de ?phase=) la etiqueta dice «geométrico», no «LOLA»', () => {
+    const site = { ...loadSite('nobile-rim-2'), horizonSource: 'spherical' as const };
+    const world = new SurfaceWorld(fakeApp, evaluateSites([site], LANDING)[0]!);
+    built.push(world);
+    expect(world.horizonLabelText).toBe('Horizonte geométrico');
+    expect(logOf(world.horizonLabel).texts.map((t) => t.text)).toEqual(['Horizonte geométrico']);
+    expect(horizonName(site)).toBe('geométrico');
+    expect(horizonName(loadSite('nobile-rim-2'))).toBe('LOLA');
+  });
+
+  it('el trazo suelto de la etiqueta: la ficha es opaca y dibuja por encima de la línea, que no la atraviesa', () => {
+    const world = worldFor('nobile-rim-2');
+    const mat = world.horizonLabel.material as THREE.SpriteMaterial;
+    expect(logOf(world.horizonLabel).fills[0]).toBe(palette['bg-surface']);
+    expect(mat.depthTest).toBe(false);
+    expect(world.horizonLabel.renderOrder).toBeGreaterThan(world.horizonLine.renderOrder);
+  });
+});
+
+describe('fichas de papel en el 3D', () => {
+  const named = (world: SurfaceWorld, name: string) => world.scene.getObjectByName(name) as THREE.Sprite;
+
+  it('SOL y TIERRA dibujan sin prueba de profundidad y sobre el relieve, para que la loma no corte la ficha', () => {
+    const world = worldFor('nobile-rim-2');
+    for (const n of ['label:SOL', 'label:TIERRA']) {
+      const s = named(world, n);
+      expect((s.material as THREE.SpriteMaterial).depthTest).toBe(false);
+      expect(s.renderOrder).toBeGreaterThanOrEqual(21);
+    }
+  });
+
+  it('SOL, TIERRA, ZONA DE ALUNIZAJE, el horizonte y el fantasma de la Tierra: papel, tinta y ninguna ficha oscura', () => {
+    const world = worldFor('nobile-rim-2');
+    const sprites = [named(world, 'label:SOL'), named(world, 'label:TIERRA'), named(world, 'label:ZONA'), world.horizonLabel, world.earthGhost!.group.getObjectByName('label:fantasma') as THREE.Sprite];
+    for (const s of sprites) {
+      expect(s, 'ficha presente').toBeTruthy();
+      const log = logOf(s);
+      expect(log.fills[0]).toBe(palette['bg-surface']);
+      expect(log.fills.filter((f) => DARK.test(f))).toEqual([]);
+      for (const t of log.texts) expect([palette.label, palette['label-2']]).toContain(t.color);
+    }
+    // Sol y Tierra solo como detalle (el filete)
+    expect(logOf(sprites[0]!).fills).toContain(palette.sun);
+    expect(logOf(sprites[1]!).fills).toContain(palette.earth);
+  });
+
+  it('el contorno de la Tierra aclara que la cifra es desde la superficie', () => {
+    const world = worldFor('nobile-rim-2');
+    const texts = logOf(world.earthGhost!.group.getObjectByName('label:fantasma') as THREE.Sprite).texts.map((t) => t.text);
+    expect(texts).toEqual(['Tierra tapada por el relieve · 5.7°', 'visto desde la superficie']);
   });
 });
 

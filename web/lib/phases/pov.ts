@@ -7,7 +7,7 @@ import type { RoomEvent } from '../sync/room-client';
 import { MarkerField } from './markers';
 import { defaultMission } from './orbit';
 import { SpyView } from './spy-view';
-import { surfaceFor, type SurfaceWorld } from './surface-world';
+import { horizonName, surfaceFor, type SurfaceWorld } from './surface-world';
 import { STATUS_LABELS, fmtPercent, fmtSigned, type PhaseHud } from '../engine/hud';
 
 const MARKER_KINDS: [MarkerKind, string][] = [
@@ -24,13 +24,22 @@ export function ensureSelection(app: LunarApp): SiteMetrics {
 }
 
 /** Elevación geométrica y posición respecto al horizonte LOLA, con las mismas cifras en el HUD y en el panel 3D. */
-export function skyElevationText(sky: SkyPos) {
+export function skyElevationText(sky: SkyPos, site: { horizonSource: string }) {
   const value = `${fmtSigned(sky.elevation, 2)}°`;
   const horizon = sky.elevation - sky.aboveHorizon;
   const side = sky.aboveHorizon >= 0 ? 'sobre' : 'bajo';
-  const detail = `de elevación · ${fmtSigned(Math.abs(sky.aboveHorizon), 2)}° ${side} el horizonte LOLA (${fmtSigned(horizon, 2)}°)`;
+  const detail = `de elevación · ${fmtSigned(Math.abs(sky.aboveHorizon), 2)}° ${side} el horizonte ${horizonName(site)} (${fmtSigned(horizon, 2)}°)`;
   return { value, detail, full: `${value} ${detail}` };
 }
+
+/** «Tierra sobre el horizonte LOLA», o «geométrico» si el sitio solo tiene horizonte esférico. */
+export const skyHorizonLabel = (body: 'Sol' | 'Tierra', site: { horizonSource: string }) => `${body} sobre el horizonte ${horizonName(site)}`;
+
+/** Etiqueta corta de la temperatura, la misma en el panel 3D y en el HUD. */
+export const TEMPERATURE_LABEL = 'Temperatura aprox.';
+
+/** La Tierra «oculta» lo está vista desde la superficie; desde la altura (el descenso) todavía puede verse. */
+export const earthLinkText = (earthUp: boolean) => (earthUp ? 'enlace directo' : 'oculta desde la superficie · requiere relevo');
 
 /** El puntaje siempre como «94/100», igual que en el resto de la experiencia. */
 export const scoreText = (score: number) => `${Math.round(score)}/100`;
@@ -150,6 +159,7 @@ export class PovPhase implements Phase {
   enter() {
     this.world.lander.visible = false;
     this.world.lzMarker.visible = true;
+    this.world.setSiteViewLabels(true);
     this.world.showAstronaut('wave', this.eye);
     this.app.rig.add(this.info.mesh, this.actions.mesh);
     this.info.place(-0.86, 1.4, -1.45);
@@ -162,6 +172,7 @@ export class PovPhase implements Phase {
 
   exit() {
     this.app.room.setListener(null);
+    this.world.setSiteViewLabels(false);
     this.world.hideAstronaut();
     this.info.dispose(); this.actions.dispose(); this.spy?.dispose();
     this.markerField.dispose();
@@ -277,13 +288,13 @@ export class PovPhase implements Phase {
     const horizonOf = (s: SkyPos) => `${fmtSigned(s.aboveHorizon, 2)}° (horizonte ${fmtSigned(s.elevation - s.aboveHorizon, 2)}°)`;
     const rows: [string, string, string?][] = [
       ['Sol · elevación / azimut', `${fmtSigned(m.sun.elevation, 2)}° / ${m.sun.azimuth.toFixed(0)}°`, UI.sun],
-      ['Sol sobre el horizonte LOLA', horizonOf(m.sun)],
+      [skyHorizonLabel('Sol', m.site), horizonOf(m.sun)],
       ['Tiempo hasta la puesta de sol', m.sun.aboveHorizon > -0.27 ? fmtHours(m.hoursToSunset) : 'en sombra'],
       ['Tierra · elevación / azimut', `${fmtSigned(m.earth.elevation, 2)}° / ${m.earth.azimuth.toFixed(0)}°`, UI.earth],
-      ['Tierra sobre el horizonte LOLA', horizonOf(m.earth)],
+      [skyHorizonLabel('Tierra', m.site), horizonOf(m.earth)],
       ['Ventana de comunicación', m.earth.aboveHorizon > 0 ? `${fmtHours(m.hoursToEarthset)} restantes` : 'requiere relevo'],
       ['Disco solar visible', `${m.powerPct}%`],
-      ['Temperatura (estimación simplificada)', `${m.tempC.toFixed(0)} °C`],
+      [TEMPERATURE_LABEL, `${m.tempC.toFixed(0)} °C`],
       ...(this.world.roughness === null ? [] : [['Rugosidad a 120 m (DEM LOLA)', `${this.world.roughness.toFixed(2)} m`] as [string, string]]),
     ];
     rows.forEach(([k, v, c], i) => {
@@ -319,7 +330,7 @@ export class PovPhase implements Phase {
     g.font = `600 22px ${UI.font}`;
     g.fillStyle = UI.sun; g.fillText('■ Sol', x0 + 12, y0 + 32);
     g.fillStyle = UI.earth; g.fillText('■ Tierra', x0 + 110, y0 + 32);
-    g.fillStyle = UI.dim; g.fillText('- - horizonte local', x0 + 240, y0 + 32);
+    g.fillStyle = UI.dim; g.fillText(`- - horizonte ${horizonName(m.site)}`, x0 + 240, y0 + 32);
     g.fillStyle = 'rgba(232,197,71,.7)'; g.fillText('▒ iluminado', x0 + 470, y0 + 32);
   }
 
@@ -353,10 +364,10 @@ export class PovPhase implements Phase {
     const earthUp = m.earth.aboveHorizon > 0;
     const night = `La noche más larga de la misión dura ${fmtHours(m.longestDarkH)}.`;
     const sun = lit
-      ? `El Sol está ${fmtSigned(m.sun.aboveHorizon, 2)}° sobre el horizonte LOLA y se pone en ${fmtHours(m.hoursToSunset)}. ${night}`
-      : `El Sol está ${fmtSigned(Math.abs(m.sun.aboveHorizon), 2)}° bajo el horizonte LOLA. ${night}`;
+      ? `El Sol está ${fmtSigned(m.sun.aboveHorizon, 2)}° sobre el horizonte ${horizonName(m.site)} y se pone en ${fmtHours(m.hoursToSunset)}. ${night}`
+      : `El Sol está ${fmtSigned(Math.abs(m.sun.aboveHorizon), 2)}° bajo el horizonte ${horizonName(m.site)}. ${night}`;
     const note = nearReliefNote(m.site);
-    const sunText = skyElevationText(m.sun), earthText = skyElevationText(m.earth);
+    const sunText = skyElevationText(m.sun, m.site), earthText = skyElevationText(m.earth, m.site);
     return {
       figure: { value: lit ? 'Iluminado' : 'En sombra', caption: 'Arrastra para mirar alrededor' },
       detail: note ? `${sun} ${note}.` : sun,
@@ -375,13 +386,13 @@ export class PovPhase implements Phase {
           },
           {
             kind: 'earth', label: 'Tierra · comunicación', value: earthText.value,
-            detail: `${earthText.detail} · ${earthUp ? 'enlace directo' : 'oculta · requiere relevo'}`,
+            detail: `${earthText.detail} · ${earthLinkText(earthUp)}`,
             share: m.earthPct / 100, shareLabel: `Tierra visible el ${Math.round(m.earthPct)} % de los 14 días`,
           },
         ],
         extras: [
           { label: 'Disco solar visible', value: fmtPercent(m.powerPct) },
-          { label: 'Temperatura (estimación simplificada)', value: `${fmtSigned(m.tempC, 0)} °C` },
+          { label: TEMPERATURE_LABEL, value: `${fmtSigned(m.tempC, 0)} °C` },
           ...(this.world.roughness === null ? [] : [{ label: 'Rugosidad a 120 m (DEM LOLA)', value: `${this.world.roughness.toFixed(2)} m` }]),
         ],
         marks: this.app.isHost ? {
