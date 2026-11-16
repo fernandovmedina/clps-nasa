@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
+const globalsCss = readFileSync(fileURLToPath(new URL('../styles/globals.css', import.meta.url)), 'utf8')
 const css = readFileSync(fileURLToPath(new URL('../../styles/tokens.css', import.meta.url)), 'utf8')
 
 function parseTokens(): Record<string, string> {
@@ -59,8 +60,7 @@ describe('paper theme tokens', () => {
       'bg-base', 'bg-surface', 'bg-elevated', 'bg-raised', 'bg-field', 'bg-selected', 'bg-pressed', 'bg-toggle-on',
       'label', 'label-2', 'label-3', 'line', 'line-strong', 'control-border', 'accent', 'on-accent', 'accent-text',
       'sun', 'earth', 'both', 'viable', 'marginal', 'idle', 'bad', 'viable-bg', 'marginal-bg', 'bad-bg', 'on-status',
-      'terrain', 'terrain-line', 'sky-bg', 'sky-text', 'sky-text-2', 'sky-grid', 'sky-grid-strong', 'sky-sun',
-      'sky-earth', 'sky-terrain', 'sky-terrain-line',
+      'terrain', 'terrain-line',
     ]) {
       expect(t[key], key).toBeDefined()
     }
@@ -128,55 +128,75 @@ describe('paper theme tokens', () => {
   })
 })
 
-describe('sky and panorama tokens on paper', () => {
-  const sky = () => at('sky-bg')
-  const relief = () => at('sky-terrain')
+describe('sky and panorama tokens as SkyDiagram.tsx and Panorama.tsx paint them', () => {
+  // Ambos dibujan sobre `.slate`, que remapea --bg-field al pozo (--bg-raised); el relieve se rellena con --terrain.
+  const sky = () => at('bg-raised')
+  const relief = () => at('terrain')
+
+  it('keeps the .slate panel on the well tone and on the same ink as the rest of the page', () => {
+    const slate = /\.slate\s*\{([^}]*)\}/.exec(globalsCss)?.[1] ?? ''
+    expect(slate).toMatch(/--bg-field:\s*var\(--bg-raised\)/)
+    expect(slate).toMatch(/background:\s*var\(--bg-raised\)/)
+    expect(slate).not.toMatch(/--sky-/)
+    expect(slate).not.toMatch(/--label(-2)?:/)
+  })
+
+  it('leaves no --sky-* token declared or used anywhere', () => {
+    expect(css).not.toMatch(/--sky-/)
+    expect(globalsCss).not.toMatch(/--sky-/)
+  })
 
   it('keeps text at 7:1 and secondary text at 4.5:1 on the sky and on the relief', () => {
-    expect(ratio(at('sky-text'), sky())).toBeGreaterThanOrEqual(7)
-    expect(ratio(at('sky-text'), relief())).toBeGreaterThanOrEqual(7)
-    expect(ratio(at('sky-text-2'), sky())).toBeGreaterThanOrEqual(4.5)
-    expect(ratio(at('sky-text-2'), relief())).toBeGreaterThanOrEqual(4.5)
-  })
-
-  it('keeps the sky on the paper ink and the accent readable as text on the sky', () => {
-    expect(ratio(at('accent-text'), sky())).toBeGreaterThanOrEqual(4.5)
     expect(ratio(at('label'), sky())).toBeGreaterThanOrEqual(7)
+    expect(ratio(at('label'), relief())).toBeGreaterThanOrEqual(7)
+    expect(ratio(at('label-2'), sky())).toBeGreaterThanOrEqual(4.5)
+    expect(ratio(at('label-2'), relief())).toBeGreaterThanOrEqual(4.5)
   })
 
-  it('keeps the Sun and the Earth at 3:1 on the sky and on the relief', () => {
-    for (const color of ['sky-sun', 'sky-earth']) {
+  it('keeps the accent readable as text on the sky', () => {
+    expect(ratio(at('accent-text'), sky())).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('keeps --sun and --earth at 3:1 on the sky and on the relief', () => {
+    for (const color of ['sun', 'earth']) {
       expect(ratio(at(color), sky()), `${color} on sky`).toBeGreaterThanOrEqual(3)
       expect(ratio(at(color), relief()), `${color} on relief`).toBeGreaterThanOrEqual(3)
     }
   })
 
-  it('keeps the relief outline at 3:1 on the sky and on the relief fill', () => {
-    expect(ratio(at('sky-terrain-line'), sky())).toBeGreaterThanOrEqual(3)
-    expect(ratio(at('sky-terrain-line'), relief())).toBeGreaterThanOrEqual(3)
+  it('keeps --terrain-line at 3:1 on the sky and on the relief fill', () => {
+    expect(ratio(at('terrain-line'), sky())).toBeGreaterThanOrEqual(3)
+    expect(ratio(at('terrain-line'), relief())).toBeGreaterThanOrEqual(3)
   })
 
-  it('draws the grid in ink at 10-25 % and keeps it visible against the sky and the relief', () => {
-    for (const key of ['sky-grid', 'sky-grid-strong']) {
-      const alpha = Number(/,\s*([\d.]+)\)$/.exec(t[key] as string)?.[1])
-      expect(alpha, key).toBeGreaterThanOrEqual(0.1)
-      expect(alpha, key).toBeLessThanOrEqual(0.25)
-      expect(t[key], key).toMatch(/^rgba\(20,\s*20,\s*19,/)
-    }
+  it('draws the grid with --line and --line-strong and keeps both visible on the sky and the relief', () => {
+    for (const key of ['line', 'line-strong']) expect(t[key], key).toMatch(/^rgba\(20,\s*20,\s*19,/)
     // La retícula es decorativa (WCAG 1.4.11 la exime del 3:1): se exige que se distinga y que la fuerte pese más.
     for (const over of [sky(), relief()]) {
-      expect(ratio(at('sky-grid', over), over)).toBeGreaterThanOrEqual(1.2)
-      expect(ratio(at('sky-grid-strong', over), over)).toBeGreaterThan(ratio(at('sky-grid', over), over))
+      expect(ratio(at('line', over), over)).toBeGreaterThanOrEqual(1.2)
+      expect(ratio(at('line-strong', over), over)).toBeGreaterThan(ratio(at('line', over), over))
     }
   })
 
   it('makes the relief a toasted paper tone, darker than the sky and lighter than its outline', () => {
     expect(luminance(relief())).toBeLessThan(luminance(sky()))
-    expect(luminance(relief())).toBeGreaterThan(luminance(at('sky-terrain-line')))
+    expect(luminance(relief())).toBeGreaterThan(luminance(at('terrain-line')))
   })
 
   it('keeps the Earth at the agreed blue', () => {
-    expect(t['sky-earth']).toBe('#2a78d6')
     expect(t['earth']).toBe('#2a78d6')
+  })
+})
+
+describe('delay slider', () => {
+  const bar = readFileSync(fileURLToPath(new URL('../components/MissionBar.tsx', import.meta.url)), 'utf8')
+
+  it('draws a light track in --line-strong and a thumb ringed by the 3:1 control border', () => {
+    const track = /<Slider\.Track className="([^"]*)"/.exec(bar)?.[1] ?? ''
+    const thumb = /<Slider\.Thumb[^>]*?className="([^"]*)"/s.exec(bar)?.[1] ?? ''
+    expect(track).toMatch(/\bbg-line-strong\b/)
+    expect(track).not.toMatch(/\bbg-control\b/)
+    expect(thumb).toMatch(/\bborder-control\b/)
+    expect(ratio(at('control-border'), at('bg-base'))).toBeGreaterThanOrEqual(3)
   })
 })

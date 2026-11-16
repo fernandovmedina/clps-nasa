@@ -108,38 +108,41 @@ describe('Report', () => {
     await vi.waitFor(() => expect(screen.getByText('Resumen copiado')).toBeTruthy())
   })
 
-  it('offers the launch link of the selected scenario only', () => {
+  it('launches the recommended scenario, not the selected one, and says which', () => {
     const entries = [
-      entry('A', 40, 'marginal', { launchHref: '/?landing=2027-01-10T00:00:00Z&site=malapert-a' }),
-      entry('B', 80, 'viable', { launchHref: '/?landing=2027-01-10T00:00:00Z&site=mons-mouton' }),
+      entry('A', 40, 'marginal', { name: 'Malapert A (IM-1 Odysseus)', launchHref: '/?landing=2027-01-10T00:00:00Z&site=malapert-a' }),
+      entry('B', 80, 'viable', { name: 'Mons Mouton (IM-2 Athena)', launchHref: '/?landing=2027-01-10T00:00:00Z&site=mons-mouton' }),
     ]
-    const { rerender } = wrap(<Report entries={entries} pending={false} delayDays={0} selectedLetter="B" />)
-    const link = screen.getByRole('link', { name: 'Lanzar misión con esta fecha' })
+    const { rerender } = wrap(<Report entries={entries} pending={false} delayDays={0} />)
+    const link = screen.getByTestId('launch-link-report')
+    expect(link.textContent).toBe('Lanzar B · Mons Mouton')
     expect(link.getAttribute('href')).toBe('/?landing=2027-01-10T00:00:00Z&site=mons-mouton')
     rerender(
       <I18nProvider lang="en">
-        <Report entries={entries} pending={false} delayDays={0} selectedLetter="A" />
+        <Report entries={entries} pending={false} delayDays={0} />
       </I18nProvider>,
     )
-    expect(screen.getByRole('link', { name: 'Launch mission on this date' }).getAttribute('href')).toBe(
-      '/?landing=2027-01-10T00:00:00Z&site=malapert-a',
-    )
+    expect(screen.getByTestId('launch-link-report').textContent).toBe('Launch B · Mons Mouton')
   })
 
-  it('hides the launch link when the selected scenario is not valid or has no link', () => {
-    const { rerender } = wrap(<Report entries={[entry('A', 40, 'marginal')]} pending={false} delayDays={0} selectedLetter="A" />)
-    expect(screen.queryByRole('link', { name: 'Lanzar misión con esta fecha' })).toBeNull()
-    rerender(
-      <I18nProvider lang="es">
-        <Report
-          entries={[entry('A', 40, 'marginal', { launchHref: '/?landing=2027-01-10T00:00:00Z&site=malapert-a' })]}
-          pending={false}
-          delayDays={0}
-          selectedLetter="C"
-        />
-      </I18nProvider>,
+  it('follows the recommendation when A is the better scenario', () => {
+    const entries = [
+      entry('A', 90, 'viable', { launchHref: '/?landing=2027-01-10T00:00:00Z&site=malapert-a' }),
+      entry('B', 50, 'marginal', { launchHref: '/?landing=2027-01-10T00:00:00Z&site=mons-mouton' }),
+    ]
+    wrap(<Report entries={entries} pending={false} delayDays={0} />)
+    expect(screen.getByTestId('launch-link-report').getAttribute('href')).toBe('/?landing=2027-01-10T00:00:00Z&site=malapert-a')
+  })
+
+  it('hides the launch link when the recommended scenario has no link', () => {
+    wrap(
+      <Report
+        entries={[entry('A', 40, 'marginal', { launchHref: '/?landing=2027-01-10T00:00:00Z&site=malapert-a' }), entry('B', 80, 'viable')]}
+        pending={false}
+        delayDays={0}
+      />,
     )
-    expect(screen.queryByRole('link', { name: 'Lanzar misión con esta fecha' })).toBeNull()
+    expect(screen.queryByTestId('launch-link-report')).toBeNull()
   })
 
   it('shows a skeleton while scenarios load and an empty message afterwards', () => {

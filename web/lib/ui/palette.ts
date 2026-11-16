@@ -31,15 +31,6 @@ export const palette = {
   'on-status': '#141413',
   terrain: '#ddd5c0',
   'terrain-line': '#7a6e52',
-  'sky-bg': '#f0eee6',
-  'sky-text': '#141413',
-  'sky-text-2': '#5e5d59',
-  'sky-grid': 'rgba(20, 20, 19, 0.12)',
-  'sky-grid-strong': 'rgba(20, 20, 19, 0.25)',
-  'sky-sun': '#8f6b00',
-  'sky-earth': '#2a78d6',
-  'sky-terrain': '#ddd5c0',
-  'sky-terrain-line': '#7a6e52',
 } as const satisfies Record<string, string>
 
 export type PaletteKey = keyof typeof palette
