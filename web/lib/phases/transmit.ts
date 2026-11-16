@@ -215,7 +215,7 @@ export class TransmitPhase implements Phase {
     g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S ${m.site.lon.toFixed(2)}° · viabilidad ${Math.round(m.score)}/100`, 48, 204);
 
     const done = this.sent >= 1;
-    g.font = `700 30px ${UI.font}`; g.fillStyle = done ? UI.ok : UI.accent;
+    g.font = `700 30px ${UI.font}`; g.fillStyle = done ? UI.ok : UI.accentText;
     g.fillText(done ? 'Telemetría recibida en la Tierra' : this.relay ? 'Transmitiendo vía satélite de relevo…' : 'Transmitiendo directo a la Tierra…', 48, 278);
     roundRect(g, 48, 300, 928, 14, 7); g.fillStyle = UI.lineStrong; g.fill();
     if (this.sent > 0.005) { roundRect(g, 48, 300, 928 * this.sent, 14, 7); g.fillStyle = UI.accent; g.fill(); }

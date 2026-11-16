@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { LunarApp, Phase } from '../engine/app';
 import type { LoopControl } from '../engine/audio';
-import { Panel, UI, renderStatusColor, roundRect, statusBg, statusColor, textLabel } from '../engine/panel';
+import { Panel, UI, renderStatusColor, roundRect, statusBg, statusColor, statusDot, textLabel } from '../engine/panel';
 import { starField } from '../engine/particles';
 import { createMoon } from '../engine/moon';
 import { earthTexture, glowTexture } from '../engine/textures';
@@ -432,7 +432,7 @@ export class OrbitPhase implements Phase {
       mk.group.scale.setScalar(Math.max(0.001, s));
       const pulse = 1 + 0.25 * Math.sin(t * 3 + mk.m.rank);
       mk.ring.scale.setScalar(sel ? pulse * 1.4 : pulse);
-      (mk.head.material as THREE.MeshBasicMaterial).color.set(sel ? 0xffffff : statusColor(mk.m.status));
+      (mk.head.material as THREE.MeshBasicMaterial).color.set(sel ? 0xffffff : renderStatusColor(mk.m.status));
       (mk.beam.material as THREE.MeshBasicMaterial).opacity = sel ? 0.9 : 0.5;
     });
     this.layoutPinLabels();
@@ -514,7 +514,7 @@ export class OrbitPhase implements Phase {
     g.fillText(`Alunizaje ${this.date.toISOString().slice(0, 16).replace('T', ' ')} UTC${delayTag}`, 48, 128);
     const { revealed, total } = this.realCounts();
     g.font = `500 26px ${UI.mono}`;
-    g.fillStyle = this.analysisDone ? UI.ok : UI.accent;
+    g.fillStyle = this.analysisDone ? UI.ok : UI.accentText;
     g.fillText(this.analysisDone ? 'Ranking final · toca un sitio' : `Calculando óptimo… ${revealed}/${total}`, 48, 166);
 
     if (this.analysisDone) this.drawDelayRow(p, g);
@@ -532,19 +532,20 @@ export class OrbitPhase implements Phase {
       g.font = `800 30px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'center'; g.fillText(`${i + 1}`, 73, y + 58); g.textAlign = 'left';
       g.font = `600 32px ${UI.font}`; g.fillStyle = UI.text; g.fillText(m.site.name, 124, y + 44);
       const note = rankingNote(m.site);
-      g.font = `500 22px ${UI.mono}`; g.fillStyle = m.site.crash ? UI.warn : UI.dim;
-      if (m.site.crash) g.fillText(note!, 124, y + 78);
+      g.font = `500 22px ${UI.mono}`; g.fillStyle = m.site.crash ? UI.text : UI.dim;
+      if (m.site.crash) g.fillText(note!, 150, y + 78);
       else if (note) g.fillText(`${note}  ·  SOL ${m.illumPct.toFixed(0)}%  ·  TIERRA ${m.earthPct.toFixed(0)}%`, 124, y + 78);
       else g.fillText(`SOL ${m.illumPct.toFixed(0)}%  ·  TIERRA ${m.earthPct.toFixed(0)}%  ·  AMBOS ${Math.round(m.breakdown.ops * 100)}%`, 124, y + 78);
-      g.font = `800 36px ${UI.mono}`; g.fillStyle = col; g.textAlign = 'right'; g.fillText(m.site.crash ? 'DEMO' : scoreOf100(m), 972, y + 60); g.textAlign = 'left';
+      g.font = `800 36px ${UI.mono}`; g.fillStyle = UI.text; g.textAlign = 'right'; g.fillText(m.site.crash ? 'DEMO' : scoreOf100(m), 972, y + 60); g.textAlign = 'left';
       if (this.delayDays) {
         const base = this.baseRanking.find((r) => r.site.id === m.site.id);
         if (base) {
           const d = Math.round(m.score - base.score);
-          g.font = `600 22px ${UI.mono}`; g.fillStyle = d > 0 ? UI.ok : d < 0 ? UI.bad : UI.dim;
+          g.font = `600 22px ${UI.mono}`; g.fillStyle = UI.text; // la flecha marca el sentido; el color de estado no da 4.5:1 a este tamaño
           g.textAlign = 'right'; g.fillText(d === 0 ? '± 0' : (d > 0 ? `↑ +${d}` : `↓ ${d}`), 972, y + 86); g.textAlign = 'left';
         }
       }
+      if (m.site.crash) statusDot(g, 132, y + 71, UI.warn); // marca el aviso de la nota, que va en tinta
       p.region(`row-${m.site.id}`, 28, y, 968, rowH - 10, () => this.select(m));
     });
     if (!this.analysisDone) {
@@ -560,9 +561,9 @@ export class OrbitPhase implements Phase {
     const color = status === 'open' ? UI.ok : status === 'connecting' ? UI.warn : UI.idle;
     const label = status === 'open' ? `sincronizado · sala "${this.app.room.room}"` : status === 'connecting' ? 'conectando…' : 'sin conexión (local)';
     g.font = `600 20px ${UI.mono}`; g.textAlign = 'right';
-    g.fillStyle = color; g.fillText('●', 968, 82);
     g.fillStyle = UI.dim; g.fillText(label, 950, 82);
     g.textAlign = 'left';
+    statusDot(g, 961, 75, color, 6);
   }
 
   /** Row of delay buttons: "the mission got delayed N days, what breaks?" */
@@ -587,8 +588,9 @@ export class OrbitPhase implements Phase {
     p.button(g, 'delay-reset', x, y, w, h, '↺ original', () => this.applyDelay(0), this.delayDays === 0 ? 'primary' : 'ghost');
 
     if (this.rangeWarning) {
-      g.font = `600 20px ${UI.mono}`; g.fillStyle = UI.warn;
-      g.fillText(this.rangeWarning, 48, 280);
+      statusDot(g, 56, 274, UI.warn);
+      g.font = `600 20px ${UI.mono}`; g.fillStyle = UI.text;
+      g.fillText(this.rangeWarning, 74, 280);
     }
   }
 

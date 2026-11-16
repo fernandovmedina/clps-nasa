@@ -226,7 +226,7 @@ export class LaunchPhase implements Phase {
     let size = tick ? 150 : 84;
     g.textAlign = 'center'; g.textBaseline = 'middle';
     do { g.font = `800 ${size}px ${UI.font}`; size -= 4; } while (g.measureText(label).width > p.pxW - 64 && size > 32);
-    g.fillStyle = tick ? UI.text : UI.accent;
+    g.fillStyle = tick ? UI.text : UI.accentText;
     g.fillText(label, p.pxW / 2, p.pxH / 2 + 4);
     g.textAlign = 'left'; g.textBaseline = 'alphabetic';
   }

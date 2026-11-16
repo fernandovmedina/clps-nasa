@@ -24,6 +24,8 @@ export const UI = {
   text: palette.label,
   dim: palette['label-2'],
   accent: palette.accent,
+  /** Arcilla para texto: la arcilla del CTA (accent) solo da 3,08:1 sobre papel; esta da 5,43:1. */
+  accentText: palette['accent-text'],
   onAccent: palette['on-accent'],
   ok: palette.viable,
   warn: palette.marginal,
@@ -54,6 +56,11 @@ export const statusBg = (status: SiteMetrics['status']) =>
   status === 'viable' ? palette['viable-bg'] : status === 'marginal' ? palette['marginal-bg'] : palette['bad-bg'];
 
 export const statusColor = (status: SiteMetrics['status']) => (status === 'viable' ? UI.ok : status === 'marginal' ? UI.warn : UI.bad);
+
+/** Punto de estado: marca el estado con color mientras el texto va en tinta (cumple 4,5:1). */
+export function statusDot(g: CanvasRenderingContext2D, x: number, y: number, color: string, r = 7) {
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fillStyle = color; g.fill();
+}
 
 const livePanels = new Set<Panel>();
 

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Marker } from '@touchdown/core';
 import type { LunarApp } from '../engine/app';
-import { Panel, RENDER, UI, statusBg, statusColor } from '../engine/panel';
+import { Panel, RENDER, UI, renderStatusColor, statusBg, statusColor } from '../engine/panel';
 import type { SiteMetrics } from '../mission/scoring';
 import { NO_CAER_SITE_ID, type MissionData, type SiteInput } from '../mission/sites';
 import { realMissionData } from '../mission/test-data';
@@ -18,14 +18,14 @@ import { TransmitPhase } from './transmit';
  * ningún literal claro sobre claro, ninguna pista invisible, ningún texto bajo 3:1. Un contexto espía registra
  * cada pintura con su estilo y el texto dibujado.
  */
-interface Paint { op: 'fill' | 'fillRect' | 'stroke' | 'fillText'; style: string; text?: string }
+interface Paint { op: 'fill' | 'fillRect' | 'stroke' | 'fillText'; style: string; text?: string; font?: string }
 
 const spies = new Map<HTMLCanvasElement, Paint[]>();
 
 function spyContext(log: Paint[]) {
   const state: Record<string | symbol, unknown> = { font: '10px x', textAlign: 'left', globalAlpha: 1, fillStyle: '#000000', strokeStyle: '#000000' };
   const paint = (op: Paint['op'], key: 'fillStyle' | 'strokeStyle') => (text?: unknown) => {
-    log.push({ op, style: String(state[key]), text: typeof text === 'string' ? text : undefined });
+    log.push({ op, style: String(state[key]), text: typeof text === 'string' ? text : undefined, font: String(state.font) });
   };
   return new Proxy(state, {
     get(t, k) {
@@ -56,16 +56,23 @@ const contrast = (a: string, b: string) => {
 
 /**
  * Afirma que un panel de fase es de papel y legible: todo estilo sale de la paleta (ni rgba claro sobre claro ni
- * hex sueltos) y cada texto contrasta 3:1 con el papel (el texto papel de un botón de tinta no aparece en estos paneles).
+ * hex sueltos) y cada texto contrasta 4,5:1 (3:1 si es grande) con el papel y con el fondo de su fila (el texto papel de un botón de tinta no aparece en estos paneles).
  */
 function expectReadable(log: Paint[], name: string) {
   expect(log.length, `${name}: no se dibujó nada`).toBeGreaterThan(0);
   for (const p of log) expect(PALETTE_VALUES.has(p.style), `${name}: ${p.op} ${p.text ?? ''} con ${p.style} fuera de la paleta`).toBe(true);
   let prev: Paint | undefined;
+  let under: string = PAPER; // fondo de superficie de debajo: papel, o el pozo/seleccionado de una fila
   for (const p of log) {
     const onInk = p.style === PAPER && prev?.style === palette.label; // texto papel del botón primario de tinta
     prev = p;
-    if (p.op === 'fillText' && p.style.startsWith('#') && !onInk) expect(contrast(p.style, PAPER), `${name}: «${p.text}» ${p.style} sobre papel`).toBeGreaterThanOrEqual(3);
+    if (p.op === 'fill' && ([PAPER, palette['bg-raised'], palette['bg-selected']] as string[]).includes(p.style)) under = p.style;
+    if (p.op !== 'fillText' || !p.style.startsWith('#') || onInk) continue;
+    // AA: 4,5:1 para texto normal; 3:1 solo para texto grande (>=24 px, o >=18,66 px en negrita 700).
+    const size = Number(/(\d+(?:\.\d+)?)px/.exec(p.font ?? '')?.[1] ?? 0), weight = Number(/\b(\d{3})\b/.exec(p.font ?? '')?.[1] ?? 400);
+    const large = size >= 24 || (size >= 18.66 && weight >= 700);
+    const need = large ? 3 : 4.5;
+    for (const bg of new Set([PAPER, under])) expect(contrast(p.style, bg), `${name}: «${p.text}» ${p.style} ${p.font} sobre ${bg} (pide ${need}:1)`).toBeGreaterThanOrEqual(need);
   }
   const dark = log.filter((p) => (p.op === 'fill' || p.op === 'fillRect') && p.style.startsWith('#') && luminance(p.style) < 0.2);
   for (const p of dark) expect([palette.label, palette['label-2']], `${name}: relleno oscuro que no es tinta`).toContain(p.style);
@@ -191,9 +198,21 @@ describe('órbita: ranking y detalle', () => {
   });
 
   it('cabezas y anillos de los pines usan tonos claros de render, no el color de papel', () => {
-    const phase = new OrbitPhase(fakeApp());
-    const pins = (phase as unknown as { markers: { head: THREE.Mesh; ring: THREE.Mesh; beam: THREE.Mesh }[] }).markers;
+    const app = fakeApp();
+    const phase = new OrbitPhase(app);
+    const pins = (phase as unknown as { markers: { m: SiteMetrics; head: THREE.Mesh; ring: THREE.Mesh; beam: THREE.Mesh }[] }).markers;
     expect(pins.length).toBeGreaterThan(0);
+    // update() repinta la cabeza en cada fotograma: se prueba con varios fotogramas, con un pin elegido y los demás sin elegir.
+    app.selected = pins[0]!.m;
+    for (let i = 0; i < 20; i++) phase.update(0.1);
+    const selected = pins[0]!, others = pins.slice(1);
+    expect(`#${(selected.head.material as THREE.MeshBasicMaterial).color.getHexString()}`, 'cabeza del pin elegido (blanca)').toBe('#ffffff');
+    for (const pin of others) {
+      const hex = `#${(pin.head.material as THREE.MeshBasicMaterial).color.getHexString()}`;
+      expect(hex, `cabeza sin elegir de ${pin.m.site.id}`).toBe(renderStatusColor(pin.m.status).toLowerCase());
+    }
+    app.selected = null;
+    for (let i = 0; i < 5; i++) phase.update(0.1);
     const render = new Set(Object.values(RENDER).map((c) => c.toLowerCase()));
     const paper = new Set([palette.viable, palette.marginal, palette.bad].map((c) => c.toLowerCase()));
     for (const pin of pins) {
@@ -230,8 +249,8 @@ describe('vista del sitio: panel de datos', () => {
     const strokes = log.filter((p) => p.op === 'stroke').map((p) => p.style);
     expect(strokes).toContain(palette['label-2']); // curva del horizonte local
     expect(log.some((p) => p.op === 'fillRect' && p.style === palette['marginal-bg']), 'sombreado de «iluminado»').toBe(true);
-    const legend = log.find((p) => p.op === 'fillText' && p.text === '▒ iluminado')!;
-    expect(contrast(legend.style, PAPER)).toBeGreaterThanOrEqual(3);
+    const legend = log.find((p) => p.op === 'fillText' && p.text === 'iluminado')!;
+    expect(contrast(legend.style, PAPER)).toBeGreaterThanOrEqual(4.5);
   });
 });
 

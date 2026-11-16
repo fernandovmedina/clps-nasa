@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { ClientMessage, MarkerKind } from '@touchdown/core';
 import type { LunarApp, Phase, RenderStyle } from '../engine/app';
-import { Panel, UI, roundRect, statusColor } from '../engine/panel';
+import { Panel, RENDER, UI, roundRect, statusColor, statusDot } from '../engine/panel';
 import { evaluateSites, fmtHours, skyPosAt, type SiteMetrics, type SkyPos } from '../mission/scoring';
 import type { RoomEvent } from '../sync/room-client';
 import { MarkerField } from './markers';
@@ -140,7 +140,7 @@ export class PovPhase implements Phase {
     this.markerField = new MarkerField(this.scene, this.m.site.id, (x, z) => this.world.heightAt(x, z));
     this.reticle = new THREE.Mesh(
       new THREE.RingGeometry(0.9, 1.15, 28),
-      new THREE.MeshBasicMaterial({ color: UI.ok, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ color: RENDER.ok, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
     );
     this.reticle.rotation.x = -Math.PI / 2;
     this.reticle.visible = false;
@@ -267,12 +267,12 @@ export class PovPhase implements Phase {
   private drawInfo(p: Panel, g: CanvasRenderingContext2D) {
     const m = this.m;
     p.frame(g);
-    g.font = `600 24px ${UI.mono}`; g.fillStyle = UI.accent; g.fillText('VISTA DESDE EL SITIO · PRECONFIRMACIÓN', 48, 70);
+    g.font = `600 24px ${UI.mono}`; g.fillStyle = UI.accentText; g.fillText('VISTA DESDE EL SITIO · PRECONFIRMACIÓN', 48, 70);
     g.font = `700 46px ${UI.font}`; g.fillStyle = UI.text; g.fillText(m.site.name, 48, 128);
     g.font = `500 24px ${UI.mono}`; g.fillStyle = UI.dim;
     g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S ${m.site.lon.toFixed(2)}°  ·  ${this.app.data!.landingDate.toISOString().slice(0, 16).replace('T', ' ')} UTC`, 48, 166);
     const note = nearReliefNote(m.site);
-    if (note) { g.font = `500 22px ${UI.font}`; g.fillStyle = UI.warn; g.fillText(note, 48, 200); }
+    if (note) { statusDot(g, 56, 194, UI.warn); g.font = `500 22px ${UI.font}`; g.fillStyle = UI.text; g.fillText(note, 74, 200); }
 
     const horizonOf = (s: SkyPos) => `${fmtSigned(s.aboveHorizon, 2)}° (horizonte ${fmtSigned(s.elevation - s.aboveHorizon, 2)}°)`;
     const rows: [string, string, string?][] = [
@@ -317,10 +317,16 @@ export class PovPhase implements Phase {
     curve('earth', UI.earth);
     curve('sun', UI.sun);
     g.font = `600 22px ${UI.font}`;
-    g.fillStyle = UI.sun; g.fillText('■ Sol', x0 + 12, y0 + 32);
-    g.fillStyle = UI.earth; g.fillText('■ Tierra', x0 + 110, y0 + 32);
-    g.fillStyle = UI.dim; g.fillText('- - horizonte local', x0 + 240, y0 + 32);
-    g.fillStyle = UI.sun; g.fillText('▒ iluminado', x0 + 470, y0 + 32);
+    // Muestra de color + rótulo en tinta 2 (el texto de color no da 4,5:1 a este tamaño)
+    g.lineWidth = 4; g.lineCap = 'round';
+    for (const [lx, c] of [[x0 + 12, UI.sun], [x0 + 110, UI.earth]] as const) { g.beginPath(); g.moveTo(lx, y0 + 25); g.lineTo(lx + 18, y0 + 25); g.strokeStyle = c; g.stroke(); }
+    g.lineCap = 'butt';
+    g.fillStyle = UI.sunWash; g.fillRect(x0 + 470, y0 + 16, 16, 16);
+    g.fillStyle = UI.dim;
+    g.fillText('Sol', x0 + 38, y0 + 32);
+    g.fillText('Tierra', x0 + 136, y0 + 32);
+    g.fillText('- - horizonte local', x0 + 240, y0 + 32);
+    g.fillText('iluminado', x0 + 494, y0 + 32);
   }
 
   private drawActions(p: Panel, g: CanvasRenderingContext2D) {
