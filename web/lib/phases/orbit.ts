@@ -74,6 +74,31 @@ export function planPinLabels(pins: PinLabelCandidate[]): Map<string, PinLabelMo
   return modes;
 }
 
+/** Rank chip: a small texture of its own (textLabel's fixed 512 px canvas would leave the digits tiny in a wide box). */
+const CHIP_TEX = { w: 128, h: 72 };
+/** On-screen height (CSS px) of the rank chip: its 52 px digits then read at about 14 px. */
+const CHIP_SCREEN_PX = 20;
+/** Chip width in metres in the headset, where there is no screen to size it from. */
+const CHIP_XR_WIDTH_M = 12;
+/** Top of the pin head (local y); the chip sits right above it so it never covers beam or head. */
+const CHIP_BASE_Y = 67;
+
+function rankChip(rank: number, color: string): THREE.Sprite {
+  const c = document.createElement('canvas');
+  c.width = CHIP_TEX.w; c.height = CHIP_TEX.h;
+  const g = c.getContext('2d')!;
+  roundRect(g, 2, 2, CHIP_TEX.w - 4, CHIP_TEX.h - 4, 16);
+  g.fillStyle = 'rgba(20,20,19,0.85)'; g.fill();
+  g.strokeStyle = UI.line; g.lineWidth = 2; g.stroke();
+  g.font = `800 52px ${UI.mono}`; g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(`#${rank}`, CHIP_TEX.w / 2, CHIP_TEX.h / 2 + 3);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, toneMapped: false, depthWrite: false, fog: false }));
+  sprite.renderOrder = 15;
+  return sprite;
+}
+
 /** three.js raycasts invisible objects too: a hidden label moves to a layer the pointer ray does not use. */
 function setSpriteShown(sprite: THREE.Sprite, shown: boolean) {
   sprite.visible = shown;
@@ -222,8 +247,8 @@ export class OrbitPhase implements Phase {
     ];
     const label = textLabel(lines, 46);
     label.position.y = 82;
-    const chip = textLabel([{ text: `#${m.rank}`, size: 150, color, mono: true, weight: 800 }], 9);
-    chip.position.y = 76;
+    const chip = rankChip(m.rank, color);
+    chip.position.y = CHIP_BASE_Y + 2.5;
     setSpriteShown(chip, false);
     return { label, chip };
   }
@@ -434,6 +459,22 @@ export class OrbitPhase implements Phase {
     return { x: (ndc.x * 0.5 + 0.5) * width - w / 2, y: (-ndc.y * 0.5 + 0.5) * height - h / 2, w, h };
   }
 
+  /** Keeps the rank chip at a fixed on-screen size, whatever the camera distance, sitting just above the pin head. */
+  private sizeChip(mk: Marker, width: number, height: number) {
+    const aspect = CHIP_TEX.w / CHIP_TEX.h;
+    const groupScale = mk.group.getWorldScale(new THREE.Vector3()).x;
+    let worldH = CHIP_XR_WIDTH_M / aspect;
+    if (!this.app.isXR && width) {
+      const cam = this.app.camera;
+      const depth = -mk.group.getWorldPosition(new THREE.Vector3()).applyMatrix4(cam.matrixWorldInverse).z;
+      if (depth <= 0 || groupScale < 1e-3) return;
+      worldH = (CHIP_SCREEN_PX * depth * 2) / (cam.projectionMatrix.elements[5] * height);
+    }
+    const localH = worldH / Math.max(groupScale, 1e-3);
+    mk.chip.scale.set(localH * aspect, localH, 1);
+    mk.chip.position.y = CHIP_BASE_Y + localH / 2 + 1;
+  }
+
   /** Shows per pin the full label, its rank chip or nothing, from where the labels land on screen. */
   private layoutPinLabels() {
     const canvas = this.app.renderer.domElement;
@@ -445,6 +486,8 @@ export class OrbitPhase implements Phase {
       setSpriteShown(mk.label, false); setSpriteShown(mk.chip, false);
       if (!mk.group.visible) continue;
       mk.group.updateMatrixWorld(true);
+      this.sizeChip(mk, width, height);
+      mk.chip.updateMatrixWorld(true);
       if (segmentHitsSphere(cam, mk.label.getWorldPosition(new THREE.Vector3()), R * 0.998)) continue; // the Moon hides it
       // in the headset there is no single screen to overlap on: the rank rule alone decides
       const full = this.app.isXR || !width ? { x: mk.m.rank * 1e5, y: 0, w: 1, h: 1 } : this.spriteRect(mk.label, width, height);
@@ -492,7 +535,7 @@ export class OrbitPhase implements Phase {
       if (m.site.crash) g.fillText(note!, 124, y + 78);
       else if (note) g.fillText(`${note}  ·  SOL ${m.illumPct.toFixed(0)}%  ·  TIERRA ${m.earthPct.toFixed(0)}%`, 124, y + 78);
       else g.fillText(`SOL ${m.illumPct.toFixed(0)}%  ·  TIERRA ${m.earthPct.toFixed(0)}%  ·  AMBOS ${Math.round(m.breakdown.ops * 100)}%`, 124, y + 78);
-      g.font = `800 36px ${UI.mono}`; g.fillStyle = col; g.textAlign = 'right'; g.fillText(scoreOf100(m), 972, y + 60); g.textAlign = 'left';
+      g.font = `800 36px ${UI.mono}`; g.fillStyle = col; g.textAlign = 'right'; g.fillText(m.site.crash ? 'DEMO' : scoreOf100(m), 972, y + 60); g.textAlign = 'left';
       if (this.delayDays) {
         const base = this.baseRanking.find((r) => r.site.id === m.site.id);
         if (base) {
@@ -560,8 +603,11 @@ export class OrbitPhase implements Phase {
     const col = statusColor(m.status);
     g.font = `700 44px ${UI.font}`; g.fillStyle = UI.text; g.fillText(m.site.name, 48, 92);
     g.font = `500 26px ${UI.mono}`; g.fillStyle = UI.dim;
+    if (m.site.crash) {
+      g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S  ${m.site.lon.toFixed(2)}°${m.site.lon >= 0 ? 'E' : 'W'}`, 48, 134);
+      this.drawDemoDetail(p, g, m); return;
+    }
     g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S  ${m.site.lon.toFixed(2)}°${m.site.lon >= 0 ? 'E' : 'W'}  ·  elev. +${m.site.elevationKm.toFixed(1)} km`, 48, 134);
-    if (m.site.crash) { this.drawDemoDetail(p, g, m); return; }
     g.font = `800 96px ${UI.mono}`; g.fillStyle = col; g.fillText(`${Math.round(m.score)}`, 48, 250);
     const bigWidth = g.measureText(`${Math.round(m.score)}`).width;
     g.font = `700 36px ${UI.mono}`; g.fillText('/100', 48 + bigWidth + 8, 250);

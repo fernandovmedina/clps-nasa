@@ -246,6 +246,27 @@ describe('OrbitPhase pin labels', () => {
     }
   });
 
+  it('keeps the rank chips legible: about 20 px (18-23) tall on a 1440x900 screen, whatever the distance to the pin', () => {
+    const app = fakeApp();
+    lookAtPole(app);
+    const phase = openOrbit(app);
+    const priv = phase as unknown as { spriteRect: (s: THREE.Sprite, w: number, h: number) => PinRect | null };
+    for (const distance of [1150, 1500, 2400]) {
+      const a = (-70 * Math.PI) / 180;
+      app.camera.position.set(Math.cos(a) * distance, Math.sin(a) * distance, 0);
+      app.camera.lookAt(0, -1000, 0);
+      app.camera.updateMatrixWorld(true);
+      phase.update(0.016);
+      const chips = pinsOf(phase).filter((p) => p.chip.visible);
+      expect(chips.length).toBeGreaterThan(0);
+      for (const p of chips) {
+        const box = priv.spriteRect(p.chip, 1440, 900)!;
+        expect(box.h).toBeGreaterThanOrEqual(18);
+        expect(box.h).toBeLessThanOrEqual(23);
+      }
+    }
+  });
+
   it('takes a hidden label out of the pointer ray so it cannot steal the hover from the pin behind it', () => {
     const app = fakeApp();
     lookAtPole(app);
