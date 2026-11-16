@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { SiteMetrics } from '../mission/scoring';
+import { palette } from '../ui/palette';
 
 /**
  * A flat UI panel drawn with Canvas2D and shown as a plane in the 3D world.
@@ -10,24 +11,56 @@ export interface PanelButton {
   onClick: () => void;
 }
 
+/** Colores de los paneles de canvas: salen de la paleta única (lib/ui/palette.ts), sin literales. */
 export const UI = {
   font: '"Inter Variable", system-ui, sans-serif',
   mono: '"Inter Variable", system-ui, sans-serif',
-  bg: 'rgba(20,20,19,0.82)',
-  line: 'rgba(250,249,245,0.14)',
-  text: '#FAF9F5',
-  dim: '#B0AEA5',
-  accent: '#D97757',
-  accentHover: '#E08B6D',
-  onAccent: '#141413',
+  bg: palette['bg-surface'],
+  raised: palette['bg-raised'],
+  selected: palette['bg-selected'],
+  line: palette.line,
+  lineStrong: palette['line-strong'],
+  control: palette['control-border'],
+  text: palette.label,
+  dim: palette['label-2'],
+  accent: palette.accent,
+  /** Arcilla para texto: la arcilla del CTA (accent) solo da 3,08:1 sobre papel; esta da 5,43:1. */
+  accentText: palette['accent-text'],
+  onAccent: palette['on-accent'],
+  ok: palette.viable,
+  warn: palette.marginal,
+  bad: palette.bad,
+  sun: palette.sun,
+  earth: palette.earth,
+  idle: palette.idle,
+  /** Pozo tenue para sombrear un intervalo sobre el papel (en la gráfica de 14 días, las horas con Sol). */
+  sunWash: palette['marginal-bg'],
+};
+
+/**
+ * Tonos claros SOLO para el render 3D sobre el espacio negro (cabezas y anillos de pines, anillos de marcadores).
+ * Los colores de la paleta son oscuros para el papel y sobre el negro se apagan; estos nunca se pintan sobre papel.
+ */
+export const RENDER = {
   ok: '#8FCB9B',
   warn: '#E8C547',
   bad: '#E58A7B',
-  sun: '#E8C547',
   earth: '#8FB8E0',
+  rock: '#C9A26B',
 };
 
+export const renderStatusColor = (status: SiteMetrics['status']) => (status === 'viable' ? RENDER.ok : status === 'marginal' ? RENDER.warn : RENDER.bad);
+
+/** Fondo tenue del estado, para un cuadro con texto de tinta (el color de estado sólido no da 4.5:1 con la tinta). */
+export const statusBg = (status: SiteMetrics['status']) =>
+  status === 'viable' ? palette['viable-bg'] : status === 'marginal' ? palette['marginal-bg'] : palette['bad-bg'];
+
 export const statusColor = (status: SiteMetrics['status']) => (status === 'viable' ? UI.ok : status === 'marginal' ? UI.warn : UI.bad);
+
+/** Punto de estado: marca el estado con color mientras el texto va en tinta (cumple 4,5:1). */
+export function statusDot(g: CanvasRenderingContext2D, x: number, y: number, color: string, r = 7) {
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fillStyle = color; g.fill();
+}
 
 const livePanels = new Set<Panel>();
 
@@ -107,13 +140,24 @@ export class Panel {
     ctx.lineWidth = 2; ctx.strokeStyle = UI.line; ctx.stroke();
   }
 
+  /**
+   * Estilos: `cta` (arcilla con texto tinta, la acción principal de la pantalla), `primary` (tinta con texto papel)
+   * y `ghost` (papel con borde fino). El foco del rayo se marca con el tono de la pulsación, sin colores nuevos.
+   */
   button(ctx: CanvasRenderingContext2D, id: string, x: number, y: number, w: number, h: number, label: string,
-    onClick: () => void, style: 'primary' | 'ghost' = 'primary') {
+    onClick: () => void, style: 'cta' | 'primary' | 'ghost' = 'cta') {
     const hov = this.hover === id;
     roundRect(ctx, x, y, w, h, h / 2);
-    if (style === 'primary') { ctx.fillStyle = hov ? UI.accentHover : UI.accent; ctx.fill(); }
-    else { ctx.fillStyle = hov ? 'rgba(250,249,245,.16)' : 'rgba(250,249,245,.06)'; ctx.fill(); ctx.strokeStyle = 'rgba(250,249,245,.3)'; ctx.lineWidth = 2; ctx.stroke(); }
-    ctx.fillStyle = style === 'primary' ? UI.onAccent : UI.text;
+    if (style === 'cta') {
+      ctx.fillStyle = UI.accent; ctx.fill();
+      if (hov) { ctx.strokeStyle = UI.text; ctx.lineWidth = 3; ctx.stroke(); }
+    } else if (style === 'primary') {
+      ctx.fillStyle = hov ? UI.dim : UI.text; ctx.fill();
+    } else {
+      ctx.fillStyle = hov ? UI.selected : UI.bg; ctx.fill();
+      ctx.strokeStyle = UI.control; ctx.lineWidth = 2; ctx.stroke();
+    }
+    ctx.fillStyle = style === 'primary' ? UI.bg : style === 'cta' ? UI.onAccent : UI.text;
     ctx.font = `600 ${Math.round(h * 0.38)}px ${UI.font}`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(label, x + w / 2, y + h / 2 + 1);
@@ -153,7 +197,7 @@ export function textLabel(lines: { text: string; size: number; color?: string; w
   const H = lines.reduce((a, l) => a + l.size * 1.3, 0) + pad * 2;
   c.width = W; c.height = Math.ceil(H);
   roundRect(g, 2, 2, W - 4, c.height - 4, 22);
-  g.fillStyle = 'rgba(20,20,19,0.78)'; g.fill();
+  g.fillStyle = UI.bg; g.fill();
   g.strokeStyle = UI.line; g.lineWidth = 2; g.stroke();
   let y = pad;
   for (const l of lines) {
