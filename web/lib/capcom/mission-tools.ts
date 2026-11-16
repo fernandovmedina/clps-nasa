@@ -1,6 +1,7 @@
 import type { LunarApp } from '../engine/app';
 import { PHASE_LABELS, PHASE_ORDER, STATUS_LABELS, type HudRankRow, type PhaseHud } from '../engine/hud';
 import type { SiteMetrics } from '../mission/scoring';
+import { DEMO_CRASH_NOTE, type RankRowExtras } from '../mission/sites';
 import type { CapcomTool } from './types';
 
 /** Ventana de evaluación de `evaluateSites` (lib/mission/scoring.ts): 14 días desde el aterrizaje. */
@@ -47,7 +48,7 @@ function describeSide(side: PhaseHud['side']): Record<string, unknown> {
       lecturas: (side.extras ?? []).map((e) => ({ etiqueta: e.label, valor: tidy(e.value) })),
     };
   }
-  return { sitios_evaluados_en_pantalla: side.rows.length };
+  return { sitios_evaluados_en_pantalla: side.rows.filter((r) => !(r as RankRowExtras).demo).length };
 }
 
 function estadoDelViaje(app: MissionSource) {
@@ -75,6 +76,21 @@ function estadoDelViaje(app: MissionSource) {
     ...(hud.progress ? { avance: { etiqueta: hud.progress.label, porcentaje: Math.round(hud.progress.value * 100) } } : {}),
     ...(hud.facts?.length ? { datos: hud.facts.map((f) => ({ etiqueta: f.label, valor: tidy(f.value) })) } : {}),
     ...describeSide(hud.side),
+  };
+}
+
+const isReal = (m: SiteMetrics) => !m.site.crash;
+
+/** NO CAER lends its terrain and ephemeris from Malapert Massif: none of those figures is its own, so none is given. */
+function demoCase(m: SiteMetrics, app: MissionSource) {
+  return {
+    sitio: m.site.name,
+    id: m.site.id,
+    es_caso_de_demostracion: true,
+    es_sitio_real: false,
+    resumen: `${m.site.name} no es un sitio real: es un caso de demostración de falla simulada del motor, el descenso termina en impacto. No tiene puntaje, estado ni lecturas propias.`,
+    nota: DEMO_CRASH_NOTE,
+    es_el_sitio_elegido: app.selected?.site.id === m.site.id,
   };
 }
 
@@ -134,18 +150,22 @@ function siteReading(m: SiteMetrics) {
 function analisisDelSitio(app: MissionSource, input: unknown) {
   const ranking = app.ranking;
   if (!ranking.length) return missing('Todavía no se han evaluado los sitios: el ranking aparece en la fase de órbita.');
+  const realSites = ranking.filter(isReal);
   const query = typeof (input as { sitio?: unknown } | null)?.sitio === 'string' ? ((input as { sitio: string }).sitio).trim() : '';
   let chosen: SiteMetrics | null = null;
   if (query) {
     const found = findSite(ranking, query);
-    if (found.length > 1) return missing(`«${query}» coincide con varios sitios.`, { sitios_posibles: found.map((m) => m.site.name) });
-    chosen = found[0] ?? null;
-    if (!chosen) return missing(`No hay un sitio llamado «${query}» en el catálogo.`, { sitios_del_catalogo: ranking.map((m) => m.site.name) });
+    const real = found.filter(isReal);
+    const candidates = real.length ? real : found;
+    if (candidates.length > 1) return missing(`«${query}» coincide con varios sitios.`, { sitios_posibles: candidates.map((m) => m.site.name) });
+    chosen = candidates[0] ?? null;
+    if (!chosen) return missing(`No hay un sitio llamado «${query}» en el catálogo.`, { sitios_del_catalogo: realSites.map((m) => m.site.name) });
   } else if (app.selected) {
     chosen = ranking.find((m) => m.site.id === app.selected?.site.id) ?? app.selected;
   } else {
-    return missing('Todavía no hay un sitio elegido; indica uno por su nombre.', { sitios_del_catalogo: ranking.map((m) => m.site.name) });
+    return missing('Todavía no hay un sitio elegido; indica uno por su nombre.', { sitios_del_catalogo: realSites.map((m) => m.site.name) });
   }
+  if (!isReal(chosen)) return demoCase(chosen, app);
   return {
     ...siteReading(chosen),
     es_el_sitio_elegido: app.selected?.site.id === chosen.site.id,
@@ -163,7 +183,8 @@ function compararSitios(app: MissionSource, input: unknown) {
   if (!ranking.length) return missing('Todavía no se han evaluado los sitios: el ranking aparece en la fase de órbita.');
   const asked = Number((input as { cantidad?: unknown } | null)?.cantidad);
   const count = Number.isFinite(asked) ? Math.min(5, Math.max(3, Math.round(asked))) : 3;
-  const best = [...ranking].sort((a, b) => a.rank - b.rank).slice(0, count);
+  const real = ranking.filter(isReal);
+  const best = [...real].sort((a, b) => a.rank - b.rank).slice(0, count);
   return {
     mejores_sitios: best.map((m) => ({
       puesto: m.rank,
@@ -173,7 +194,7 @@ function compararSitios(app: MissionSource, input: unknown) {
       por_que: `Sol visible el ${Math.round(m.illumPct)} % y Tierra visible el ${Math.round(m.earthPct)} % de los ${MISSION_WINDOW_DAYS} días; ${weakestLink(m)}. Noche más larga: ${round(m.longestDarkH)} h.`,
       es_el_sitio_elegido: app.selected?.site.id === m.site.id,
     })),
-    sitios_evaluados: ranking.length,
+    sitios_evaluados: real.length,
     fecha_de_aterrizaje: app.data?.landingDate.toISOString() ?? null,
   };
 }
@@ -196,7 +217,7 @@ function datosDeMision(app: MissionSource) {
   const delay = appliedDelay(hud);
   const chosen = app.selected ? app.ranking.find((m) => m.site.id === app.selected?.site.id) ?? app.selected : null;
   const row: HudRankRow | undefined = hud?.side.kind === 'ranking' ? hud.side.rows.find((r) => r.selected) : undefined;
-  const now = chosen ? Math.round(chosen.score) : null;
+  const now = chosen && isReal(chosen) ? Math.round(chosen.score) : null;
   const before = now !== null && delay !== null ? (delay === 0 ? now : row?.delta !== undefined ? now - row.delta : null) : null;
   return {
     sitio_elegido: chosen?.site.name ?? null,
@@ -207,7 +228,8 @@ function datosDeMision(app: MissionSource) {
     puntaje_actual: now,
     puntaje_con_la_fecha_original: before,
     cambio_de_puntaje: now !== null && before !== null ? now - before : null,
-    ...(now === null ? { nota_sitio: 'Todavía no hay un sitio elegido.' } : {}),
+    ...(!chosen ? { nota_sitio: 'Todavía no hay un sitio elegido.' } : {}),
+    ...(chosen?.site.crash ? { nota_sitio: `${chosen.site.name} es un caso de demostración (falla simulada del motor), no un sitio real: no tiene puntaje.` } : {}),
   };
 }
 

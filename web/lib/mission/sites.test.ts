@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadMissionData } from './sites';
+import { DEMO_CRASH_NOTE, NO_CAER_SITE_ID, loadMissionData, rankingNote } from './sites';
 
 const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../public/data');
 const read = (relative: string): unknown => JSON.parse(readFileSync(resolve(dataDir, relative), 'utf8'));
@@ -68,5 +68,26 @@ describe('loadMissionData landing parameters', () => {
     const data = await load();
     expect(data.landingDate.toISOString()).toBe('2027-01-31T00:00:00.000Z');
     expect(data.requestedSiteId).toBeUndefined();
+  });
+});
+
+describe('ranking notes', () => {
+  it('carries the catalog region of every loaded site and tags NO CAER as the only crash', async () => {
+    const data = await load();
+    const byId = new Map(data.sites.map((s) => [s.id, s]));
+    expect(byId.get('apollo-11')?.region).toBe('equatorial');
+    expect(byId.get('change-4')?.region).toBe('far-side');
+    expect(byId.get(NO_CAER_SITE_ID)?.crash).toBe(true);
+    expect(data.sites.filter((s) => s.crash)).toHaveLength(1);
+  });
+
+  it('labels contrast sites by region, the demo case apart and leaves south-pole and unknown sites bare', () => {
+    expect(rankingNote({ region: 'equatorial' })).toBe('Contraste · ecuatorial');
+    expect(rankingNote({ region: 'mid-latitude' })).toBe('Contraste · latitud media');
+    expect(rankingNote({ region: 'far-side' })).toBe('Contraste · lado oculto');
+    expect(rankingNote({ region: 'south-pole' })).toBeUndefined();
+    expect(rankingNote({})).toBeUndefined();
+    expect(rankingNote({ crash: true, region: 'south-pole' })).toBe(DEMO_CRASH_NOTE);
+    expect(DEMO_CRASH_NOTE).toBe('Caso de demostración · falla simulada del motor');
   });
 });
