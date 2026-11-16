@@ -10,7 +10,7 @@ NASA International Space Apps Challenge 2026 · Challenge: *Lunar Landing Site N
 ![Status](https://img.shields.io/badge/status-deployed-2ea44f?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Web%20%7C%20WebXR-555555?style=flat-square)
 
-**Live demo:** https://touchdown.villabruno2.workers.dev
+**Live demo:** https://touchdown.fernandovmedina.workers.dev
 
 </div>
 
@@ -191,7 +191,9 @@ See [`web/README.md`](web/README.md) for development shortcuts (`?phase=`, `?spe
 
 ## Deployment
 
-Deployment is manual; pushing to `main` does not deploy anything (CI only runs on pull requests). `worker/wrangler.jsonc` has no `account_id`, so Wrangler deploys to whichever Cloudflare account you are logged into:
+Every push to `main` runs the CI suite and, if it passes, deploys to Cloudflare Workers (`.github/workflows/deploy.yml`, also runnable by hand with *Run workflow*). It needs two repository secrets: `CLOUDFLARE_API_TOKEN` (template "Edit Cloudflare Workers") and `CLOUDFLARE_ACCOUNT_ID`. The optional `DEPLOY_URL` variable overrides the URL used for the smoke test (default `https://touchdown.fernandovmedina.workers.dev`).
+
+To deploy by hand, `worker/wrangler.jsonc` has no `account_id`, so Wrangler deploys to whichever Cloudflare account you are logged into:
 
 ```bash
 pnpm --filter @touchdown/worker exec wrangler login   # once
