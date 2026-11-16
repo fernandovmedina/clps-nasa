@@ -10,7 +10,7 @@ import { surfaceFor, type SurfaceWorld } from './surface-world';
 import { fmtInt, fmtLatLon, fmtPercent, type PhaseHud } from '../engine/hud';
 
 const T_BRAKE = 17;     // end of the powered approach
-const T_TOUCH = 25.5;   // touchdown
+export const T_TOUCH = 25.5;   // touchdown
 const DECK = 3.0;       // cockpit floor height above the ground
 // Matches the feel of the old 0.2-per-frame smoothing at 60 fps, but frame-rate independent
 // (the 90 Hz Quest previously read speeds more sluggish than desktop with the per-frame constant).
@@ -65,7 +65,6 @@ function buildCockpit(app: LunarApp) {
   return { group: g, lights };
 }
 
-/** Phase 4 — powered descent seen from inside the capsule. */
 /** Follows `prefers-reduced-motion` live, like launch.ts; without matchMedia (tests, old browsers) motion stays on. */
 export function watchReducedMotion(): { reduced: () => boolean; stop: () => void } {
   const query = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
@@ -91,6 +90,7 @@ export function touchdownJolt(t: number, isXR: boolean, reducedMotion: boolean):
   return Math.sin(since * 40) * 0.04 * (1 - since / JOLT_SECONDS);
 }
 
+/** Phase 4 — powered descent seen from inside the capsule. */
 export class LandingPhase implements Phase {
   readonly name = 'landing' as const;
   readonly scene: THREE.Scene;

@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { impactShakeAmplitude, touchdownJolt, watchReducedMotion } from './landing';
-
-const T_TOUCH = 25.5;
+import { T_TOUCH, impactShakeAmplitude, touchdownJolt, watchReducedMotion } from './landing';
 
 /** A matchMedia whose answer can be flipped, as when the person changes the system setting mid-flight. */
 function stubMatchMedia(matches: boolean) {

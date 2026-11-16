@@ -222,7 +222,7 @@ export class OrbitPhase implements Phase {
     ];
     const label = textLabel(lines, 46);
     label.position.y = 82;
-    const chip = textLabel([{ text: `#${m.rank}`, size: 64, color, mono: true, weight: 800 }], 18);
+    const chip = textLabel([{ text: `#${m.rank}`, size: 150, color, mono: true, weight: 800 }], 9);
     chip.position.y = 76;
     setSpriteShown(chip, false);
     return { label, chip };
