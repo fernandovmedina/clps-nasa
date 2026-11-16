@@ -485,7 +485,7 @@ describe('WelcomeGuide', () => {
 });
 
 describe('WelcomeGuide in English', () => {
-  const SUBTITLE_EN = 'Welcome to TOUCHDOWN. I\'m the Space Donkey, your guide. Together we\'ll pick where and when to land at the Moon\'s south pole.';
+  const SUBTITLE_EN = 'Welcome to TOUCHDOWN. I\'m Burrito, your space donkey guide. Together we\'ll pick where and when to land at the Moon\'s south pole.';
 
   it('subtitles, asks and offers the way in in natural English', async () => {
     setLang('en', { persist: false });
@@ -498,7 +498,7 @@ describe('WelcomeGuide in English', () => {
     expect(screen.getByText(SUBTITLE_EN)).toBeTruthy();
     await settle(lines[0], 'ended');
     const card = screen.getByRole('dialog', { name: 'Welcome to TOUCHDOWN' });
-    expect(card.textContent).toContain('Space Donkey');
+    expect(card.textContent).toContain('Burrito');
     expect(screen.getByText('Compare lunar south pole landing sites and dates with real NASA data')).toBeTruthy();
     expect(screen.getByText('For VR, open it in the Meta Quest browser')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Follow someone\'s mission (with a code)' })).toBeTruthy();

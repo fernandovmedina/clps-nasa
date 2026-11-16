@@ -22,8 +22,8 @@ export const welcomeDict = defineDict({
   en: {
     skip: 'Skip',
     tap: 'Tap to start',
-    subtitle: 'Welcome to TOUCHDOWN. I\'m the Space Donkey, your guide. Together we\'ll pick where and when to land at the Moon\'s south pole.',
-    eyebrow: 'Space Donkey',
+    subtitle: 'Welcome to TOUCHDOWN. I\'m Burrito, your space donkey guide. Together we\'ll pick where and when to land at the Moon\'s south pole.',
+    eyebrow: 'Burrito',
     title: 'Welcome to TOUCHDOWN',
     lede: 'Compare lunar south pole landing sites and dates with real NASA data',
     enterVr: 'Enter VR',
