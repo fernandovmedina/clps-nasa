@@ -402,7 +402,7 @@ export class LaunchPhase implements Phase {
       : null;
     const detail = this.started ? this.status
       : !isHost ? (this.app.room.status === 'open' ? 'Conectado. El despegue empezará aquí en cuanto la tripulación pulse «Comenzar despegue».' : 'Conectando con la sala…')
-      : this.done ? `Mission Control puede conectarse con el código ${this.app.room.room} antes de iniciar.`
+      : this.done ? `Quien te siga puede conectarse con el código ${this.app.room.room} antes de iniciar.`
       : this.status;
     return {
       figure: count ?? waitingFigure ?? { value: pct, caption: 'de los datos de la misión cargados' },

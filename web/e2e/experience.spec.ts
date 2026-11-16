@@ -355,7 +355,7 @@ test.describe('narrow screens', () => {
 
 const roomCode = (page: Page) => page.getByTestId('room-code')
 const roomInUrl = (page: Page) => new URL(page.url()).searchParams.get('room')
-const followPill = (page: Page) => page.getByText(/Mission Control · siguiendo la misión/)
+const followPill = (page: Page) => page.getByText(/Seguimiento · siguiendo la misión/)
 
 async function openRoom(page: Page, query = '', role: 'vr' | 'monitor' = 'vr') {
   await page.setViewportSize({ width: 640, height: 480 })
@@ -534,7 +534,7 @@ test('the planner opens first: pick a date, see the plan change, confirm and beg
   await expect(block.getByText('Despegue 20 ene 2027 · 12:00 UTC')).toBeVisible()
   await expect(block.getByText('Llegada 25 ene 2027 · 00:00 UTC')).toBeVisible()
   await expect(figure(page)).toHaveText('Listo')
-  await expect(page.getByText(/Mission Control puede conectarse con el código/)).toBeVisible()
+  await expect(page.getByText(/Quien te siga puede conectarse con el código/)).toBeVisible()
   await expect(block.getByRole('link', { name: 'Análisis de sitios y fechas' })).toHaveCount(0)
 
   await block.getByRole('button', { name: 'Cambiar lanzamiento' }).click()

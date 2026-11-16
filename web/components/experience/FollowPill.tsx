@@ -5,7 +5,7 @@ export default function FollowPill({ code, open }: { code: string; open: boolean
   return (
     <p className={styles.followPill}>
       <span className={styles.dotStatus} data-state={open ? 'open' : 'wait'} role="img" aria-label={open ? 'Conectado' : 'Conectando'} />
-      <span>Mission Control · siguiendo la misión <strong data-testid="room-code">{code}</strong></span>
+      <span>Seguimiento · siguiendo la misión <strong data-testid="room-code">{code}</strong></span>
     </p>
   );
 }

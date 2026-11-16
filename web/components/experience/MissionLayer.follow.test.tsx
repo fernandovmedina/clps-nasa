@@ -42,13 +42,13 @@ const monitor = (over: Partial<{ code: string; onLeave: () => void; onJoin: (c: 
 const crew = (over: Partial<{ onJoin: (c: string) => boolean }> = {}) => ({ code: 'ABCD', isHost: true, onJoin: vi.fn(() => true), onLeave: vi.fn(), ...over });
 const tick = (ms = 150) => act(() => { vi.advanceTimersByTime(ms); });
 
-describe('Mission Control follow mode', () => {
+describe('Follow mode', () => {
   it('shows the pill with the mission code and a green dot while the room is open, grey while connecting', async () => {
     const fake = fakeApp(waitingHud());
     render(<MissionLayer app={fake.app} vr="no" onEnterVR={vi.fn()} room={monitor()} />);
     await tick();
     const pill = screen.getByText(/siguiendo la misión/).closest('p')!;
-    expect(pill.textContent).toBe('Mission Control · siguiendo la misión WXYZ');
+    expect(pill.textContent).toBe('Seguimiento · siguiendo la misión WXYZ');
     expect(within(pill).getByText('WXYZ').tagName).toBe('STRONG');
     const dot = within(pill).getByRole('img');
     expect(dot.getAttribute('aria-label')).toBe('Conectado');
@@ -182,7 +182,7 @@ describe('follow dialog from the crew side', () => {
 describe('the planner in the layer', () => {
   const launching = () => fakeApp(waitingHud({
     figure: { value: 'Listo', caption: 'para despegar' },
-    detail: 'Mission Control puede conectarse con el código ABCD antes de iniciar.',
+    detail: 'Quien te siga puede conectarse con el código ABCD antes de iniciar.',
     primary: { id: 'start', label: 'Comenzar despegue', run: vi.fn() },
   }));
 
@@ -208,6 +208,6 @@ describe('the planner in the layer', () => {
     await tick();
     expect(screen.getByTestId('figure').textContent).toBe('Listo');
     expect(screen.getByText('para despegar')).toBeTruthy();
-    expect(screen.getByText('Mission Control puede conectarse con el código ABCD antes de iniciar.')).toBeTruthy();
+    expect(screen.getByText('Quien te siga puede conectarse con el código ABCD antes de iniciar.')).toBeTruthy();
   });
 });
