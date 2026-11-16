@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEMO_CRASH_NOTE, NO_CAER_SITE_ID, loadMissionData, rankingNote } from './sites';
+import { setLang } from '@/lib/i18n';
+import { DEMO_CRASH_NOTE, NO_CAER_SITE_ID, demoCrashNote, devFallbackMission, loadMissionData, rankingNote } from './sites';
 
 const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../public/data');
 const read = (relative: string): unknown => JSON.parse(readFileSync(resolve(dataDir, relative), 'utf8'));
@@ -91,3 +92,59 @@ describe('ranking notes', () => {
     expect(DEMO_CRASH_NOTE).toBe('Caso de demostración · falla simulada del motor');
   });
 });
+
+describe('English text', () => {
+  it('labels contrast sites and the demo case in English, leaving the rest bare', () => {
+    setLang('en', { persist: false });
+    expect(rankingNote({ region: 'equatorial' })).toBe('Contrast · equatorial');
+    expect(rankingNote({ region: 'mid-latitude' })).toBe('Contrast · mid-latitude');
+    expect(rankingNote({ region: 'far-side' })).toBe('Contrast · far side');
+    expect(rankingNote({ region: 'south-pole' })).toBeUndefined();
+    expect(rankingNote({})).toBeUndefined();
+    expect(rankingNote({ crash: true, region: 'south-pole' })).toBe('Demo case · simulated engine failure');
+    expect(demoCrashNote()).toBe('Demo case · simulated engine failure');
+  });
+
+  it('keeps the Spanish constant fixed and follows the language on every call', () => {
+    setLang('en', { persist: false });
+    expect(DEMO_CRASH_NOTE).toBe('Caso de demostración · falla simulada del motor');
+    expect(rankingNote({ region: 'far-side' })).toBe('Contrast · far side');
+    setLang('es', { persist: false });
+    expect(rankingNote({ region: 'far-side' })).toBe('Contraste · lado oculto');
+  });
+
+  it('reports the loading steps in English, keeping site names as they are', async () => {
+    setLang('en', { persist: false });
+    const messages: string[] = [];
+    await loadMissionData((_p, msg) => messages.push(msg));
+    expect(messages[0]).toBe('Loading site catalog · NASA LOLA + JPL Horizons');
+    expect(messages.some((m) => /^Ephemeris and horizon · .+/.test(m))).toBe(true);
+    expect(messages.at(-1)).toBe('Data ready');
+  });
+
+  it('reports the loading steps in Spanish with the same site names', async () => {
+    const messages: string[] = [];
+    await loadMissionData((_p, msg) => messages.push(msg));
+    expect(messages[0]).toBe('Cargando catálogo de sitios · NASA LOLA + JPL Horizons');
+    expect(messages.some((m) => m.startsWith('Efemérides y horizonte · '))).toBe(true);
+    expect(messages.at(-1)).toBe('Datos listos');
+  });
+
+  it('gives NO CAER a note that follows the language when read, and keeps its name', async () => {
+    const data = await load();
+    const demo = data.sites.find((s) => s.id === NO_CAER_SITE_ID)!;
+    expect(demo.name).toBe('NO CAER');
+    expect(demo.note).toBe('Caso de demostración, no es un sitio real: el descenso termina en impacto.');
+    setLang('en', { persist: false });
+    expect(demo.note).toBe('Demo case, not a real site: the descent ends in an impact.');
+    expect(demo.name).toBe('NO CAER');
+  });
+
+  it('names the development fallback site in English', () => {
+    setLang('en', { persist: false });
+    const site = devFallbackMission().sites[0]!;
+    expect(site.name).toBe('Development site (no real data)');
+    expect(site.note).toContain('Development fallback: not a real site');
+  });
+});
+

@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { computeScenario, horizonAt as coreHorizonAt, positionAt, visibleDiskFraction, SUN_RADIUS_DEG } from '@touchdown/core';
 import { clamp01 } from '../engine/util';
+import { locale } from '../i18n';
 import type { SiteInput } from './sites';
 
 export interface SkyPos { elevation: number; azimuth: number; local: THREE.Vector3; aboveHorizon: number }
@@ -128,7 +129,7 @@ export function evaluateSites(sites: SiteInput[], landing: Date, windowDays = 14
   return results;
 }
 
-export const fmtHours = (h: number) => (h >= 48 ? `${(h / 24).toFixed(1)} d` : `${Math.round(h)} h`);
+export const fmtHours = (h: number) => (h >= 48 ? `${(h / 24).toLocaleString(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 })} d` : `${Math.round(h)} h`);
 export const scoreColor = (score: number) => {
   // green (best) -> amber -> red (worst)
   const t = clamp01((score - 35) / 50);
