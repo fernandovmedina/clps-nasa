@@ -44,9 +44,12 @@ export const earthLinkText = (earthUp: boolean) => (earthUp ? 'enlace directo' :
 /** El puntaje siempre como «94/100», igual que en el resto de la experiencia. */
 export const scoreText = (score: number) => `${Math.round(score)}/100`;
 
-/** Aviso para sitios sin heightmap RAW: el relieve cercano es de relleno, el horizonte sí es el real. */
+/** Rótulo para sitios con heightmap RAW: el DEM es dato real, pero los cráteres menores y la textura del suelo son ilustrativos. */
+export const RAW_RELIEF_NOTE = 'Relieve: LOLA 80 m/px · cráteres menores y textura del suelo ilustrativos';
+
+/** Rótulo del relieve cercano: con RAW aclara qué es dato y qué es ilustrativo; sin RAW, que todo el relieve cercano es de relleno. */
 export function nearReliefNote(site: SiteMetrics['site']) {
-  if (site.hasTerrain) return null;
+  if (site.hasTerrain) return RAW_RELIEF_NOTE;
   return `Relieve cercano ilustrativo · horizonte ${site.horizonSource === 'lola' ? 'real LOLA' : 'esférico (aproximado)'}`;
 }
 

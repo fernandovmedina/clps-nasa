@@ -58,6 +58,8 @@ test('standing on Nobile Rim 2 the real terrain reads: the lower half of the vie
   await expect(page.getByText(/oculta desde la superficie · requiere relevo/)).toBeVisible()
   await expect(page.getByText('Temperatura aprox.')).toBeVisible()
   await expect(page.getByText('58/100 · Marginal')).toBeVisible()
+  // El DEM es dato real; los cráteres menores y la textura del suelo no, y la pantalla lo dice.
+  await expect(page.getByText(/Relieve: LOLA 80 m\/px · cráteres menores y textura del suelo ilustrativos/)).toBeVisible()
   await expect(page.getByRole('button', { name: 'Mirar al Sol' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Mirar a la Tierra' })).toBeEnabled()
 

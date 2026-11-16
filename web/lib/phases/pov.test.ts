@@ -6,7 +6,7 @@ import { trackFromFile } from '@touchdown/core';
 import { describe, expect, it } from 'vitest';
 import { evaluateSites, type SiteMetrics, type SkyPos } from '../mission/scoring';
 import type { SiteInput } from '../mission/sites';
-import { TEMPERATURE_LABEL, earthLinkText, initialLook, lookAtBody, nearReliefNote, scoreText, skyHorizonLabel, skyElevationText } from './pov';
+import { TEMPERATURE_LABEL, earthLinkText, initialLook, lookAtBody, nearReliefNote, RAW_RELIEF_NOTE, scoreText, skyHorizonLabel, skyElevationText } from './pov';
 
 const sky = (azimuth: number, elevation: number, aboveHorizon: number): SkyPos => {
   const a = azimuth * Math.PI / 180, e = elevation * Math.PI / 180;
@@ -41,11 +41,12 @@ describe('etiquetas del HUD', () => {
     expect(scoreText(58.2)).toBe('58/100');
   });
 
-  it('solo los sitios sin heightmap RAW avisan que el relieve cercano es ilustrativo', () => {
+  it('el rótulo del relieve cercano depende de si hay heightmap RAW: ilustrativo sin él, fuente y alcance con él', () => {
     const base = { hasTerrain: false, horizonSource: 'lola' } as SiteInput;
     expect(nearReliefNote(base)).toBe('Relieve cercano ilustrativo · horizonte real LOLA');
     expect(nearReliefNote({ ...base, horizonSource: 'spherical' })).toBe('Relieve cercano ilustrativo · horizonte esférico (aproximado)');
-    expect(nearReliefNote({ ...base, hasTerrain: true })).toBeNull();
+    expect(nearReliefNote({ ...base, hasTerrain: true })).toBe('Relieve: LOLA 80 m/px · cráteres menores y textura del suelo ilustrativos');
+    expect(nearReliefNote({ ...base, hasTerrain: true, horizonSource: 'spherical' })).toBe(RAW_RELIEF_NOTE);
   });
 });
 
