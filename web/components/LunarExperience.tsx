@@ -8,6 +8,8 @@ import { PovPhase } from '@/lib/phases/pov';
 import { LandingPhase } from '@/lib/phases/landing';
 import { TransmitPhase } from '@/lib/phases/transmit';
 import { PHASE_ORDER } from '@/lib/engine/hud';
+import { missionDict } from '@/lib/i18n/dicts/ui-mission';
+import { useT } from '@/lib/i18n/react';
 import { opensPlanner } from '@/lib/mission/launch-plan';
 import { loadMissionData } from '@/lib/mission/sites';
 import { CapcomController } from '@/lib/capcom/controller';
@@ -54,7 +56,9 @@ export default function LunarExperience() {
   const [xr, setXr] = useState<'checking' | 'yes' | 'no'>('checking');
   const [inVR, setInVR] = useState(false);
   const [preview, setPreview] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const t = useT(missionDict);
+  /** `vr`: the headset refused, worded in the language of the moment; otherwise the raw start-up failure. */
+  const [error, setError] = useState<{ vr: boolean; text: string } | null>(null);
   const [roomCode, setRoomCode] = useState('');
   const [isHost, setIsHost] = useState(true);
   const [planning, setPlanning] = useState(false);
@@ -101,7 +105,7 @@ export default function LunarExperience() {
     Promise.race([document.fonts?.load('600 16px "Inter Variable"'), new Promise((r) => setTimeout(r, 1500))])
       .catch(() => {})
       .then(() => (cancelled ? undefined : app.start()))
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError({ vr: false, text: String(e) }));
     appRef.current = app;
     setApp(app);
     const voice = params.get('capcom') === '0' ? null : new CapcomController(app, installCapcomDebug(params, app));
@@ -144,7 +148,7 @@ export default function LunarExperience() {
       await current.enterVR();
       return true;
     } catch (e) {
-      setError(`No se pudo iniciar VR: ${String(e)}`);
+      setError({ vr: true, text: String(e) });
       return false;
     }
   };
@@ -202,7 +206,7 @@ export default function LunarExperience() {
           ? <WelcomeGuide app={app} onChoose={chooseRole} />
           : <MissionLayer app={app} vr={xr} onEnterVR={enterVR} capcom={capcom} room={{ code: roomCode, isHost, onJoin: joinRoom, onLeave: leaveRoom }} planning={planning} onPlanning={setPlanning} openFollowOnMount={openFollowOnMount} />
       )}
-      {error && <div role="alert" className={styles.error}>{error}</div>}
+      {error && <div role="alert" className={styles.error}>{error.vr ? t('vrError', { error: error.text }) : error.text}</div>}
     </div>
   );
 }

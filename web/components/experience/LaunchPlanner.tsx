@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import type { LunarApp } from '@/lib/engine/app';
-import { STATUS_TONES, fmtInt } from '@/lib/engine/hud';
+import { STATUS_TONES } from '@/lib/engine/hud';
 import { plannerDict } from '@/lib/i18n/dicts/ui-planner';
 import { missionDict } from '@/lib/i18n/dicts/ui-mission';
 import { useT } from '@/lib/i18n/react';
@@ -23,7 +23,7 @@ import { earthMoonDistanceKm } from '@/lib/phases/launch-telemetry';
 import dialog from './Dialog.module.css';
 import layer from './MissionLayer.module.css';
 import styles from './LaunchPlanner.module.css';
-import { fmtPlanDate, statusLabel } from './ui-text';
+import { fmtCount, fmtPlanDate, statusLabel } from './ui-text';
 
 interface Props {
   app: LunarApp;
@@ -190,7 +190,7 @@ export default function LaunchPlanner({ app, code, onClose, suspendEscape = fals
               </div>
               <div className={styles.figure}>
                 <dt>{t('distance')}</dt>
-                <dd className={styles.value} data-testid="planner-distance">{results?.km != null ? `${fmtInt(results.km)} km` : '—'}</dd>
+                <dd className={styles.value} data-testid="planner-distance">{results?.km != null ? `${fmtCount(results.km)} km` : '—'}</dd>
                 <dd className={styles.hint}>JPL Horizons</dd>
               </div>
             </dl>

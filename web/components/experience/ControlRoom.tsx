@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import type { CapcomController } from '@/lib/capcom/controller';
 import type { PhaseName } from '@/lib/engine/app';
-import { PHASE_ORDER, STATUS_TONES, fmtInt, type HudSide, type PhaseHud } from '@/lib/engine/hud';
+import { PHASE_ORDER, STATUS_TONES, type HudSide, type PhaseHud } from '@/lib/engine/hud';
 import { t as translate, type DictKey, type Vars } from '@/lib/i18n';
 import { controlRoomDict } from '@/lib/i18n/dicts/ui-control-room';
 import { missionDict } from '@/lib/i18n/dicts/ui-mission';
@@ -12,7 +12,7 @@ import { TRANSIT_DAYS } from '@/lib/mission/launch-plan';
 import { CapcomButton, CapcomCaption } from './Capcom';
 import FollowPill from './FollowPill';
 import { CheckIcon, SoundIcon } from './icons';
-import { demoLabel, phaseLabel, statusLabel } from './ui-text';
+import { demoLabel, fmtCount, phaseLabel, statusLabel } from './ui-text';
 import type { HudSnapshot } from './useHudSnapshot';
 import layer from './MissionLayer.module.css';
 import styles from './ControlRoom.module.css';
@@ -194,7 +194,7 @@ export default function ControlRoom({ view, code, log, capcom, soundOn, soundDis
               <div><dt>{t('launch')}</dt><dd>{planDate(mission.launch)}</dd></div>
               <div><dt>{t('landing')}</dt><dd>{planDate(mission.landing)}</dd></div>
               <div><dt>{t('transit')}</dt><dd>{t('transitValue', { days: TRANSIT_DAYS })}</dd></div>
-              <div><dt>{t('distance')}</dt><dd>{moonKm === null ? '—' : `${fmtInt(moonKm)} km`}</dd></div>
+              <div><dt>{t('distance')}</dt><dd>{moonKm === null ? '—' : `${fmtCount(moonKm)} km`}</dd></div>
             </dl>
           ) : (
             <p className={styles.detail}>{t('connecting')}</p>

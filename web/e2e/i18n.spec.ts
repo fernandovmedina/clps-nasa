@@ -116,7 +116,7 @@ test.describe('the experience screens in English', () => {
     await welcomeCard(page, 'Welcome to TOUCHDOWN')
     await page.getByRole('button', { name: "Follow someone's mission (with a code)" }).click()
     await expect(page.getByText(/Tracking · following mission/)).toBeVisible()
-    for (const name of ['Mission status', 'Mission you follow', 'Live telemetry', 'Landing site', 'Landing site ranking', 'Event log']) {
+    for (const name of ['Mission status', 'Mission you’re following', 'Live telemetry', 'Landing site', 'Landing site ranking', 'Event log']) {
       await expect(page.locator(`section[aria-label="${name}"]`).first()).toBeVisible()
     }
     await expect(page.getByRole('list', { name: 'Mission phases' })).toBeVisible()

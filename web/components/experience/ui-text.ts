@@ -1,6 +1,6 @@
 import type { PhaseName } from '@/lib/engine/app';
 import type { SiteStatus } from '@/lib/engine/hud';
-import { fmtLanding } from '@/lib/engine/hud';
+import { fmtInt, fmtLanding } from '@/lib/engine/hud';
 import { locale, t } from '@/lib/i18n';
 import { missionDict } from '@/lib/i18n/dicts/ui-mission';
 
@@ -20,3 +20,6 @@ export function fmtPlanDate(date: Date): string {
   const day = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date);
   return `${day} · ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())} UTC`;
 }
+
+/** A whole number for the screen: Spanish keeps the narrow-space grouping of hud.ts, English groups with commas by its locale. */
+export const fmtCount = (n: number): string => (locale().startsWith('en') ? Math.round(n).toLocaleString(locale()) : fmtInt(n));

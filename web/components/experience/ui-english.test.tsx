@@ -15,7 +15,11 @@ import FollowMissionDialog from './FollowMissionDialog';
 import LaunchPlanner from './LaunchPlanner';
 import MissionLayer from './MissionLayer';
 import { announce, describeMission } from './mission';
-import { fmtPlanDate } from './ui-text';
+import { fmtCount, fmtPlanDate } from './ui-text';
+import SidePanel from './SidePanel';
+import StatusPanel from './StatusPanel';
+import { StatusIcon } from './icons';
+import { summarizeRanking } from './mission';
 import type { HudSnapshot } from './useHudSnapshot';
 
 afterEach(cleanup);
@@ -114,11 +118,11 @@ describe('the layers in English', () => {
     render(<MissionLayer app={fakeApp()} vr="no" onEnterVR={vi.fn()} room={{ code: 'WXYZ', isHost: false, onJoin: vi.fn(), onLeave: vi.fn() }} />);
     await act(async () => { vi.advanceTimersByTime(150); });
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('TOUCHDOWNTracking');
-    for (const name of ['Mission you follow', 'Live telemetry', 'Landing site', 'Landing site ranking', 'Event log']) {
+    for (const name of ['Mission you’re following', 'Live telemetry', 'Landing site', 'Landing site ranking', 'Event log']) {
       expect(screen.getByRole('region', { name })).toBeTruthy();
     }
     expect(screen.getByRole('status', { name: 'Mission status' })).toBeTruthy();
-    const pairs = screen.getByRole('region', { name: 'Mission you follow' });
+    const pairs = screen.getByRole('region', { name: 'Mission you’re following' });
     expect(within(pairs).getByText('Launch', { selector: 'dt' })).toBeTruthy();
     expect(within(pairs).getByText('Jan 5, 2027 · 12:00 UTC')).toBeTruthy();
     expect(within(pairs).getByText('4.5 days (assumed)')).toBeTruthy();
@@ -210,5 +214,83 @@ describe('CAPCOM in English', () => {
     render(<CapcomCaption controller={fake({ question: 'hello', answer: 'copy' })} />);
     expect(screen.getByRole('region', { name: 'CAPCOM captions' })).toBeTruthy();
     expect(screen.getByText('You')).toBeTruthy();
+  });
+});
+
+describe('numbers in English', () => {
+  it('groups with commas in English and keeps the Spanish grouping', () => {
+    expect(fmtCount(404378.4)).toBe('404,378');
+    setLang('es', { persist: false });
+    expect(fmtCount(404378.4)).toBe('404\u00a0378');
+  });
+
+  it('shows the Earth–Moon distance of the planner with commas', () => {
+    const data = realMissionData();
+    const app = { data: { ...data }, room: { send: vi.fn() }, setLanding: vi.fn(() => true) } as unknown as LunarApp;
+    render(<LaunchPlanner app={app} code="ABCD" onClose={vi.fn()} />);
+    expect(screen.getByTestId('planner-distance').textContent).toMatch(/^\d{3},\d{3} km$/);
+  });
+});
+
+describe('the side panel, the status panel and the icons in English', () => {
+  const row = (id: string, rank: number, score: number, delta?: number, status: 'viable' | 'marginal' | 'not_viable' = 'viable') =>
+    ({ id, rank, name: id, score, status, selected: false, delta });
+
+  it('names the score column, the empty list and the rank changes with singular and plural', () => {
+    const { rerender } = render(<SidePanel side={{ kind: 'ranking', title: 't', rows: [] }} frozen={false} onAct={vi.fn()} />);
+    expect(screen.getByText('Score')).toBeTruthy();
+    expect(screen.getByText('Evaluating sites…')).toBeTruthy();
+    rerender(<SidePanel side={{ kind: 'ranking', title: 't', rows: [row('a', 1, 90, 1), row('b', 2, 80, -3, 'marginal'), row('c', 3, 20, undefined, 'not_viable')] }} frozen={false} onAct={vi.fn()} />);
+    expect(screen.getByRole('list', { name: 'Landing site ranking' })).toBeTruthy();
+    expect(screen.getByLabelText('up 1 point')).toBeTruthy();
+    expect(screen.getByLabelText('down 3 points')).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Viable' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Marginal' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Not viable' })).toBeTruthy();
+  });
+
+  it('labels the demo case in English', () => {
+    render(<SidePanel side={{ kind: 'ranking', title: 't', rows: [{ ...row('no-caer', 1, 0), demo: true } as never] }} frozen={false} onAct={vi.fn()} />);
+    expect(screen.getByText('Demo · simulated engine failure')).toBeTruthy();
+  });
+
+  it('says paused and stopped in English', () => {
+    const plain: PhaseHud = { figure: { value: '1', caption: '' }, side: { kind: 'readouts', items: [] } };
+    const { rerender } = render(<StatusPanel phase="orbit" mode="paused" hud={plain} frozen onAct={vi.fn()} />);
+    expect(screen.getByText('Paused')).toBeTruthy();
+    expect(screen.getByText('The simulation and the sound are paused.')).toBeTruthy();
+    rerender(<StatusPanel phase="orbit" mode="stopped" hud={null} frozen onAct={vi.fn()} />);
+    expect(screen.getByTestId('figure').textContent).toBe('Stopped');
+    expect(screen.getByText('orbit and ranking phase')).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Mission status' })).toBeTruthy();
+  });
+
+  it('names the status of an icon in the language of the moment', () => {
+    render(<StatusIcon status="not_viable" />);
+    expect(screen.getByRole('img', { name: 'Not viable' })).toBeTruthy();
+  });
+
+  it('writes the contrast note of the ranking summary in English', () => {
+    const site = (id: string, region: string, crash = false) => ({ site: { id, name: id, region, crash }, rank: 1, score: 50, status: 'marginal' }) as never;
+    const [a, b, c] = summarizeRanking([site('eq', 'equatorial'), site('far', 'far-side'), site('no-caer', 'south-pole', true)]);
+    expect(a!.note).toBe('Contrast · equatorial');
+    expect(b!.note).toBe('Contrast · far side');
+    expect(c).toMatchObject({ demo: true });
+    expect(c!.note).toBeUndefined();
+  });
+});
+
+describe('the stopped card in English', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('says the mission stopped and offers to restart', async () => {
+    const app = { ...fakeApp(), run: { mode: 'stopped' } } as unknown as LunarApp;
+    render(<MissionLayer app={app} vr="no" onEnterVR={vi.fn()} room={{ code: 'ABCD', isHost: true, onJoin: vi.fn(), onLeave: vi.fn() }} />);
+    await act(async () => { vi.advanceTimersByTime(150); });
+    expect(screen.getByRole('heading', { name: 'Mission stopped' })).toBeTruthy();
+    expect(screen.getByText(/^The simulation stopped in the launch phase and the sound is off\./)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Restart from launch' })).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: 'Site and date analysis' }).length).toBeGreaterThan(0);
   });
 });
