@@ -261,6 +261,25 @@ describe('mission tools in English', () => {
     expect(out.nota_retraso).toMatch(/^The applied delay is only known in the orbit phase/);
   });
 
+  it('hands no Spanish sentence in any tool output (names, fields and state codes aside)', async () => {
+    const outs = [
+      await call(source(), 'analisis_del_sitio'),
+      await call(source(), 'analisis_del_sitio', { sitio: 'Nobile Rim 1' }),
+      await call(source(), 'comparar_sitios'),
+      await call(source({ phase: 'pov' }), 'datos_de_mision'),
+      await call(source({ phase: 'launch', mode: 'stopped' }), 'estado_del_viaje'),
+      await call(source({ ranking: WITH_DEMO, selected: NO_CAER }), 'analisis_del_sitio'),
+    ];
+    const texts: string[] = [];
+    const walk = (v: unknown, key = ''): void => {
+      if (typeof v === 'string') { if (key !== 'estado_de_la_mision') texts.push(v); }
+      else if (Array.isArray(v)) v.forEach((x) => walk(x, key));
+      else if (v && typeof v === 'object') Object.entries(v).forEach(([k, x]) => walk(x, k));
+    };
+    outs.forEach((o) => walk(o));
+    expect(texts.join(' | ')).not.toMatch(/\b(el|la|los|del|de la|puntaje|sitio|Sol visible|despegue|aterrizaje|lecturas|misión|no hay)\b/i);
+  });
+
   it('uses the language it was created in, not the one current when it runs', async () => {
     const tools = createMissionTools(source(), 'es');
     setLang('en', { persist: false });

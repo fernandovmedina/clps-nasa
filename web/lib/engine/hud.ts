@@ -1,4 +1,4 @@
-import { getLang, t } from '@/lib/i18n';
+import { getLang, locale, t } from '@/lib/i18n';
 import { engineHudDict } from '@/lib/i18n/dicts/engine-hud';
 import type { PhaseName } from './app';
 
@@ -160,15 +160,10 @@ export function fmtPercent(n: number): string {
   return t(engineHudDict, 'percent', { n: Math.round(n) });
 }
 
-const MONTH_KEYS = [
-  'month.0', 'month.1', 'month.2', 'month.3', 'month.4', 'month.5',
-  'month.6', 'month.7', 'month.8', 'month.9', 'month.10', 'month.11',
-] as const;
-
 /** "10 ene 2027 · 00:00 UTC" / "Jan 10, 2027 · 00:00 UTC" */
 export function fmtLanding(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
-  const day = t(engineHudDict, 'landingDate', { d: date.getUTCDate(), mon: t(engineHudDict, MONTH_KEYS[date.getUTCMonth()]!), y: date.getUTCFullYear() });
+  const day = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date);
   return `${day} · ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())} UTC`;
 }
 

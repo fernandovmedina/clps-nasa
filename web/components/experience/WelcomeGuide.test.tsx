@@ -485,7 +485,7 @@ describe('WelcomeGuide', () => {
 });
 
 describe('WelcomeGuide in English', () => {
-  const SUBTITLE_EN = 'Welcome to TOUCHDOWN. I\'m Burrito, your space donkey guide. Together we\'ll pick where and when to land at the Moon\'s south pole.';
+  const SUBTITLE_EN = 'Welcome to TOUCHDOWN. I\'m Burrito, your space donkey guide. Let\'s choose where and when to land at the Moon\'s south pole.';
 
   it('subtitles, asks and offers the way in in natural English', async () => {
     setLang('en', { persist: false });
