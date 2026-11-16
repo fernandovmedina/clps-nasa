@@ -12,7 +12,7 @@ import { TRANSIT_DAYS } from '@/lib/mission/launch-plan';
 import { CapcomButton, CapcomCaption } from './Capcom';
 import FollowPill from './FollowPill';
 import { CheckIcon, SoundIcon } from './icons';
-import { demoLabel, fmtCount, phaseLabel, statusLabel } from './ui-text';
+import { demoLabel, fmtCount, fmtPlanDate, phaseLabel, statusLabel } from './ui-text';
 import type { HudSnapshot } from './useHudSnapshot';
 import layer from './MissionLayer.module.css';
 import styles from './ControlRoom.module.css';
@@ -20,7 +20,7 @@ import styles from './ControlRoom.module.css';
 const MAX_EVENTS = 8;
 
 /** What the log watches: it adds an entry for each of these that changes. */
-interface Seen { phase: HudSnapshot['phase']; mode: HudSnapshot['mode']; roomOpen: boolean; started: boolean; plan: string; site: string }
+interface Seen { phase: HudSnapshot['phase']; mode: HudSnapshot['mode']; roomOpen: boolean; started: boolean; launchAt: number; landingAt: number; site: string }
 /** `text` is what the entry said when it was written; `key` and `vars` let the screen say it again in the language of the moment. */
 export type LogKey = Extract<DictKey<typeof controlRoomDict>, `log.${string}`>;
 export interface LogEntry { id: number; at: string; text: string; key: LogKey; vars?: Vars }
@@ -32,13 +32,13 @@ export function seenOf(view: HudSnapshot): Seen {
   return {
     phase: view.phase, mode: view.mode, roomOpen: view.roomOpen,
     started: view.hud ? view.hud.waiting !== true : false,
-    plan: `${view.mission.launch} · ${view.mission.landing}`,
+    launchAt: view.mission.launchAt, landingAt: view.mission.landingAt,
     site: view.site?.name ?? '',
   };
 }
 
 function sameSeen(a: Seen | null, b: Seen): boolean {
-  return !!a && a.phase === b.phase && a.mode === b.mode && a.roomOpen === b.roomOpen && a.started === b.started && a.plan === b.plan && a.site === b.site;
+  return !!a && a.phase === b.phase && a.mode === b.mode && a.roomOpen === b.roomOpen && a.started === b.started && a.launchAt === b.launchAt && a.landingAt === b.landingAt && a.site === b.site;
 }
 
 /** The event log after the mission moved to `seen`: pure apart from the clock, which `at` can fix for tests. */
@@ -48,7 +48,7 @@ export function nextLog(log: LogState, seen: Seen, code: string, at: Date = new 
   const stamp = `${at.toISOString().slice(11, 19)} UTC`;
   const texts: { key: LogKey; vars?: Vars }[] = [];
   if (seen.roomOpen && !prev?.roomOpen) texts.push({ key: 'log.connected', vars: { code } });
-  if (seen.roomOpen && (!prev?.roomOpen || prev.plan !== seen.plan)) texts.push({ key: 'log.plan', vars: { plan: seen.plan } });
+  if (seen.roomOpen && (!prev?.roomOpen || prev.launchAt !== seen.launchAt || prev.landingAt !== seen.landingAt)) texts.push({ key: 'log.plan', vars: { launchAt: seen.launchAt, landingAt: seen.landingAt } });
   let startLogged = log.startLogged;
   if (!startLogged && seen.roomOpen && (seen.started || seen.phase !== 'launch')) {
     texts.push({ key: 'log.started' });
@@ -66,17 +66,12 @@ export function nextLog(log: LogState, seen: Seen, code: string, at: Date = new 
 
 /** An event log line in the current language; `phase` travels as the phase id and is named here. */
 export function entryText(key: LogKey, vars?: Vars): string {
+  if (key === 'log.plan') {
+    const plan = [translate(missionDict, 'plan.launch', { date: fmtPlanDate(new Date(Number(vars?.launchAt))) }), translate(missionDict, 'plan.landing', { date: fmtPlanDate(new Date(Number(vars?.landingAt))) })].join(' · ');
+    return translate(controlRoomDict, key, { plan });
+  }
   const phase = vars?.phase;
   return translate(controlRoomDict, key, phase === undefined ? vars : { ...vars, phase: phaseLabel(phase as PhaseName) });
-}
-
-/** The «Despegue»/«Llegada» prefix the mission text carries, taken off in whichever language it was written. */
-function planDate(text: string): string {
-  for (const key of ['plan.launch', 'plan.landing'] as const) {
-    const prefix = translate(missionDict, key, { date: '' });
-    if (text.startsWith(prefix)) return text.slice(prefix.length);
-  }
-  return text;
 }
 
 type Reading = { label: string; value: string };
@@ -191,8 +186,8 @@ export default function ControlRoom({ view, code, log, capcom, soundOn, soundDis
           <h2>{t('launchTitle')}</h2>
           {roomOpen ? (
             <dl className={styles.pairs}>
-              <div><dt>{t('launch')}</dt><dd>{planDate(mission.launch)}</dd></div>
-              <div><dt>{t('landing')}</dt><dd>{planDate(mission.landing)}</dd></div>
+              <div><dt>{t('launch')}</dt><dd>{fmtPlanDate(new Date(mission.launchAt))}</dd></div>
+              <div><dt>{t('landing')}</dt><dd>{fmtPlanDate(new Date(mission.landingAt))}</dd></div>
               <div><dt>{t('transit')}</dt><dd>{t('transitValue', { days: TRANSIT_DAYS })}</dd></div>
               <div><dt>{t('distance')}</dt><dd>{moonKm === null ? '—' : `${fmtCount(moonKm)} km`}</dd></div>
             </dl>

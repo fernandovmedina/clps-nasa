@@ -9,7 +9,7 @@ import { earthMoonDistanceKm } from '@/lib/phases/launch-telemetry';
 import { fmtHours, type SiteMetrics } from '@/lib/mission/scoring';
 import type { MissionData } from '@/lib/mission/sites';
 
-export interface MissionInfo { site: string; launch: string; landing: string }
+export interface MissionInfo { site: string; launch: string; landing: string; launchAt: number; landingAt: number }
 
 const ANY_RANGE = { start: new Date(0), end: new Date(8.64e15) };
 
@@ -25,7 +25,8 @@ export function describeMission(src: { data: MissionData | null; selected: SiteM
   const byRequest = data?.requestedSiteId ? data.sites.find((s) => s.id === data.requestedSiteId)?.name : undefined;
   const site = src.selected?.site.name ?? byRequest ?? (requested?.site && !data ? t(missionDict, 'site.loading') : t(missionDict, 'site.pending'));
   const landing = currentLanding(data, search);
-  return { site, launch: t(missionDict, 'plan.launch', { date: fmtPlanDate(launchFromLanding(landing)) }), landing: t(missionDict, 'plan.landing', { date: fmtPlanDate(landing) }) };
+  const launchDate = launchFromLanding(landing);
+  return { site, launchAt: launchDate.getTime(), landingAt: landing.getTime(), launch: t(missionDict, 'plan.launch', { date: fmtPlanDate(launchDate) }), landing: t(missionDict, 'plan.landing', { date: fmtPlanDate(landing) }) };
 }
 
 /** What the polite live region says when the run mode or the phase changes; empty when nothing changed. */

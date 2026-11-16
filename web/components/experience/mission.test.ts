@@ -38,7 +38,7 @@ describe('describeMission', () => {
 
   it('shows the requested catalog site and the loaded landing date once the data is in', () => {
     const info = describeMission({ data: data({ requestedSiteId: 'malapert-a' }), selected: null }, '?site=malapert-a');
-    expect(info).toEqual({ site: 'Malapert A (IM-1 Odysseus)', launch: 'Despegue 5 ene 2027 · 12:00 UTC', landing: 'Llegada 10 ene 2027 · 00:00 UTC' });
+    expect(info).toEqual({ site: 'Malapert A (IM-1 Odysseus)', launch: 'Despegue 5 ene 2027 · 12:00 UTC', landing: 'Llegada 10 ene 2027 · 00:00 UTC', launchAt: Date.UTC(2027, 0, 5, 12), landingAt: Date.UTC(2027, 0, 10) });
   });
 
   it('prefers the site picked in the ranking and follows a delayed landing date', () => {
