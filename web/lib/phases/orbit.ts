@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { LunarApp, Phase } from '../engine/app';
 import type { LoopControl } from '../engine/audio';
-import { Panel, UI, roundRect, statusColor, textLabel } from '../engine/panel';
+import { Panel, UI, roundRect, statusColor } from '../engine/panel';
+import { palette } from '../ui/palette';
 import { starField } from '../engine/particles';
 import { createMoon } from '../engine/moon';
 import { earthTexture, glowTexture } from '../engine/textures';
@@ -11,6 +12,7 @@ import type { RoomEvent } from '../sync/room-client';
 import { evaluateSites, fmtHours, type SiteMetrics } from '../mission/scoring';
 import { devFallbackMission, rankingNote, type MissionData, type RankRowExtras } from '../mission/sites';
 import { clearSurface } from './surface-world';
+import { paintPaperChip, paperLabel, paperStatusColor, type PaperLine } from './markers';
 import { STATUS_LABELS, STATUS_TONES, fmtPercent, fmtSigned, type HudRankRow, type PhaseHud } from '../engine/hud';
 
 const R = 1000;               // moon radius in scene units (1 u ≈ 1.74 km)
@@ -45,6 +47,19 @@ export interface PinLabelCandidate {
 const FULL_LABEL_RANKS = 3;
 const NAME_MAX_CHARS = 26;
 
+/** Rejilla del DOM de misión (MissionLayer): 20 de margen + 256 de riel a la izquierda; 272 de panel + 20 a la derecha. */
+const DOM_LEFT_PX = 20 + 256 + 20, DOM_RIGHT_PX = 272 + 20 + 20;
+/** Bajo este ancho la rejilla del DOM cambia (paneles apilados) y ya no hay columnas laterales que respetar. */
+const DOM_COLUMNS_MIN_W = 1024;
+
+/** Zona de la vista (px de CSS) que los paneles DOM dejan libre; ninguna etiqueta debe salirse de ella. */
+export function pinSafeBounds(width: number, height: number): PinRect {
+  if (width < DOM_COLUMNS_MIN_W) return { x: 0, y: 0, w: width, h: height };
+  return { x: DOM_LEFT_PX, y: 0, w: width - DOM_LEFT_PX - DOM_RIGHT_PX, h: height };
+}
+
+const rectInside = (r: PinRect, outer: PinRect) => r.x >= outer.x && r.y >= outer.y && r.x + r.w <= outer.x + outer.w && r.y + r.h <= outer.y + outer.h;
+
 export function rectsOverlap(a: PinRect, b: PinRect): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
@@ -53,11 +68,13 @@ export function rectsOverlap(a: PinRect, b: PinRect): boolean {
  * Decides what each pin shows: the full label for the top ranks, the selected and the hovered one (the latter
  * two win ties); everything else a rank chip. Whatever would land on something already shown is dropped, the
  * worse rank first, so no two visible boxes ever overlap (an overlapped full label falls back to its chip).
+ * With `safe`, a box that is not wholly inside it (it would sit under a DOM panel) counts as taken too: the
+ * label falls back to its chip and the chip, if it does not fit either, is hidden.
  */
-export function planPinLabels(pins: PinLabelCandidate[]): Map<string, PinLabelMode> {
+export function planPinLabels(pins: PinLabelCandidate[], safe?: PinRect): Map<string, PinLabelMode> {
   const modes = new Map<string, PinLabelMode>();
   const shown: PinRect[] = [];
-  const free = (r: PinRect) => !shown.some((o) => rectsOverlap(r, o));
+  const free = (r: PinRect) => (!safe || rectInside(r, safe)) && !shown.some((o) => rectsOverlap(r, o));
   const priority = (p: PinLabelCandidate) => (p.selected || p.hover ? 0 : 1);
   const byPriority = [...pins].sort((a, b) => priority(a) - priority(b) || a.rank - b.rank);
 
@@ -83,15 +100,13 @@ const CHIP_XR_WIDTH_M = 12;
 /** Top of the pin head (local y); the chip sits right above it so it never covers beam or head. */
 const CHIP_BASE_Y = 67;
 
-function rankChip(rank: number, color: string): THREE.Sprite {
+function rankChip(rank: number, accent: string): THREE.Sprite {
   const c = document.createElement('canvas');
   c.width = CHIP_TEX.w; c.height = CHIP_TEX.h;
   const g = c.getContext('2d')!;
-  roundRect(g, 2, 2, CHIP_TEX.w - 4, CHIP_TEX.h - 4, 16);
-  g.fillStyle = 'rgba(20,20,19,0.85)'; g.fill();
-  g.strokeStyle = UI.line; g.lineWidth = 2; g.stroke();
-  g.font = `800 52px ${UI.mono}`; g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText(`#${rank}`, CHIP_TEX.w / 2, CHIP_TEX.h / 2 + 3);
+  paintPaperChip(g, CHIP_TEX.w, CHIP_TEX.h, accent, 16);
+  g.font = `800 52px ${UI.mono}`; g.fillStyle = palette.label; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(`#${rank}`, CHIP_TEX.w / 2, CHIP_TEX.h / 2 - 1);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, toneMapped: false, depthWrite: false, fog: false }));
@@ -237,15 +252,15 @@ export class OrbitPhase implements Phase {
   }
 
   private makePinLabels(m: SiteMetrics) {
-    const color = statusColor(m.status);
+    const color = paperStatusColor(m.status === 'viable' ? 'viable' : m.status === 'marginal' ? 'marginal' : 'bad');
     const demo = !!m.site.crash;
     const note = rankingNote(m.site);
-    const lines: Parameters<typeof textLabel>[0] = [
-      { text: demo ? `#${m.rank}  ·  DEMO` : `#${m.rank}  ·  ${scoreOf100(m)}`, size: 52, color, mono: true, weight: 800 },
+    const lines: PaperLine[] = [
+      { text: demo ? `#${m.rank} · DEMO` : `#${m.rank} · ${scoreOf100(m)}`, size: 52, weight: 800 },
       { text: shortName(m.site.name), size: 34 },
-      ...(note ? note.split(' · ').map((part) => ({ text: part, size: 26, color: UI.dim })) : []),
+      ...(note ? note.split(' · ').map((part) => ({ text: part, size: 26, muted: true })) : []),
     ];
-    const label = textLabel(lines, 46);
+    const label = paperLabel(lines, 46, { accent: color });
     label.position.y = 82;
     const chip = rankChip(m.rank, color);
     chip.position.y = CHIP_BASE_Y + 2.5;
@@ -496,7 +511,7 @@ export class OrbitPhase implements Phase {
       facing.add(mk);
       candidates.push({ id: mk.m.site.id, rank: mk.m.rank, selected: this.app.selected === mk.m, hover: mk.hover, full, chip });
     }
-    const modes = planPinLabels(candidates);
+    const modes = planPinLabels(candidates, this.app.isXR || !width ? undefined : pinSafeBounds(width, height));
     for (const mk of facing) {
       const mode = modes.get(mk.m.site.id);
       setSpriteShown(mk.label, mode === 'full');

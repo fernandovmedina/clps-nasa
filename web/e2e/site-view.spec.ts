@@ -55,6 +55,8 @@ test('standing on Nobile Rim 2 the real terrain reads: the lower half of the vie
   await expect(page.getByText('Arrastra para mirar alrededor')).toBeVisible()
   await expect(page.getByText('Disco solar visible')).toBeVisible()
   await expect(page.getByText(/5\.69° bajo el horizonte LOLA/)).toBeVisible()
+  await expect(page.getByText(/oculta desde la superficie · requiere relevo/)).toBeVisible()
+  await expect(page.getByText('Temperatura aprox.')).toBeVisible()
   await expect(page.getByText('58/100 · Marginal')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Mirar al Sol' })).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Mirar a la Tierra' })).toBeEnabled()

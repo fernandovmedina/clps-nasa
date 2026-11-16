@@ -5,7 +5,8 @@ import type { HudRankRow, PhaseHud } from '../engine/hud';
 import type { SiteMetrics } from '../mission/scoring';
 import { DEMO_CRASH_NOTE, NO_CAER_SITE_ID, type MissionData, type SiteInput } from '../mission/sites';
 import { realMissionData } from '../mission/test-data';
-import { OrbitPhase, planPinLabels, segmentHitsSphere, rectsOverlap, type PinLabelCandidate, type PinRect } from './orbit';
+import { palette } from '../ui/palette';
+import { OrbitPhase, pinSafeBounds, planPinLabels, segmentHitsSphere, rectsOverlap, type PinLabelCandidate, type PinRect } from './orbit';
 
 const rect = (x: number, y = 0, w = 100, h = 40): PinRect => ({ x, y, w, h });
 
@@ -284,5 +285,104 @@ describe('OrbitPhase pin labels', () => {
     app.camera.updateMatrixWorld(true);
     phase.update(0.016);
     expect(pinsOf(phase).some((p) => p.label.visible || p.chip.visible)).toBe(false);
+  });
+});
+
+describe('zonas cubiertas por los paneles DOM', () => {
+  it('pinSafeBounds: deja a la izquierda 20 + 256 + 20 y a la derecha 272 + 20 + 20 (la rejilla de MissionLayer)', () => {
+    expect(pinSafeBounds(1440, 900)).toEqual({ x: 296, y: 0, w: 1440 - 296 - 312, h: 900 });
+  });
+
+  it('bajo 1024 px la rejilla cambia y no se recorta nada', () => {
+    expect(pinSafeBounds(800, 600)).toEqual({ x: 0, y: 0, w: 800, h: 600 });
+  });
+
+  const safe = pinSafeBounds(1440, 900);
+
+  it('una ficha completa que cae bajo el panel izquierdo pasa a su chip; si el chip tampoco cabe, se oculta', () => {
+    const under = pin(1, 250, { chip: rect(320, 0, 20, 14) });
+    expect(Object.fromEntries(planPinLabels([under], safe))).toEqual({ p1: 'chip' });
+    const worse = pin(1, 250, { chip: rect(280, 0, 20, 14) });
+    expect(Object.fromEntries(planPinLabels([worse], safe))).toEqual({ p1: 'hidden' });
+  });
+
+  it('lo mismo a la derecha: nada puede pisar el panel de sitios', () => {
+    const right = 1440 - 312;
+    expect(Object.fromEntries(planPinLabels([pin(1, right - 50, { chip: rect(right - 60, 0, 20, 14) })], safe))).toEqual({ p1: 'chip' });
+    expect(Object.fromEntries(planPinLabels([pin(1, right - 100)], safe))).toEqual({ p1: 'full' });
+  });
+
+  it('el pin seleccionado tampoco se salta la regla', () => {
+    const sel = pin(5, 100, { selected: true, chip: rect(120, 0, 20, 14) });
+    expect(Object.fromEntries(planPinLabels([sel], safe))).toEqual({ p5: 'hidden' });
+  });
+
+  it('sin zona segura (visor, sin pantalla) la regla no actúa', () => {
+    expect(Object.fromEntries(planPinLabels([pin(1, 0)]))).toEqual({ p1: 'full' });
+  });
+});
+
+describe('OrbitPhase: fichas de papel y zonas seguras', () => {
+  interface Rec { fills: string[]; texts: { text: string; color: string }[]; ctx?: unknown }
+  const recs = new Map<unknown, Rec>();
+  beforeEach(() => {
+    recs.clear();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+      const known = recs.get(this);
+      if (known) return known.ctx as never;
+      const rec: Rec = { fills: [], texts: [] };
+      let fill = '';
+      rec.ctx = new Proxy({}, {
+        get: (_t, key) => (key === 'measureText' ? (t: string) => ({ width: t.length * 14 })
+          : key === 'fillText' ? (text: string) => rec.texts.push({ text, color: fill })
+          : key === 'fillStyle' ? fill
+          : key === 'createRadialGradient' || key === 'createLinearGradient' ? () => ({ addColorStop: () => undefined }) : () => undefined),
+        set: (_t, key, value) => { if (key === 'fillStyle') { if (typeof value === 'string') { fill = value; rec.fills.push(fill); } } return true; },
+      });
+      recs.set(this, rec);
+      return rec.ctx as never;
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+  const recOf = (sprite: THREE.Sprite) => recs.get((sprite.material.map as THREE.CanvasTexture).image)!;
+  type Pin = { m: SiteMetrics; label: THREE.Sprite; chip: THREE.Sprite };
+  const pinsOf = (phase: OrbitPhase) => (phase as unknown as { markers: Pin[] }).markers;
+
+  it('los pines «#1 · 94/100», sus fichas de rango y los chips de número son papel con texto en tinta', () => {
+    const phase = openOrbit(fakeApp());
+    for (const p of pinsOf(phase)) {
+      for (const sprite of [p.label, p.chip]) {
+        const rec = recOf(sprite);
+        expect(rec.fills[0], p.m.site.id).toBe(palette['bg-surface']);
+        expect(rec.fills.filter((f) => /^rgba?\(\s*20\s*,\s*20\s*,\s*19/.test(f))).toEqual([]);
+        for (const t of rec.texts) expect([palette.label, palette['label-2']]).toContain(t.color);
+      }
+    }
+    const first = pinsOf(phase).find((p) => p.m.rank === 1)!;
+    expect(recOf(first.label).texts[0]!.text).toMatch(/^#1 · \d+\/100$/);
+  });
+
+  it('con la cámara barriendo el polo, ninguna ficha ni chip visible entra en el borde de los paneles', () => {
+    const app = fakeApp();
+    const phase = openOrbit(app);
+    const priv = phase as unknown as { spriteRect: (s: THREE.Sprite, w: number, h: number) => PinRect | null };
+    const safe = pinSafeBounds(1440, 900);
+    const a = (-70 * Math.PI) / 180;
+    let seen = 0;
+    for (let k = -12; k <= 12; k++) {
+      app.camera.position.set(Math.cos(a) * 1150, Math.sin(a) * 1150, 0);
+      app.camera.up.set(Math.cos(a), Math.sin(a), 0);
+      app.camera.lookAt(k * 70, -1000, 0);
+      app.camera.updateMatrixWorld(true);
+      phase.update(0.016);
+      for (const p of pinsOf(phase)) for (const sp of [p.label, p.chip]) {
+        if (!sp.visible) continue;
+        const r = priv.spriteRect(sp, 1440, 900)!;
+        seen++;
+        expect(r.x, `k=${k} ${p.m.site.id}`).toBeGreaterThanOrEqual(safe.x - 0.5);
+        expect(r.x + r.w, `k=${k} ${p.m.site.id}`).toBeLessThanOrEqual(safe.x + safe.w + 0.5);
+      }
+    }
+    expect(seen).toBeGreaterThan(20);
   });
 });

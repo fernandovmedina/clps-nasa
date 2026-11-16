@@ -6,7 +6,7 @@ import { trackFromFile } from '@touchdown/core';
 import { describe, expect, it } from 'vitest';
 import { evaluateSites, type SiteMetrics, type SkyPos } from '../mission/scoring';
 import type { SiteInput } from '../mission/sites';
-import { initialLook, lookAtBody, nearReliefNote, scoreText, skyElevationText } from './pov';
+import { TEMPERATURE_LABEL, earthLinkText, initialLook, lookAtBody, nearReliefNote, scoreText, skyHorizonLabel, skyElevationText } from './pov';
 
 const sky = (azimuth: number, elevation: number, aboveHorizon: number): SkyPos => {
   const a = azimuth * Math.PI / 180, e = elevation * Math.PI / 180;
@@ -18,6 +18,20 @@ describe('etiquetas del HUD', () => {
   it('la elevación dice las dos referencias: el plano local y el horizonte LOLA', () => {
     expect(skyElevationText(sky(93, 1.06, 3.83)).full).toBe('1.06° de elevación · 3.83° sobre el horizonte LOLA (−2.77°)');
     expect(skyElevationText(sky(296, 1.3, -5.69)).full).toBe('1.30° de elevación · 5.69° bajo el horizonte LOLA (6.99°)');
+  });
+
+  it('con horizonte esférico las cifras hablan del horizonte geométrico, no de LOLA', () => {
+    const sphere = { horizonSource: 'spherical' } as SiteInput;
+    expect(skyElevationText(sky(296, 1.3, -5.69), sphere).full).toBe('1.30° de elevación · 5.69° bajo el horizonte geométrico (6.99°)');
+    expect(skyElevationText(sky(296, 1.3, -5.69), { horizonSource: 'lola' } as SiteInput).detail).toContain('horizonte LOLA');
+    expect(skyHorizonLabel('Tierra', sphere)).toBe('Tierra sobre el horizonte geométrico');
+    expect(skyHorizonLabel('Sol', { horizonSource: 'lola' } as SiteInput)).toBe('Sol sobre el horizonte LOLA');
+  });
+
+  it('la temperatura lleva una etiqueta corta, y la Tierra oculta aclara que es desde la superficie', () => {
+    expect(TEMPERATURE_LABEL).toBe('Temperatura aprox.');
+    expect(earthLinkText(true)).toBe('enlace directo');
+    expect(earthLinkText(false)).toBe('oculta desde la superficie · requiere relevo');
   });
 
   it('el puntaje va como «94/100», no como porcentaje', () => {

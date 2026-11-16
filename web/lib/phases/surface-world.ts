@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import type { LunarApp } from '../engine/app';
-import { UI, textLabel } from '../engine/panel';
 import { starField } from '../engine/particles';
 import { earthTexture, glowTexture, regolithTexture, solarCellTexture } from '../engine/textures';
 import { disposeTree, seeded, smooth } from '../engine/util';
@@ -9,6 +8,8 @@ import { sampleTerrainHeight, terrainRoughness, type TerrainPatch } from '../mis
 import { Astronaut, astronautSpot, loadAstronaut, type AstronautMode } from './astronaut';
 import { loadLanderModel } from './lander-model';
 import { disposeObject } from './rocket-model';
+import { paperLabel } from './markers';
+import { palette } from '../ui/palette';
 
 const FAR_SIZE = 5200;
 const NEAR_SIZE = 420;
@@ -21,7 +22,12 @@ export const SUN_CORE_DEG = 0.53;
 const SUN_DIST = SKY_DIST * 1.5;
 /** Luz de la Tierra sobre el regolito: débil y azulada, solo un relleno para que las caras sin Sol no queden negras. */
 const EARTHSHINE_INTENSITY = 0.35, EARTHSHINE_COLOR = 0xa9c4ff;
-const HORIZON_LABEL = 'Horizonte LOLA';
+/** Cómo se llama el horizonte del sitio: la máscara LOLA, o el horizonte esférico geométrico si no hay relieve real. */
+export function horizonName(site: { horizonSource: string }): 'LOLA' | 'geométrico' {
+  return site.horizonSource === 'lola' ? 'LOLA' : 'geométrico';
+}
+/** Segunda línea del contorno de la Tierra: la cifra de elevación se mide parado en la superficie, no desde la altura. */
+const SURFACE_NOTE = 'visto desde la superficie';
 // Ganancia de Lommel-Seeliger: con 2 un Sol cenital y el ojo en el cenit dan el mismo brillo que Lambert (μ0 = μ = 1 → 1).
 const LS_GAIN = 2.0;
 // Cosmetic relief (small craters, the 9 m bumps) only exists where the near mesh can resolve it:
@@ -98,7 +104,7 @@ export class SurfaceWorld {
   readonly horizonRing: THREE.Mesh;
   readonly horizonLine: THREE.Line;
   readonly horizonLabel: THREE.Sprite;
-  readonly horizonLabelText = HORIZON_LABEL;
+  readonly horizonLabelText: string;
   /** Contorno de la Tierra cuando está sobre 0° pero bajo el horizonte LOLA. */
   readonly earthGhost: { group: THREE.Group; label: string } | null;
   readonly earthLight: THREE.DirectionalLight | null;
@@ -209,17 +215,19 @@ export class SurfaceWorld {
     earthGlow.position.copy(this.earthPos); earthGlow.scale.setScalar(SKY_DIST * 0.08);
     sc.add(earth, earthGlow);
 
-    const lbl = (text: string, sub: string, dir: THREE.Vector3, color: string) => {
-      const s = textLabel([{ text, size: 52, color, weight: 800, mono: true }, { text: sub, size: 34 }], 170);
-      s.position.copy(dir).multiplyScalar(2200).add(new THREE.Vector3(0, -120, 0));
+    const lbl = (text: string, sub: string, dir: THREE.Vector3, accent: string) => {
+      const s = paperLabel([{ text, size: 52, weight: 800 }, { text: sub, size: 34, muted: true }], 420, { accent, name: `label:${text}` });
+      s.position.copy(dir).multiplyScalar(2200).add(new THREE.Vector3(0, 270, 0)); // sobre el cuerpo: bajo él lo taparía el relieve
       return s;
     };
     this.earthGhost = m.earth.elevation > 0 && m.earth.aboveHorizon < 0 ? this.buildEarthGhost() : null;
     if (this.earthGhost) sc.add(this.earthGhost.group);
+    this.horizonLabelText = `Horizonte ${horizonName(m.site)}`;
     this.horizonLabel = this.buildHorizonLabel();
     sc.add(this.horizonLabel);
-    sc.add(lbl('SOL', `elev ${m.sun.elevation.toFixed(1)}° · az ${m.sun.azimuth.toFixed(0)}°`, sunDir, UI.sun));
-    sc.add(lbl('TIERRA', `elev ${m.earth.elevation.toFixed(1)}° · az ${m.earth.azimuth.toFixed(0)}°`, earthDir, UI.earth));
+    this.setSiteViewLabels(false);
+    sc.add(lbl('SOL', `elev ${m.sun.elevation.toFixed(1)}° · az ${m.sun.azimuth.toFixed(0)}°`, sunDir, palette.sun));
+    sc.add(lbl('TIERRA', `elev ${m.earth.elevation.toFixed(1)}° · az ${m.earth.azimuth.toFixed(0)}°`, earthDir, palette.earth));
 
     // landing zone marker following the terrain
     const ringPts: THREE.Vector3[] = [];
@@ -237,7 +245,7 @@ export class SurfaceWorld {
       new THREE.MeshBasicMaterial({ color: 0x5cf2b0, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.beacon.position.set(this.lz.x, this.lz.y + 30, this.lz.z);
     this.lzMarker.add(this.beacon);
-    const lzLabel = textLabel([{ text: 'ZONA DE ALUNIZAJE', size: 40, color: UI.ok, weight: 800, mono: true }, { text: this.roughness === null ? 'Ø 40 m' : `Ø 40 m · rugosidad ${this.roughness.toFixed(2)} m`, size: 30 }], 14);
+    const lzLabel = paperLabel([{ text: 'ZONA DE ALUNIZAJE', size: 40, weight: 800 }, { text: this.roughness === null ? 'Ø 40 m' : `Ø 40 m · rugosidad ${this.roughness.toFixed(2)} m`, size: 30, muted: true }], 14, { accent: palette.viable, name: 'label:ZONA' });
     lzLabel.position.set(this.lz.x, this.lz.y + 64, this.lz.z);
     this.lzMarker.add(lzLabel);
     sc.add(this.lzMarker);
@@ -385,6 +393,12 @@ export class SurfaceWorld {
     return new THREE.Mesh(g, mat);
   }
 
+  /** «Horizonte LOLA» y el contorno fantasma de la Tierra son de la vista del sitio: pov.ts los enciende al entrar y los apaga al salir. */
+  setSiteViewLabels(visible: boolean) {
+    this.horizonLabel.visible = visible;
+    if (this.earthGhost) this.earthGhost.group.visible = visible;
+  }
+
   private get horizonSteps() { return Math.round(360 / this.m.site.horizon.az_step_deg); }
 
   /** Línea fina y tenue sobre el borde superior de la falda: la silueta que la máscara LOLA dibuja. */
@@ -403,7 +417,10 @@ export class SurfaceWorld {
   /** Etiqueta de la silueta, 20° al lado de la Tierra y 1.5° sobre la línea, donde no tapa nada. */
   private buildHorizonLabel() {
     const az = (this.m.earth.azimuth + 20) % 360, a = az * Math.PI / 180, r = HORIZON_R * 0.97;
-    const label = textLabel([{ text: HORIZON_LABEL, size: 44, color: UI.dim, weight: 600 }], 520, 12);
+    const label = paperLabel([{ text: this.horizonLabelText, size: 44 }], 520, { pad: 12, name: 'label:horizonte' });
+    // la ficha dibuja por encima de la línea fina (que pasa justo debajo) y de las estrellas, sin que nada la atraviese
+    (label.material as THREE.SpriteMaterial).depthTest = false;
+    label.renderOrder = 22;
     label.position.set(Math.sin(a) * r, Math.tan((horizonAt(this.m.site, az) + 1.5) * Math.PI / 180) * r, -Math.cos(a) * r);
     return label;
   }
@@ -420,10 +437,10 @@ export class SurfaceWorld {
       pts.push(this.earthPos.clone().addScaledVector(side, Math.cos(t) * radius).addScaledVector(up, Math.sin(t) * radius));
     }
     const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineDashedMaterial({ color: UI.earth, dashSize: radius * 0.12, gapSize: radius * 0.1, transparent: true, opacity: 0.9, depthTest: false, fog: false }));
+      new THREE.LineDashedMaterial({ color: palette.earth, dashSize: radius * 0.12, gapSize: radius * 0.1, transparent: true, opacity: 0.9, depthTest: false, fog: false }));
     ring.computeLineDistances();
     ring.renderOrder = 20;
-    const text = textLabel([{ text: label, size: 24, color: UI.earth, weight: 700 }], 900, 14);
+    const text = paperLabel([{ text: label, size: 24, weight: 700 }, { text: SURFACE_NOTE, size: 20, muted: true }], 900, { pad: 14, accent: palette.earth, name: 'label:fantasma' });
     const el = (this.m.earth.elevation + 2.8) * Math.PI / 180, az = this.m.earth.azimuth * Math.PI / 180;
     text.position.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)).multiplyScalar(2200);
     (text.material as THREE.SpriteMaterial).depthTest = false;
