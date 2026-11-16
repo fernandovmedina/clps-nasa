@@ -9,7 +9,7 @@ import { DEG, damp, latLonToVec3, smooth } from '../engine/util';
 import { globalDirAt } from '../mission/global-track';
 import type { RoomEvent } from '../sync/room-client';
 import { evaluateSites, fmtHours, type SiteMetrics } from '../mission/scoring';
-import { devFallbackMission, type MissionData } from '../mission/sites';
+import { devFallbackMission, rankingNote, type MissionData, type RankRowExtras } from '../mission/sites';
 import { clearSurface } from './surface-world';
 import { STATUS_LABELS, STATUS_TONES, fmtPercent, fmtSigned, type HudRankRow, type PhaseHud } from '../engine/hud';
 
@@ -27,7 +27,102 @@ const PARK_DRIFT_PERIOD_S = 50;
 const DELAY_OPTIONS = [7, 14, 21, 30]; // days - matches the delay narrative in CLAUDE.md sec. 3
 const SUN_DIST = 5000, SUN_SPRITE_DIST = 150000, EARTHSHINE_DIST = 5000, EARTH_DIST = 60000;
 
-interface Marker { m: SiteMetrics; group: THREE.Group; beam: THREE.Mesh; head: THREE.Mesh; ring: THREE.Mesh; label: THREE.Sprite; shown: number; hover: boolean }
+interface Marker {
+  m: SiteMetrics; group: THREE.Group; beam: THREE.Mesh; head: THREE.Mesh; ring: THREE.Mesh;
+  /** Full label (rank, score/100, name, note) and the rank-only chip that stands in for it. */
+  label: THREE.Sprite; chip: THREE.Sprite; shown: number; hover: boolean;
+}
+
+export interface PinRect { x: number; y: number; w: number; h: number }
+export type PinLabelMode = 'full' | 'chip' | 'hidden';
+export interface PinLabelCandidate {
+  id: string; rank: number; selected: boolean; hover: boolean;
+  /** Screen box (px) the full label would take, and the one the rank chip would take. */
+  full: PinRect; chip: PinRect;
+}
+
+/** Pins that always show their full label, by rank; the selected and the hovered pin join them. */
+const FULL_LABEL_RANKS = 3;
+const NAME_MAX_CHARS = 26;
+
+export function rectsOverlap(a: PinRect, b: PinRect): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+/**
+ * Decides what each pin shows: the full label for the top ranks, the selected and the hovered one (the latter
+ * two win ties); everything else a rank chip. Whatever would land on something already shown is dropped, the
+ * worse rank first, so no two visible boxes ever overlap (an overlapped full label falls back to its chip).
+ */
+export function planPinLabels(pins: PinLabelCandidate[]): Map<string, PinLabelMode> {
+  const modes = new Map<string, PinLabelMode>();
+  const shown: PinRect[] = [];
+  const free = (r: PinRect) => !shown.some((o) => rectsOverlap(r, o));
+  const priority = (p: PinLabelCandidate) => (p.selected || p.hover ? 0 : 1);
+  const byPriority = [...pins].sort((a, b) => priority(a) - priority(b) || a.rank - b.rank);
+
+  for (const p of byPriority) {
+    if (priority(p) === 1 && p.rank > FULL_LABEL_RANKS) continue;
+    if (!free(p.full)) continue;
+    modes.set(p.id, 'full');
+    shown.push(p.full);
+  }
+  for (const p of [...pins].sort((a, b) => a.rank - b.rank)) {
+    if (modes.has(p.id)) continue;
+    if (free(p.chip)) { modes.set(p.id, 'chip'); shown.push(p.chip); } else modes.set(p.id, 'hidden');
+  }
+  return modes;
+}
+
+/** Rank chip: a small texture of its own (textLabel's fixed 512 px canvas would leave the digits tiny in a wide box). */
+const CHIP_TEX = { w: 128, h: 72 };
+/** On-screen height (CSS px) of the rank chip: its 52 px digits then read at about 14 px. */
+const CHIP_SCREEN_PX = 20;
+/** Chip width in metres in the headset, where there is no screen to size it from. */
+const CHIP_XR_WIDTH_M = 12;
+/** Top of the pin head (local y); the chip sits right above it so it never covers beam or head. */
+const CHIP_BASE_Y = 67;
+
+function rankChip(rank: number, color: string): THREE.Sprite {
+  const c = document.createElement('canvas');
+  c.width = CHIP_TEX.w; c.height = CHIP_TEX.h;
+  const g = c.getContext('2d')!;
+  roundRect(g, 2, 2, CHIP_TEX.w - 4, CHIP_TEX.h - 4, 16);
+  g.fillStyle = 'rgba(20,20,19,0.85)'; g.fill();
+  g.strokeStyle = UI.line; g.lineWidth = 2; g.stroke();
+  g.font = `800 52px ${UI.mono}`; g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(`#${rank}`, CHIP_TEX.w / 2, CHIP_TEX.h / 2 + 3);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, toneMapped: false, depthWrite: false, fog: false }));
+  sprite.renderOrder = 15;
+  return sprite;
+}
+
+/** three.js raycasts invisible objects too: a hidden label moves to a layer the pointer ray does not use. */
+function setSpriteShown(sprite: THREE.Sprite, shown: boolean) {
+  sprite.visible = shown;
+  sprite.layers.set(shown ? 0 : 1);
+}
+
+/** True when the Moon (a sphere at the origin) stands between `eye` and `point`. */
+export function segmentHitsSphere(eye: THREE.Vector3, point: THREE.Vector3, radius: number): boolean {
+  const d = point.clone().sub(eye);
+  const a = d.lengthSq();
+  if (a === 0) return false;
+  const b = 2 * eye.dot(d);
+  const c = eye.lengthSq() - radius * radius;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return false;
+  const near = (-b - Math.sqrt(disc)) / (2 * a);
+  return near > 0 && near < 1;
+}
+
+const scoreOf100 = (m: SiteMetrics) => `${Math.round(m.score)}/100`;
+const shortName = (name: string) => (name.length > NAME_MAX_CHARS ? `${name.slice(0, NAME_MAX_CHARS - 1).trimEnd()}…` : name);
+
+/** Rows of the DOM ranking: HudRankRow plus the note that tells demo and contrast sites apart. */
+type OrbitRankRow = HudRankRow & RankRowExtras;
 
 export function defaultMission(): MissionData {
   return devFallbackMission();
@@ -126,23 +221,45 @@ export class OrbitPhase implements Phase {
     head.position.y = 62;
     const ring = new THREE.Mesh(new THREE.RingGeometry(7, 9, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.6;
-    const label = textLabel([
-      { text: `#${m.rank}  ·  ${Math.round(m.score)}%`, size: 54, color: statusColor(m.status), mono: true, weight: 800 },
-      { text: m.site.name, size: 38 },
-    ], 46);
-    label.position.y = 82;
+    const { label, chip } = this.makePinLabels(m);
     // a fat invisible hit target so it's easy to point at in VR
     const hit = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, 100, 8), new THREE.MeshBasicMaterial({ visible: false }));
     hit.position.y = 50;
-    group.add(beam, head, ring, label, hit);
+    group.add(beam, head, ring, label, chip, hit);
     group.visible = false;
     group.scale.setScalar(0.001);
-    const mk: Marker = { m, group, beam, head, ring, label, shown: 0, hover: false };
+    const mk: Marker = { m, group, beam, head, ring, label, chip, shown: 0, hover: false };
     group.userData.onSelect = () => this.select(m);
     group.userData.onHover = (h: boolean) => { mk.hover = h; };
     this.scene.add(group);
     this.targets.push(group);
     return mk;
+  }
+
+  private makePinLabels(m: SiteMetrics) {
+    const color = statusColor(m.status);
+    const demo = !!m.site.crash;
+    const note = rankingNote(m.site);
+    const lines: Parameters<typeof textLabel>[0] = [
+      { text: demo ? `#${m.rank}  ·  DEMO` : `#${m.rank}  ·  ${scoreOf100(m)}`, size: 52, color, mono: true, weight: 800 },
+      { text: shortName(m.site.name), size: 34 },
+      ...(note ? note.split(' · ').map((part) => ({ text: part, size: 26, color: UI.dim })) : []),
+    ];
+    const label = textLabel(lines, 46);
+    label.position.y = 82;
+    const chip = rankChip(m.rank, color);
+    chip.position.y = CHIP_BASE_Y + 2.5;
+    setSpriteShown(chip, false);
+    return { label, chip };
+  }
+
+  /** The label sprites are baked once; after a delay the scores and ranks change, so they are rebuilt. */
+  private refreshPinLabels(mk: Marker) {
+    mk.group.remove(mk.label, mk.chip);
+    for (const sprite of [mk.label, mk.chip]) { (sprite.material.map as THREE.Texture | null)?.dispose(); sprite.material.dispose(); }
+    const { label, chip } = this.makePinLabels(mk.m);
+    mk.label = label; mk.chip = chip;
+    mk.group.add(label, chip);
   }
 
   private select(m: SiteMetrics, opts: { broadcast?: boolean } = {}) {
@@ -228,7 +345,7 @@ export class OrbitPhase implements Phase {
     const byId = new Map(next.map((m) => [m.site.id, m]));
     const prevSelectedId = this.app.selected?.site.id;
     this.app.selected = prevSelectedId ? byId.get(prevSelectedId) ?? null : null;
-    for (const mk of this.markers) mk.m = byId.get(mk.m.site.id)!;
+    for (const mk of this.markers) { mk.m = byId.get(mk.m.site.id)!; this.refreshPinLabels(mk); }
 
     const sunDir = globalDirAt(this.data.global, date, 'sun');
     const earthDir = globalDirAt(this.data.global, date, 'earth');
@@ -318,22 +435,87 @@ export class OrbitPhase implements Phase {
       (mk.head.material as THREE.MeshBasicMaterial).color.set(sel ? 0xffffff : statusColor(mk.m.status));
       (mk.beam.material as THREE.MeshBasicMaterial).opacity = sel ? 0.9 : 0.5;
     });
+    this.layoutPinLabels();
 
     this.list.update(); this.detail.update();
+  }
+
+  /** Sites evaluated so far and in all, not counting the NO CAER demo case (it is no site). */
+  private realCounts() {
+    const evaluated = [...this.ranking].sort((a, b) => b.rank - a.rank).slice(0, this.revealed);
+    return { revealed: evaluated.filter((m) => !m.site.crash).length, total: this.ranking.filter((m) => !m.site.crash).length };
+  }
+
+  /** Screen box of a sprite, in CSS px of the canvas; null when it sits behind the camera. */
+  private spriteRect(sprite: THREE.Sprite, width: number, height: number): PinRect | null {
+    const cam = this.app.camera;
+    const world = sprite.getWorldPosition(new THREE.Vector3());
+    const depth = -world.clone().applyMatrix4(cam.matrixWorldInverse).z;
+    if (depth <= 0) return null;
+    const scale = sprite.getWorldScale(new THREE.Vector3());
+    const pxPerUnit = (cam.projectionMatrix.elements[5] * height) / 2 / depth;
+    const w = scale.x * pxPerUnit, h = scale.y * pxPerUnit;
+    const ndc = world.project(cam);
+    return { x: (ndc.x * 0.5 + 0.5) * width - w / 2, y: (-ndc.y * 0.5 + 0.5) * height - h / 2, w, h };
+  }
+
+  /** Keeps the rank chip at a fixed on-screen size, whatever the camera distance, sitting just above the pin head. */
+  private sizeChip(mk: Marker, width: number, height: number) {
+    const aspect = CHIP_TEX.w / CHIP_TEX.h;
+    const groupScale = mk.group.getWorldScale(new THREE.Vector3()).x;
+    let worldH = CHIP_XR_WIDTH_M / aspect;
+    if (!this.app.isXR && width) {
+      const cam = this.app.camera;
+      const depth = -mk.group.getWorldPosition(new THREE.Vector3()).applyMatrix4(cam.matrixWorldInverse).z;
+      if (depth <= 0 || groupScale < 1e-3) return;
+      worldH = (CHIP_SCREEN_PX * depth * 2) / (cam.projectionMatrix.elements[5] * height);
+    }
+    const localH = worldH / Math.max(groupScale, 1e-3);
+    mk.chip.scale.set(localH * aspect, localH, 1);
+    mk.chip.position.y = CHIP_BASE_Y + localH / 2 + 1;
+  }
+
+  /** Shows per pin the full label, its rank chip or nothing, from where the labels land on screen. */
+  private layoutPinLabels() {
+    const canvas = this.app.renderer.domElement;
+    const width = canvas.clientWidth, height = canvas.clientHeight;
+    const cam = new THREE.Vector3().setFromMatrixPosition(this.app.camera.matrixWorld);
+    const candidates: PinLabelCandidate[] = [];
+    const facing = new Set<Marker>();
+    for (const mk of this.markers) {
+      setSpriteShown(mk.label, false); setSpriteShown(mk.chip, false);
+      if (!mk.group.visible) continue;
+      mk.group.updateMatrixWorld(true);
+      this.sizeChip(mk, width, height);
+      mk.chip.updateMatrixWorld(true);
+      if (segmentHitsSphere(cam, mk.label.getWorldPosition(new THREE.Vector3()), R * 0.998)) continue; // the Moon hides it
+      // in the headset there is no single screen to overlap on: the rank rule alone decides
+      const full = this.app.isXR || !width ? { x: mk.m.rank * 1e5, y: 0, w: 1, h: 1 } : this.spriteRect(mk.label, width, height);
+      const chip = this.app.isXR || !width ? { x: mk.m.rank * 1e5, y: 0, w: 1, h: 1 } : this.spriteRect(mk.chip, width, height);
+      if (!full || !chip) continue;
+      facing.add(mk);
+      candidates.push({ id: mk.m.site.id, rank: mk.m.rank, selected: this.app.selected === mk.m, hover: mk.hover, full, chip });
+    }
+    const modes = planPinLabels(candidates);
+    for (const mk of facing) {
+      const mode = modes.get(mk.m.site.id);
+      setSpriteShown(mk.label, mode === 'full');
+      setSpriteShown(mk.chip, mode === 'chip');
+    }
   }
 
   /* ---------------- panels ---------------- */
   private drawList(p: Panel, g: CanvasRenderingContext2D) {
     p.frame(g);
-    g.font = `700 40px ${UI.font}`; g.fillStyle = UI.text; g.fillText('Sitios candidatos · Polo Sur', 48, 86);
+    g.font = `700 40px ${UI.font}`; g.fillStyle = UI.text; g.fillText('Sitios evaluados', 48, 86);
     this.drawRoomBadge(g);
     g.font = `500 26px ${UI.mono}`; g.fillStyle = this.delayDays ? UI.warn : UI.dim;
     const delayTag = this.delayDays ? `  ·  retraso +${this.delayDays} d` : '';
     g.fillText(`Alunizaje ${this.date.toISOString().slice(0, 16).replace('T', ' ')} UTC${delayTag}`, 48, 128);
-    const total = this.ranking.length;
+    const { revealed, total } = this.realCounts();
     g.font = `500 26px ${UI.mono}`;
     g.fillStyle = this.analysisDone ? UI.ok : UI.accent;
-    g.fillText(this.analysisDone ? 'Ranking final · toca un sitio' : `Calculando óptimo… ${this.revealed}/${total}`, 48, 166);
+    g.fillText(this.analysisDone ? 'Ranking final · toca un sitio' : `Calculando óptimo… ${revealed}/${total}`, 48, 166);
 
     if (this.analysisDone) this.drawDelayRow(p, g);
 
@@ -348,9 +530,12 @@ export class OrbitPhase implements Phase {
       roundRect(g, 44, y + 18, 58, 58, 14); g.fillStyle = col; g.fill();
       g.font = `800 30px ${UI.mono}`; g.fillStyle = UI.onAccent; g.textAlign = 'center'; g.fillText(`${i + 1}`, 73, y + 58); g.textAlign = 'left';
       g.font = `600 32px ${UI.font}`; g.fillStyle = UI.text; g.fillText(m.site.name, 124, y + 44);
-      g.font = `500 22px ${UI.mono}`; g.fillStyle = UI.dim;
-      g.fillText(`SOL ${m.illumPct.toFixed(0)}%  ·  TIERRA ${m.earthPct.toFixed(0)}%  ·  AMBOS ${Math.round(m.breakdown.ops * 100)}%`, 124, y + 78);
-      g.font = `800 40px ${UI.mono}`; g.fillStyle = col; g.textAlign = 'right'; g.fillText(`${Math.round(m.score)}%`, 972, y + 60); g.textAlign = 'left';
+      const note = rankingNote(m.site);
+      g.font = `500 22px ${UI.mono}`; g.fillStyle = m.site.crash ? UI.warn : UI.dim;
+      if (m.site.crash) g.fillText(note!, 124, y + 78);
+      else if (note) g.fillText(`${note}  ·  SOL ${m.illumPct.toFixed(0)}%  ·  TIERRA ${m.earthPct.toFixed(0)}%`, 124, y + 78);
+      else g.fillText(`SOL ${m.illumPct.toFixed(0)}%  ·  TIERRA ${m.earthPct.toFixed(0)}%  ·  AMBOS ${Math.round(m.breakdown.ops * 100)}%`, 124, y + 78);
+      g.font = `800 36px ${UI.mono}`; g.fillStyle = col; g.textAlign = 'right'; g.fillText(m.site.crash ? 'DEMO' : scoreOf100(m), 972, y + 60); g.textAlign = 'left';
       if (this.delayDays) {
         const base = this.baseRanking.find((r) => r.site.id === m.site.id);
         if (base) {
@@ -362,7 +547,7 @@ export class OrbitPhase implements Phase {
       p.region(`row-${m.site.id}`, 28, y, 968, rowH - 10, () => this.select(m));
     });
     if (!this.analysisDone) {
-      const w = 928 * (this.revealed / total);
+      const w = 928 * (revealed / total);
       roundRect(g, 48, 1240, 928, 10, 5); g.fillStyle = 'rgba(250,249,245,.15)'; g.fill();
       if (w > 1) { roundRect(g, 48, 1240, w, 10, 5); g.fillStyle = UI.accent; g.fill(); }
     }
@@ -418,15 +603,21 @@ export class OrbitPhase implements Phase {
     const col = statusColor(m.status);
     g.font = `700 44px ${UI.font}`; g.fillStyle = UI.text; g.fillText(m.site.name, 48, 92);
     g.font = `500 26px ${UI.mono}`; g.fillStyle = UI.dim;
+    if (m.site.crash) {
+      g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S  ${m.site.lon.toFixed(2)}°${m.site.lon >= 0 ? 'E' : 'W'}`, 48, 134);
+      this.drawDemoDetail(p, g, m); return;
+    }
     g.fillText(`${Math.abs(m.site.lat).toFixed(2)}°S  ${m.site.lon.toFixed(2)}°${m.site.lon >= 0 ? 'E' : 'W'}  ·  elev. +${m.site.elevationKm.toFixed(1)} km`, 48, 134);
-    g.font = `800 96px ${UI.mono}`; g.fillStyle = col; g.fillText(`${Math.round(m.score)}%`, 48, 250);
-    g.font = `600 28px ${UI.font}`; g.fillStyle = UI.text; g.fillText(`Viabilidad · puesto #${m.rank} de ${this.ranking.length}`, 340, 222);
+    g.font = `800 96px ${UI.mono}`; g.fillStyle = col; g.fillText(`${Math.round(m.score)}`, 48, 250);
+    const bigWidth = g.measureText(`${Math.round(m.score)}`).width;
+    g.font = `700 36px ${UI.mono}`; g.fillText('/100', 48 + bigWidth + 8, 250);
+    g.font = `600 28px ${UI.font}`; g.fillStyle = UI.text; g.fillText(`Viabilidad · puesto #${m.rank} de ${this.realCounts().total}`, 400, 222);
     if (this.delayDays) {
       const base = this.baseRanking.find((r) => r.site.id === m.site.id);
       if (base) {
         const d = Math.round(m.score - base.score);
-        g.font = `700 30px ${UI.mono}`; g.fillStyle = d > 0 ? UI.ok : d < 0 ? UI.bad : UI.dim;
-        g.fillText(`antes ${Math.round(base.score)}% → ahora ${Math.round(m.score)}% (retraso +${this.delayDays} d)`, 340, 258);
+        g.font = `700 26px ${UI.mono}`; g.fillStyle = d > 0 ? UI.ok : d < 0 ? UI.bad : UI.dim;
+        g.fillText(`antes ${scoreOf100(base)} → ahora ${scoreOf100(m)} · +${this.delayDays} d`, 400, 258);
       }
     }
 
@@ -458,8 +649,13 @@ export class OrbitPhase implements Phase {
       roundRect(g, 300, y, 660, 16, 8); g.fillStyle = 'rgba(250,249,245,.12)'; g.fill();
       if (v > 0.01) { roundRect(g, 300, y, 660 * v, 16, 8); g.fillStyle = col; g.fill(); }
     });
+    const contrast = rankingNote(m.site);
+    if (contrast) { g.font = `600 24px ${UI.font}`; g.fillStyle = UI.warn; g.fillText(contrast, 48, 1076); }
     if (m.site.note) { g.font = `italic 500 24px ${UI.font}`; g.fillStyle = UI.dim; g.fillText(m.site.note, 48, 1112); }
+    this.drawPreconfirm(p, g, m);
+  }
 
+  private drawPreconfirm(p: Panel, g: CanvasRenderingContext2D, m: SiteMetrics) {
     if (this.analysisDone) {
       p.button(g, 'preconfirm', 48, 1150, 928, 100, 'Preconfirmar punto', () => {
         this.app.audio.play('ui_confirm');
@@ -472,44 +668,59 @@ export class OrbitPhase implements Phase {
     }
   }
 
+  /** NO CAER lends its terrain and ephemeris from a real site: no score, readouts or bars of its own are drawn. */
+  private drawDemoDetail(p: Panel, g: CanvasRenderingContext2D, m: SiteMetrics) {
+    g.font = `800 52px ${UI.font}`; g.fillStyle = statusColor(m.status); g.fillText('Caso de demostración', 48, 250);
+    g.font = `600 36px ${UI.font}`; g.fillStyle = UI.text; g.fillText('Falla simulada del motor', 48, 306);
+    g.font = `500 28px ${UI.font}`; g.fillStyle = UI.dim;
+    ['No es un sitio real: no tiene puntaje ni lecturas propias.', 'El descenso termina en impacto y la misión regresa a órbita.'].forEach((line, i) => g.fillText(line, 48, 380 + i * 42));
+    if (m.site.note) { g.font = `italic 500 24px ${UI.font}`; g.fillText(m.site.note, 48, 1112); }
+    this.drawPreconfirm(p, g, m);
+  }
+
   controlHud(): PhaseHud {
-    const total = this.ranking.length;
+    const { revealed, total } = this.realCounts();
     const done = this.analysisDone;
     const chosen = this.app.selected;
     const m = chosen ? this.ranking.find((r) => r.site.id === chosen.site.id) ?? chosen : null;
     const base = m ? this.baseRanking.find((r) => r.site.id === m.site.id) : undefined;
     const evaluated = [...this.ranking].sort((a, b) => b.rank - a.rank).slice(0, this.revealed).sort((a, b) => a.rank - b.rank);
-    const rows: HudRankRow[] = evaluated.map((r) => {
+    const rows: OrbitRankRow[] = evaluated.map((r) => {
       const was = this.delayDays ? this.baseRanking.find((b) => b.site.id === r.site.id) : undefined;
       return {
         id: `site-${r.site.id}`, rank: r.rank, name: r.site.name, score: Math.round(r.score), status: r.status,
         selected: chosen?.site.id === r.site.id, delta: was ? Math.round(r.score - was.score) : undefined, run: () => this.select(r),
+        note: rankingNote(r.site), demo: r.site.crash || undefined,
       };
     });
 
     let detail = 'Ranking final · elige un sitio de la lista o un pin de la escena';
     if (this.rangeWarning) detail = this.rangeWarning;
-    else if (!done) detail = `Calculando óptimo… ${this.revealed}/${total}`;
-    else if (this.delayDays && m && base) detail = `Con +${this.delayDays} d de retraso: antes ${Math.round(base.score)} % → ahora ${Math.round(m.score)} %`;
+    else if (!done) detail = `Calculando óptimo… ${revealed}/${total}`;
+    else if (this.delayDays && m && base) detail = `Con +${this.delayDays} d de retraso: antes ${scoreOf100(base)} → ahora ${scoreOf100(m)}`;
+    const note = done && m && !this.rangeWarning ? rankingNote(m.site) : undefined;
+    if (note) detail = m!.site.crash ? `${note} · no es un sitio real, no tiene puntaje` : `${note} · ${detail}`;
 
     const delays = [...DELAY_OPTIONS.map((days) => ({
       id: `delay-${days}`, label: `+${days} d`, pressed: this.delayDays === days, disabled: days > this.maxDelayDays, run: () => this.applyDelay(days),
     })), { id: 'delay-reset', label: 'Original', pressed: this.delayDays === 0, run: () => this.applyDelay(0) }];
 
     return {
-      figure: done && m
+      figure: done && m?.site.crash
+        ? { value: 'DEMO', caption: `${m.site.name} · falla simulada del motor` }
+        : done && m
         ? { value: String(Math.round(m.score)), caption: `de 100 · ${m.site.name}`, badge: { label: STATUS_LABELS[m.status], tone: STATUS_TONES[m.status] } }
-        : { value: `${this.revealed} de ${total}`, caption: 'sitios evaluados' },
+        : { value: `${revealed} de ${total}`, caption: 'sitios evaluados' },
       detail,
-      progress: done ? undefined : { value: total ? this.revealed / total : 0, label: 'Evaluación de sitios' },
-      facts: done && m ? [
+      progress: done ? undefined : { value: total ? revealed / total : 0, label: 'Evaluación de sitios' },
+      facts: done && m && !m.site.crash ? [
         { label: 'Elevación solar', value: `${fmtSigned(m.sun.elevation, 2)}°` },
         { label: 'Iluminación en 14 d', value: fmtPercent(m.illumPct) },
         { label: 'Elevación de la Tierra', value: `${fmtSigned(m.earth.elevation, 2)}°` },
         { label: 'Tierra visible', value: fmtPercent(m.earthPct) },
       ] : undefined,
       toggles: done ? { label: 'Simular retraso', options: delays } : undefined,
-      side: { kind: 'ranking', title: 'Sitios candidatos', rows },
+      side: { kind: 'ranking', title: 'Sitios evaluados', rows },
       primary: {
         id: 'preconfirm', label: 'Preconfirmar punto', disabled: !done || !m,
         run: () => {
