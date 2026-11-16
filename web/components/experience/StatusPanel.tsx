@@ -1,6 +1,9 @@
-import { PHASE_LABELS, type PhaseHud, type RunMode } from '@/lib/engine/hud';
+import type { PhaseHud, RunMode } from '@/lib/engine/hud';
 import type { PhaseName } from '@/lib/engine/app';
+import { missionDict } from '@/lib/i18n/dicts/ui-mission';
+import { useT } from '@/lib/i18n/react';
 import { PauseIcon } from './icons';
+import { phaseLabel } from './ui-text';
 import styles from './MissionLayer.module.css';
 
 interface Props {
@@ -12,24 +15,25 @@ interface Props {
 }
 
 export default function StatusPanel({ phase, mode, hud, frozen, onAct }: Props) {
+  const t = useT(missionDict);
   if (mode === 'stopped') {
     return (
-      <section className={styles.status} aria-label="Estado de la misión">
+      <section className={styles.status} aria-label={t('missionStatus')}>
         <p className={styles.figureRow}>
-          <span className={styles.figure} data-testid="figure">Detenida</span>
-          <span className={styles.caption}>fase de {PHASE_LABELS[phase].toLowerCase()}</span>
+          <span className={styles.figure} data-testid="figure">{t('status.stopped')}</span>
+          <span className={styles.caption}>{t('status.stoppedPhase', { phase: phaseLabel(phase).toLowerCase() })}</span>
         </p>
-        <p className={styles.detail}>Pausar congela la misión para seguir después; detener la termina y vuelve al inicio.</p>
+        <p className={styles.detail}>{t('status.stoppedDetail')}</p>
       </section>
     );
   }
-  if (!hud) return <section className={styles.status} aria-label="Estado de la fase" />;
+  if (!hud) return <section className={styles.status} aria-label={t('status.phase')} />;
 
   const paused = mode === 'paused';
   const { figure, progress, facts, toggles, detail } = hud;
   return (
-    <section className={styles.status} aria-label="Estado de la fase">
-      {paused && <p className={styles.pill} data-tone="warn"><PauseIcon size={14} />En pausa</p>}
+    <section className={styles.status} aria-label={t('status.phase')}>
+      {paused && <p className={styles.pill} data-tone="warn"><PauseIcon size={14} />{t('status.paused')}</p>}
       <p className={styles.figureRow} data-badge={figure.badge ? '' : undefined}>
         <span className={styles.figure} data-testid="figure">{figure.value}</span>
         {(figure.caption || figure.badge) && (
@@ -40,7 +44,7 @@ export default function StatusPanel({ phase, mode, hud, frozen, onAct }: Props) 
         )}
       </p>
       {paused ? (
-        <p className={styles.detail}>La simulación y el sonido están en pausa.</p>
+        <p className={styles.detail}>{t('status.pausedDetail')}</p>
       ) : (
         <>
           {progress && (

@@ -2,14 +2,17 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import type { LunarApp } from '@/lib/engine/app';
-import { STATUS_LABELS, STATUS_TONES, fmtInt } from '@/lib/engine/hud';
+import { STATUS_TONES, fmtInt } from '@/lib/engine/hud';
+import { plannerDict } from '@/lib/i18n/dicts/ui-planner';
+import { missionDict } from '@/lib/i18n/dicts/ui-mission';
+import { useT } from '@/lib/i18n/react';
 import {
   checkLaunch,
   currentLanding,
-  formatPlanDate,
   landingFromLaunch,
   launchFromLanding,
   launchInputs,
+  launchRange,
   parseLaunchInputs,
   TRANSIT_DAYS,
   topSites,
@@ -20,6 +23,7 @@ import { earthMoonDistanceKm } from '@/lib/phases/launch-telemetry';
 import dialog from './Dialog.module.css';
 import layer from './MissionLayer.module.css';
 import styles from './LaunchPlanner.module.css';
+import { fmtPlanDate, statusLabel } from './ui-text';
 
 interface Props {
   app: LunarApp;
@@ -43,6 +47,8 @@ function useLoadedData(app: LunarApp): MissionData | null {
 const FOCUSABLE = 'input:not(:disabled), button:not(:disabled), a[href]';
 
 export default function LaunchPlanner({ app, code, onClose, suspendEscape = false }: Props) {
+  const t = useT(plannerDict);
+  const tm = useT(missionDict);
   const data = useLoadedData(app);
   const titleId = useId();
   const errorId = useId();
@@ -113,7 +119,18 @@ export default function LaunchPlanner({ app, code, onClose, suspendEscape = fals
   };
 
   const invalid = check !== null && !check.ok;
-  const message = check && !check.ok ? check.message : null;
+  let message: string | null = null;
+  if (data && check && !check.ok) {
+    if (check.reason === 'invalid' || !launch) message = t('invalid');
+    else {
+      const range = data.ephemerisRange;
+      const launches = launchRange(range);
+      message = t('outOfRange', {
+        landing: fmtPlanDate(landingFromLaunch(launch)), from: fmtPlanDate(range.start), to: fmtPlanDate(range.end),
+        launchFrom: fmtPlanDate(launches.start), launchTo: fmtPlanDate(launches.end),
+      });
+    }
+  }
 
   return (
     <>
@@ -128,14 +145,14 @@ export default function LaunchPlanner({ app, code, onClose, suspendEscape = fals
         onKeyDown={trapTab}
       >
         <div className={dialog.head}>
-          <p className={dialog.eyebrow}>Paso previo a la misión</p>
-          <h2 id={titleId} className={dialog.title}>Planifica tu lanzamiento</h2>
-          <p className={dialog.lede}>Elige cuándo despega el cohete. Calculamos tu llegada al polo sur y qué sitios convienen ese día.</p>
+          <p className={dialog.eyebrow}>{t('eyebrow')}</p>
+          <h2 id={titleId} className={dialog.title}>{t('title')}</h2>
+          <p className={dialog.lede}>{t('lede')}</p>
         </div>
 
         <div className={styles.fields}>
           <label className={dialog.field}>
-            <span>Fecha de despegue</span>
+            <span>{t('date')}</span>
             <input
               ref={dateField}
               className={dialog.input}
@@ -147,7 +164,7 @@ export default function LaunchPlanner({ app, code, onClose, suspendEscape = fals
             />
           </label>
           <label className={dialog.field}>
-            <span>Hora de despegue (UTC)</span>
+            <span>{t('time')}</span>
             <input
               className={dialog.input}
               type="time"
@@ -162,53 +179,53 @@ export default function LaunchPlanner({ app, code, onClose, suspendEscape = fals
         {message && <p id={errorId} role="alert" className={dialog.error}>{message}</p>}
 
         {!data ? (
-          <p role="status" className={styles.pending}>Calculando con los datos de la misión…</p>
+          <p role="status" className={styles.pending}>{t('pending')}</p>
         ) : (
           <>
             <dl className={styles.figures}>
               <div className={styles.figure}>
-                <dt>Llegada estimada al polo sur</dt>
-                <dd className={styles.value} data-testid="planner-arrival">{landing ? formatPlanDate(landing) : '—'}</dd>
-                <dd className={styles.hint}>Tránsito directo de {TRANSIT_DAYS} días (supuesto)</dd>
+                <dt>{t('arrival')}</dt>
+                <dd className={styles.value} data-testid="planner-arrival">{landing ? fmtPlanDate(landing) : '—'}</dd>
+                <dd className={styles.hint}>{t('transit', { days: TRANSIT_DAYS })}</dd>
               </div>
               <div className={styles.figure}>
-                <dt>Distancia Tierra–Luna a la llegada</dt>
+                <dt>{t('distance')}</dt>
                 <dd className={styles.value} data-testid="planner-distance">{results?.km != null ? `${fmtInt(results.km)} km` : '—'}</dd>
                 <dd className={styles.hint}>JPL Horizons</dd>
               </div>
             </dl>
 
             <div className={styles.sites}>
-              <h3>Mejores sitios para esa llegada</h3>
+              <h3>{t('best')}</h3>
               {results ? (
-                <ol aria-label="Mejores sitios para esa llegada">
+                <ol aria-label={t('best')}>
                   {results.sites.map((m) => (
                     <li key={m.site.id}>
                       <span className={styles.rank}>{m.rank}</span>
                       <span className={styles.name}>{m.site.name}</span>
                       <span className={styles.score}>{Math.round(m.score)}</span>
-                      <span className={styles.badge} data-tone={STATUS_TONES[m.status]}>{STATUS_LABELS[m.status]}</span>
+                      <span className={styles.badge} data-tone={STATUS_TONES[m.status]}>{statusLabel(m.status)}</span>
                     </li>
                   ))}
                 </ol>
               ) : (
-                <p className={styles.note}>Elige una llegada dentro del rango para ver los sitios.</p>
+                <p className={styles.note}>{t('pickRange')}</p>
               )}
-              <p className={styles.note}>Se recalcula al cambiar fecha u hora, con el mismo cálculo del ranking. El sitio final lo eliges en la órbita.</p>
+              <p className={styles.note}>{t('note')}</p>
             </div>
           </>
         )}
 
         <div className={styles.codeBox}>
-          <h3>Código de seguimiento</h3>
+          <h3>{t('code')}</h3>
           <p className={styles.code} data-testid="planner-code">{code}</p>
-          <p>Compártelo ahora: quien lo escriba en «Seguir la misión» verá tu misión en vivo.</p>
-          <button type="button" className={layer.btn} onClick={copy}>{copied ? 'Copiado' : 'Copiar código'}</button>
+          <p>{t('share', { follow: tm('follow') })}</p>
+          <button type="button" className={layer.btn} onClick={copy}>{copied ? t('copied') : t('copy')}</button>
         </div>
 
         <div className={styles.footer}>
-          <a href={controlHref({ site: null, landing: plan })} target="_blank" rel="noopener">Análisis detallado de sitios y fechas</a>
-          <button type="button" className={layer.btn} data-variant="cta" disabled={!check?.ok} onClick={confirm}>Confirmar lanzamiento</button>
+          <a href={controlHref({ site: null, landing: plan })} target="_blank" rel="noopener">{t('analysis')}</a>
+          <button type="button" className={layer.btn} data-variant="cta" disabled={!check?.ok} onClick={confirm}>{t('confirm')}</button>
         </div>
       </section>
     </>

@@ -1,4 +1,5 @@
 import type { SiteStatus } from '@/lib/engine/hud';
+import { statusLabel } from './ui-text';
 
 const base = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
 
@@ -55,11 +56,10 @@ export function StopIcon() {
 
 /** Tokens del papel (styles/tokens.css); el trazo usa currentColor. Marginal usa --sun (el ámbar del brief): --marginal no llega a 3:1 sobre la fila seleccionada. */
 const STATUS_COLOR: Record<SiteStatus, string> = { viable: 'var(--viable)', marginal: 'var(--sun)', not_viable: 'var(--bad)' };
-const STATUS_NAME: Record<SiteStatus, string> = { viable: 'Viable', marginal: 'Marginal', not_viable: 'No viable' };
 
 /** Shape plus colour, so the status never relies on colour alone. */
 export function StatusIcon({ status, size = 16, labelled = true }: { status: SiteStatus; size?: number; labelled?: boolean }) {
-  const a11y = labelled ? { role: 'img', 'aria-label': STATUS_NAME[status] } : { 'aria-hidden': true as const };
+  const a11y = labelled ? { role: 'img', 'aria-label': statusLabel(status) } : { 'aria-hidden': true as const };
   return (
     <svg {...base} {...a11y} width={size} height={size} style={labelled ? { color: STATUS_COLOR[status] } : undefined} strokeWidth="2.4">
       {status === 'viable' && (<><circle cx="12" cy="12" r="9" /><path d="M8 12.5l3 3 5-6" /></>)}

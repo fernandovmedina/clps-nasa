@@ -82,3 +82,92 @@ test('choosing EN in Mission Control makes the experience open in English', asyn
   await expect(htmlLang(page)).toHaveAttribute('lang', 'en')
   await welcomeCard(page, 'Welcome to TOUCHDOWN')
 })
+
+/** Opens `url` with the language preference already saved, so the page boots in that language. */
+async function openIn(page: Page, lang: 'es' | 'en', url: string) {
+  await page.addInitScript(([key, value]) => localStorage.setItem(key, value), [KEY, lang] as const)
+  await page.goto(url)
+  test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+}
+
+test.describe('the experience screens in English', () => {
+  test('the launch planner and the top bar speak English', async ({ page }) => {
+    await openIn(page, 'en', '/?phase=launch')
+    await page.getByRole('button', { name: 'Change launch' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Plan your launch' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByLabel('Launch date')).toBeVisible()
+    await expect(dialog.getByLabel('Launch time (UTC)')).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Confirm launch' })).toBeEnabled({ timeout: 60_000 })
+    await expect(dialog.getByTestId('planner-arrival')).toHaveText(/^[A-Z][a-z]{2} \d{1,2}, \d{4} · \d{2}:\d{2} UTC$/)
+    await expect(dialog.getByText('Estimated arrival at the south pole')).toBeVisible()
+    await expect(dialog.getByText('Direct transit of 4.5 days (assumed)')).toBeVisible()
+    await expect(dialog.getByRole('heading', { name: 'Best landing sites for that arrival' })).toBeVisible()
+    await expect(dialog.getByRole('link', { name: 'Detailed site and date analysis' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Follow the mission' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Sound' })).toBeVisible()
+    await expect(page.getByRole('list', { name: 'Mission phases' })).toBeVisible()
+    await expect(page.getByText('Planifica tu lanzamiento')).toHaveCount(0)
+    await expect(page.getByText('Seguir la misión')).toHaveCount(0)
+  })
+
+  test('the control room of a follower speaks English', async ({ page }) => {
+    await openIn(page, 'en', '/?room=ZZZZ')
+    await welcomeCard(page, 'Welcome to TOUCHDOWN')
+    await page.getByRole('button', { name: "Follow someone's mission (with a code)" }).click()
+    await expect(page.getByText(/Tracking · following mission/)).toBeVisible()
+    for (const name of ['Mission status', 'Mission you follow', 'Live telemetry', 'Landing site', 'Landing site ranking', 'Event log']) {
+      await expect(page.locator(`section[aria-label="${name}"]`).first()).toBeVisible()
+    }
+    await expect(page.getByRole('list', { name: 'Mission phases' })).toBeVisible()
+    await expect(page.getByText('Data: NASA LOLA · JPL Horizons')).toBeVisible()
+    await expect(page.getByText('Estado de la misión')).toHaveCount(0)
+    await expect(page.getByText('Telemetría en vivo')).toHaveCount(0)
+  })
+})
+
+test.describe('the top bar at 390 px', () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+
+  /** Every control of the header lies inside the viewport, and the page does not scroll sideways. */
+  async function expectBarInside(page: Page) {
+    const outside = await page.evaluate(() => {
+      const width = document.documentElement.clientWidth
+      const bar = document.querySelector('[data-mode] header')
+      if (!bar) return ['no header']
+      const bad: string[] = []
+      for (const el of [bar, ...bar.querySelectorAll('button, a, [role="group"], p')]) {
+        const r = el.getBoundingClientRect()
+        if (r.width === 0 || r.height === 0) continue
+        if (r.left < -0.5 || r.right > width + 0.5) {
+          bad.push(`${el.tagName} «${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 24)}» ${Math.round(r.left)}..${Math.round(r.right)}`)
+        }
+      }
+      if (document.documentElement.scrollWidth > width) bad.push(`page scrollWidth ${document.documentElement.scrollWidth} > ${width}`)
+      return bad
+    })
+    expect(outside).toEqual([])
+  }
+
+  for (const lang of ['es', 'en'] as const) {
+    test(`the crew's bar fits (${lang})`, async ({ page }) => {
+      await openIn(page, lang, '/?phase=launch')
+      await expect(page.getByRole('group', { name: lang === 'es' ? 'Idioma' : 'Language' })).toBeVisible()
+      await expect(page.getByRole('button', { name: lang === 'es' ? 'Sonido' : 'Sound' })).toBeVisible()
+      await expectBarInside(page)
+      const talk = page.getByRole('button', { name: /CAPCOM/ })
+      await expect(talk).toBeVisible()
+      const box = await talk.boundingBox()
+      expect(box!.width).toBeGreaterThanOrEqual(44)
+      expect(box!.height).toBeGreaterThanOrEqual(44)
+    })
+
+    test(`the follower's control room bar fits (${lang})`, async ({ page }) => {
+      await openIn(page, lang, '/?room=ZZZZ')
+      await welcomeCard(page, lang === 'es' ? 'Bienvenido a TOUCHDOWN' : 'Welcome to TOUCHDOWN')
+      await page.getByRole('button', { name: lang === 'es' ? 'Seguir la misión de alguien (con código)' : "Follow someone's mission (with a code)" }).click()
+      await expect(page.getByRole('button', { name: lang === 'es' ? 'Sonido' : 'Sound' })).toBeVisible()
+      await expectBarInside(page)
+    })
+  }
+})

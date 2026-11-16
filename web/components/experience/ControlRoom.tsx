@@ -2,21 +2,28 @@
 
 import type { ReactNode } from 'react';
 import type { CapcomController } from '@/lib/capcom/controller';
-import { PHASE_LABELS, PHASE_ORDER, STATUS_LABELS, STATUS_TONES, fmtInt, type HudSide, type PhaseHud } from '@/lib/engine/hud';
+import type { PhaseName } from '@/lib/engine/app';
+import { PHASE_ORDER, STATUS_TONES, fmtInt, type HudSide, type PhaseHud } from '@/lib/engine/hud';
+import { t as translate, type DictKey, type Vars } from '@/lib/i18n';
+import { controlRoomDict } from '@/lib/i18n/dicts/ui-control-room';
+import { missionDict } from '@/lib/i18n/dicts/ui-mission';
+import { useT } from '@/lib/i18n/react';
 import { TRANSIT_DAYS } from '@/lib/mission/launch-plan';
 import { CapcomButton, CapcomCaption } from './Capcom';
 import FollowPill from './FollowPill';
 import { CheckIcon, SoundIcon } from './icons';
+import { demoLabel, phaseLabel, statusLabel } from './ui-text';
 import type { HudSnapshot } from './useHudSnapshot';
 import layer from './MissionLayer.module.css';
 import styles from './ControlRoom.module.css';
 
 const MAX_EVENTS = 8;
-const DEMO_LABEL = 'Demo · falla simulada del motor';
 
 /** What the log watches: it adds an entry for each of these that changes. */
 interface Seen { phase: HudSnapshot['phase']; mode: HudSnapshot['mode']; roomOpen: boolean; started: boolean; plan: string; site: string }
-export interface LogEntry { id: number; at: string; text: string }
+/** `text` is what the entry said when it was written; `key` and `vars` let the screen say it again in the language of the moment. */
+export type LogKey = Extract<DictKey<typeof controlRoomDict>, `log.${string}`>;
+export interface LogEntry { id: number; at: string; text: string; key: LogKey; vars?: Vars }
 export interface LogState { last: Seen | null; startLogged: boolean; next: number; entries: LogEntry[] }
 
 export const EMPTY_LOG: LogState = { last: null, startLogged: false, next: 1, entries: [] };
@@ -39,22 +46,37 @@ export function nextLog(log: LogState, seen: Seen, code: string, at: Date = new 
   if (sameSeen(log.last, seen)) return log;
   const prev = log.last;
   const stamp = `${at.toISOString().slice(11, 19)} UTC`;
-  const texts: string[] = [];
-  if (seen.roomOpen && !prev?.roomOpen) texts.push(`Conectado a la sala ${code}`);
-  if (seen.roomOpen && (!prev?.roomOpen || prev.plan !== seen.plan)) texts.push(`Plan recibido · ${seen.plan}`);
+  const texts: { key: LogKey; vars?: Vars }[] = [];
+  if (seen.roomOpen && !prev?.roomOpen) texts.push({ key: 'log.connected', vars: { code } });
+  if (seen.roomOpen && (!prev?.roomOpen || prev.plan !== seen.plan)) texts.push({ key: 'log.plan', vars: { plan: seen.plan } });
   let startLogged = log.startLogged;
   if (!startLogged && seen.roomOpen && (seen.started || seen.phase !== 'launch')) {
-    texts.push('Despegue iniciado');
+    texts.push({ key: 'log.started' });
     startLogged = true;
   }
-  if (prev && prev.phase !== seen.phase) texts.push(`Fase ${PHASE_ORDER.indexOf(seen.phase) + 1} de ${PHASE_ORDER.length}: ${PHASE_LABELS[seen.phase]}`);
-  if (seen.site && prev?.site !== seen.site) texts.push(`Sitio elegido: ${seen.site}`);
+  if (prev && prev.phase !== seen.phase) texts.push({ key: 'log.phase', vars: { n: PHASE_ORDER.indexOf(seen.phase) + 1, total: PHASE_ORDER.length, phase: seen.phase } });
+  if (seen.site && prev?.site !== seen.site) texts.push({ key: 'log.site', vars: { site: seen.site } });
   if (prev && prev.mode !== seen.mode) {
-    texts.push(seen.mode === 'paused' ? 'Misión en pausa' : seen.mode === 'stopped' ? 'Misión detenida' : prev.mode === 'stopped' ? 'Misión reiniciada' : 'Misión reanudada');
+    texts.push({ key: seen.mode === 'paused' ? 'log.paused' : seen.mode === 'stopped' ? 'log.stopped' : prev.mode === 'stopped' ? 'log.restarted' : 'log.resumed' });
   }
   let id = log.next;
-  const added = texts.map((text) => ({ id: id++, at: stamp, text }));
+  const added = texts.map((e) => ({ id: id++, at: stamp, ...e, text: entryText(e.key, e.vars) }));
   return { last: seen, startLogged, next: id, entries: [...added.reverse(), ...log.entries].slice(0, MAX_EVENTS) };
+}
+
+/** An event log line in the current language; `phase` travels as the phase id and is named here. */
+export function entryText(key: LogKey, vars?: Vars): string {
+  const phase = vars?.phase;
+  return translate(controlRoomDict, key, phase === undefined ? vars : { ...vars, phase: phaseLabel(phase as PhaseName) });
+}
+
+/** The «Despegue»/«Llegada» prefix the mission text carries, taken off in whichever language it was written. */
+function planDate(text: string): string {
+  for (const key of ['plan.launch', 'plan.landing'] as const) {
+    const prefix = translate(missionDict, key, { date: '' });
+    if (text.startsWith(prefix)) return text.slice(prefix.length);
+  }
+  return text;
 }
 
 type Reading = { label: string; value: string };
@@ -90,37 +112,38 @@ interface Props {
 
 /** The follower's screen ("Seguimiento") as a control screen: opaque, over the 3D canvas that keeps running underneath as the source of the data. */
 export default function ControlRoom({ view, code, log, capcom, soundOn, soundDisabled, onToggleSound, onLeave, controls, onRestart }: Props) {
+  const t = useT(controlRoomDict);
+  const tm = useT(missionDict);
   const { phase, mode, hud, mission, roomOpen, site, ranking, moonKm } = view;
   const stopped = mode === 'stopped';
   const paused = mode === 'paused';
   const waiting = hud?.waiting === true && phase === 'launch' && !stopped;
   const current = PHASE_ORDER.indexOf(phase);
   const readings = readingsOf(stopped ? null : hud);
-  const plan = (text: string) => text.replace(/^(Despegue|Llegada) /, '');
 
   return (
     <div className={styles.room} data-mode={mode}>
       <header className={styles.top}>
-        <h1>TOUCHDOWN<span>Seguimiento</span></h1>
-        <p className={styles.source}>Datos: NASA LOLA · JPL Horizons</p>
+        <h1>TOUCHDOWN<span>{t('tracking')}</span></h1>
+        <p className={styles.source}>{t('source')}</p>
         <FollowPill code={code} open={roomOpen} />
         <div className={styles.actions}>
           {capcom && <CapcomButton controller={capcom} />}
-          <button type="button" className={layer.iconBtn} aria-label="Sonido" aria-pressed={soundOn} disabled={soundDisabled} onClick={onToggleSound}>
+          <button type="button" className={layer.iconBtn} aria-label={tm('sound')} aria-pressed={soundOn} disabled={soundDisabled} onClick={onToggleSound}>
             <SoundIcon muted={!soundOn} />
           </button>
-          <button type="button" className={layer.btn} onClick={onLeave}>Salir</button>
+          <button type="button" className={layer.btn} onClick={onLeave}>{tm('leave')}</button>
         </div>
       </header>
 
-      <ol className={styles.phases} aria-label="Fases de la misión">
+      <ol className={styles.phases} aria-label={tm('phases')}>
         {PHASE_ORDER.map((id, i) => {
           const state = stopped ? 'pending' : i < current ? 'done' : i === current ? 'current' : 'pending';
           return (
             <li key={id} data-state={state} aria-current={state === 'current' ? 'step' : undefined}>
               <span className={styles.dot} aria-hidden="true">{state === 'done' ? <CheckIcon /> : i + 1}</span>
-              <span>{PHASE_LABELS[id]}</span>
-              {state === 'done' && <span className={layer.sr}>(completada)</span>}
+              <span>{phaseLabel(id)}</span>
+              {state === 'done' && <span className={layer.sr}>{tm('done')}</span>}
             </li>
           );
         })}
@@ -128,23 +151,23 @@ export default function ControlRoom({ view, code, log, capcom, soundOn, soundDis
 
       <div className={styles.grid}>
         {waiting ? (
-          <section className={styles.card} role="status" aria-label="Estado de la misión">
-            <h2>Estado de la misión</h2>
+          <section className={styles.card} role="status" aria-label={t('status')}>
+            <h2>{t('status')}</h2>
             <p className={styles.figure} data-testid="figure">{hud?.figure.value}</p>
             {hud?.detail && <p className={styles.detail}>{hud.detail}</p>}
-            <p className={styles.small}>Modo seguimiento: los controles de la misión los tiene la tripulación.</p>
+            <p className={styles.small}>{t('followMode')}</p>
           </section>
         ) : (
-          <section className={styles.card} aria-label="Estado de la misión">
-            <h2>Estado de la misión</h2>
+          <section className={styles.card} aria-label={t('status')}>
+            <h2>{t('status')}</h2>
             {stopped ? (
               <>
-                <p className={styles.figure} data-testid="figure">Detenida</p>
-                <p className={styles.detail}>La simulación se detuvo en la fase de {PHASE_LABELS[phase].toLowerCase()}.</p>
+                <p className={styles.figure} data-testid="figure">{t('stopped')}</p>
+                <p className={styles.detail}>{t('stoppedDetail', { phase: phaseLabel(phase).toLowerCase() })}</p>
               </>
             ) : (
               <>
-                {paused && <span className={styles.badge} data-tone="warn">En pausa</span>}
+                {paused && <span className={styles.badge} data-tone="warn">{t('paused')}</span>}
                 <p className={styles.figureRow}>
                   <span className={styles.figure} data-testid="figure">{hud?.figure.value ?? '—'}</span>
                   {hud?.figure.caption && <span className={styles.caption}>{hud.figure.caption}</span>}
@@ -164,22 +187,22 @@ export default function ControlRoom({ view, code, log, capcom, soundOn, soundDis
           </section>
         )}
 
-        <section className={styles.card} aria-label="Misión que sigues">
-          <h2>Lanzamiento</h2>
+        <section className={styles.card} aria-label={t('followed')}>
+          <h2>{t('launchTitle')}</h2>
           {roomOpen ? (
             <dl className={styles.pairs}>
-              <div><dt>Despegue</dt><dd>{plan(mission.launch)}</dd></div>
-              <div><dt>Llegada</dt><dd>{plan(mission.landing)}</dd></div>
-              <div><dt>Tránsito</dt><dd>{TRANSIT_DAYS} días (supuesto)</dd></div>
-              <div><dt>Distancia Tierra–Luna a la llegada</dt><dd>{moonKm === null ? '—' : `${fmtInt(moonKm)} km`}</dd></div>
+              <div><dt>{t('launch')}</dt><dd>{planDate(mission.launch)}</dd></div>
+              <div><dt>{t('landing')}</dt><dd>{planDate(mission.landing)}</dd></div>
+              <div><dt>{t('transit')}</dt><dd>{t('transitValue', { days: TRANSIT_DAYS })}</dd></div>
+              <div><dt>{t('distance')}</dt><dd>{moonKm === null ? '—' : `${fmtInt(moonKm)} km`}</dd></div>
             </dl>
           ) : (
-            <p className={styles.detail}>Conectando con la misión…</p>
+            <p className={styles.detail}>{t('connecting')}</p>
           )}
         </section>
 
-        <section className={styles.card} aria-label="Telemetría en vivo">
-          <h2>Telemetría en vivo</h2>
+        <section className={styles.card} aria-label={t('telemetry')}>
+          <h2>{t('telemetry')}</h2>
           {readings.length > 0 ? (
             <dl className={styles.chips}>
               {readings.map((r) => (
@@ -187,33 +210,33 @@ export default function ControlRoom({ view, code, log, capcom, soundOn, soundDis
               ))}
             </dl>
           ) : (
-            <p className={styles.detail}>Sin lecturas en esta fase.</p>
+            <p className={styles.detail}>{t('noReadings')}</p>
           )}
         </section>
 
-        <section className={styles.card} aria-label="Sitio">
-          <h2>Sitio</h2>
+        <section className={styles.card} aria-label={t('site')}>
+          <h2>{t('site')}</h2>
           {site ? (
             <>
               <p className={styles.siteName}>{site.name}</p>
               {site.demo ? (
-                <p className={styles.figureRow}><span className={styles.caption}>{DEMO_LABEL}</span></p>
+                <p className={styles.figureRow}><span className={styles.caption}>{demoLabel()}</span></p>
               ) : (
                 <>
                   {site.note && <p className={styles.caption}>{site.note}</p>}
                   <p className={styles.figureRow}>
                     <span className={styles.score}>{site.score}</span>
-                    <span className={styles.caption}>de 100</span>
-                    <span className={styles.badge} data-tone={STATUS_TONES[site.status]}>{STATUS_LABELS[site.status]}</span>
+                    <span className={styles.caption}>{t('outOf')}</span>
+                    <span className={styles.badge} data-tone={STATUS_TONES[site.status]}>{statusLabel(site.status)}</span>
                   </p>
                 </>
               )}
               <dl className={styles.pairs}>
-                <div><dt>Sol · elevación</dt><dd>{site.sunElevation}°</dd></div>
-                <div><dt>Tierra · elevación</dt><dd>{site.earthElevation}°</dd></div>
-                <div><dt>Tierra visible</dt><dd>{site.earthVisible ? 'Sí' : 'No'}</dd></div>
-                <div><dt>Puesta del Sol en</dt><dd>{site.sunHours}</dd></div>
-                <div><dt>Ocaso de la Tierra en</dt><dd>{site.earthHours}</dd></div>
+                <div><dt>{t('sunElevation')}</dt><dd>{site.sunElevation}°</dd></div>
+                <div><dt>{t('earthElevation')}</dt><dd>{site.earthElevation}°</dd></div>
+                <div><dt>{t('earthVisible')}</dt><dd>{site.earthVisible ? t('yes') : t('no')}</dd></div>
+                <div><dt>{t('sunset')}</dt><dd>{site.sunHours}</dd></div>
+                <div><dt>{t('earthset')}</dt><dd>{site.earthHours}</dd></div>
               </dl>
             </>
           ) : (
@@ -221,8 +244,8 @@ export default function ControlRoom({ view, code, log, capcom, soundOn, soundDis
           )}
         </section>
 
-        <section className={styles.card} aria-label="Ranking de sitios">
-          <h2>Ranking</h2>
+        <section className={styles.card} aria-label={t('rankingAria')}>
+          <h2>{t('rankingTitle')}</h2>
           {ranking.length > 0 ? (
             <ol className={styles.ranking}>
               {ranking.map((r) => (
@@ -230,35 +253,35 @@ export default function ControlRoom({ view, code, log, capcom, soundOn, soundDis
                   <span className={styles.rank}>{r.rank}</span>
                   <span className={styles.rankName}>{r.name}{!r.demo && r.note ? ` · ${r.note}` : ''}</span>
                   {r.demo ? (
-                    <span className={styles.caption}>{DEMO_LABEL}</span>
+                    <span className={styles.caption}>{demoLabel()}</span>
                   ) : (
                     <>
                       <span className={styles.rankScore}>{r.score}</span>
-                      <span className={styles.badge} data-tone={STATUS_TONES[r.status]}>{STATUS_LABELS[r.status]}</span>
+                      <span className={styles.badge} data-tone={STATUS_TONES[r.status]}>{statusLabel(r.status)}</span>
                     </>
                   )}
                 </li>
               ))}
             </ol>
           ) : (
-            <p className={styles.detail}>Aún no hay ranking: se calcula en la órbita.</p>
+            <p className={styles.detail}>{t('rankingEmpty')}</p>
           )}
         </section>
 
-        <section className={styles.card} aria-label="Registro de eventos">
-          <h2>Registro de eventos</h2>
-          <ol className={styles.log} role="log" aria-label="Registro de eventos de la misión">
+        <section className={styles.card} aria-label={t('log')}>
+          <h2>{t('log')}</h2>
+          <ol className={styles.log} role="log" aria-label={t('logAria')}>
             {log.entries.map((e) => (
-              <li key={e.id}><time>{e.at}</time><span>{e.text}</span></li>
+              <li key={e.id}><time>{e.at}</time><span>{entryText(e.key, e.vars)}</span></li>
             ))}
           </ol>
         </section>
 
         {(stopped || !waiting) && (
-          <section className={`${styles.card} ${styles.local}`} aria-label="Control local">
-            <h2>Control local</h2>
+          <section className={`${styles.card} ${styles.local}`} aria-label={t('local')}>
+            <h2>{t('local')}</h2>
             {stopped ? (
-              <button type="button" className={layer.btn} data-variant="cta" onClick={onRestart}>Reiniciar desde el despegue</button>
+              <button type="button" className={layer.btn} data-variant="cta" onClick={onRestart}>{t('restart')}</button>
             ) : controls}
           </section>
         )}
