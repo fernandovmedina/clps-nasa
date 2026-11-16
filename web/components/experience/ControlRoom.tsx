@@ -88,7 +88,7 @@ interface Props {
   onRestart: () => void;
 }
 
-/** Mission Control as a control screen: opaque, over the 3D canvas that keeps running underneath as the source of the data. */
+/** The follower's screen ("Seguimiento") as a control screen: opaque, over the 3D canvas that keeps running underneath as the source of the data. */
 export default function ControlRoom({ view, code, log, capcom, soundOn, soundDisabled, onToggleSound, onLeave, controls, onRestart }: Props) {
   const { phase, mode, hud, mission, roomOpen, site, ranking, moonKm } = view;
   const stopped = mode === 'stopped';
@@ -101,7 +101,7 @@ export default function ControlRoom({ view, code, log, capcom, soundOn, soundDis
   return (
     <div className={styles.room} data-mode={mode}>
       <header className={styles.top}>
-        <h1>TOUCHDOWN<span>Mission Control</span></h1>
+        <h1>TOUCHDOWN<span>Seguimiento</span></h1>
         <p className={styles.source}>Datos: NASA LOLA · JPL Horizons</p>
         <FollowPill code={code} open={roomOpen} />
         <div className={styles.actions}>

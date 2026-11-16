@@ -200,9 +200,9 @@ export default function LaunchPlanner({ app, code, onClose, suspendEscape = fals
         )}
 
         <div className={styles.codeBox}>
-          <h3>Código para Mission Control</h3>
+          <h3>Código de seguimiento</h3>
           <p className={styles.code} data-testid="planner-code">{code}</p>
-          <p>Compártelo ahora: quien lo use en «<em>Mission Control</em>» seguirá la misión desde el despegue.</p>
+          <p>Compártelo ahora: quien lo escriba en «Seguir la misión» verá tu misión en vivo.</p>
           <button type="button" className={layer.btn} onClick={copy}>{copied ? 'Copiado' : 'Copiar código'}</button>
         </div>
 

@@ -61,7 +61,7 @@ describe('ControlRoom', () => {
     for (const name of ['Misión que sigues', 'Telemetría en vivo', 'Sitio', 'Ranking de sitios', 'Registro de eventos']) {
       expect(screen.getByRole('region', { name })).toBeTruthy();
     }
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('TOUCHDOWNMission Control');
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('TOUCHDOWNSeguimiento');
     expect(screen.getByText('Datos: NASA LOLA · JPL Horizons')).toBeTruthy();
     expect(screen.queryByLabelText('Datos de la fase')).toBeNull();
     cleanup();

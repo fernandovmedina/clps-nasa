@@ -20,14 +20,14 @@ interface Props {
 /** start: trying to speak; tap: the browser wants a gesture first; speaking: subtitle up; modal: the question. */
 type Step = 'start' | 'tap' | 'speaking' | 'modal';
 
-const FOCUSABLE = 'button:not(:disabled)';
+const FOCUSABLE = 'button:not(:disabled), a[href]';
 const READY_WAIT_MS = 1500;
 const NO_ENGINE_MS = 4000;
 /** However it goes wrong (a clip that never resolves, a stuck TTS), the question appears this long after the voice was asked for. */
 const SPEECH_CAP_MS = 15_000;
 const SILENT_SUBTITLE_MS = 6500;
-/** What the voice says, with the product name written the way it is on screen. */
-const SUBTITLE = NARRATION_LINES.welcome.replace('touchdown', 'TOUCHDOWN');
+/** What the voice says, shown as the subtitle. */
+const SUBTITLE = NARRATION_LINES.welcome;
 
 const MOOD: Record<Step, DonkeyMood> = { start: 'idle', tap: 'idle', speaking: 'speaking', modal: 'listening' };
 
@@ -35,9 +35,10 @@ interface Controls { skip: () => void; retry: () => void }
 
 /**
  * First thing shown when the page opens: the Burrito espacial hops in, greets the visitor by voice (subtitled) and then
- * asks whether they are flying the mission in VR or watching it from Mission Control. The answer decides which dialog
- * opens next (the launch planner for VR, or the follow-mission code for Monitor). Browsers keep audio locked until the
- * first gesture, so a blocked greeting waits for a tap; whatever happens, the two role buttons end up on screen.
+ * says what TOUCHDOWN is and offers the way in. The main action depends on the device: «Entrar en VR» when the browser
+ * has WebXR immersive-vr, «Explorar la misión» (the same route, on screen) when it does not. Both answer 'vr'; the
+ * secondary action, following someone's mission with their code, answers 'monitor'. Browsers keep audio locked until
+ * the first gesture, so a blocked greeting waits for a tap; whatever happens, the buttons end up on screen.
  */
 export default function WelcomeGuide({ app, onChoose }: Props) {
   const titleId = useId();
@@ -48,6 +49,14 @@ export default function WelcomeGuide({ app, onChoose }: Props) {
   const controls = useRef<Controls | null>(null);
   const chosen = useRef(false);
   const [done, setDone] = useState(false);
+  const [hasVr, setHasVr] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const xr = typeof navigator === 'undefined' ? undefined : navigator.xr;
+    if (xr) xr.isSessionSupported('immersive-vr').then((ok) => { if (alive) setHasVr(ok); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const go = useCallback((next: Step) => {
     if (stepRef.current === 'modal') return;
@@ -182,16 +191,18 @@ export default function WelcomeGuide({ app, onChoose }: Props) {
             <div className={dialog.head}>
               <p className={dialog.eyebrow}>Burrito espacial</p>
               <h2 id={titleId} className={dialog.title}>Bienvenido a TOUCHDOWN</h2>
-              <p className={dialog.lede}>Soy tu guía en esta misión. ¿Cuál es tu rol ahora?</p>
+              <p className={dialog.lede}>Compara sitios y fechas de alunizaje en el polo sur con datos reales de NASA</p>
             </div>
             <div className={styles.roles}>
               <button type="button" className={layer.btn} data-variant="cta" disabled={done} onClick={() => choose('vr')}>
-                Voy en VR
+                {hasVr ? 'Entrar en VR' : 'Explorar la misión'}
               </button>
+              {!hasVr && <p className={styles.hint}>Para VR, ábrelo en el navegador del Meta Quest</p>}
               <button type="button" className={layer.btn} disabled={done} onClick={() => choose('monitor')}>
-                Sigo la misión (Monitor)
+                Seguir la misión de alguien (con código)
               </button>
             </div>
+            <a className={styles.more} href="/mission-control/">Análisis de sitios y fechas</a>
           </div>
         )}
       </div>

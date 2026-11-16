@@ -37,6 +37,11 @@
 .enter { margin-top: 12px; }
 .roles { display: flex; flex-direction: column; gap: 10px; }
 .roles > button { width: 100%; justify-content: center; }
+.hint { font-size: 13px; color: var(--label-2); text-align: center; }
+.more { align-self: center; display: inline-flex; align-items: center; min-height: 44px; font-size: 13px; font-weight: 500; color: var(--label-2);
+  text-decoration: underline; text-underline-offset: 3px; pointer-events: auto; }
+.more:hover { color: var(--label); }
+.more:focus-visible { outline: 2px solid var(--label); outline-offset: 2px; box-shadow: 0 0 0 5px var(--bg-surface); }
 
 @media (prefers-reduced-motion: no-preference) {
   .bubble, .enter { animation: rise 0.25s ease-out both; }

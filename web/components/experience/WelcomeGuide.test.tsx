@@ -17,7 +17,9 @@ vi.mock('@/lib/capcom/donkey-stage', () => ({
   },
 }));
 
-const SUBTITLE = 'Bienvenido a TOUCHDOWN. Soy el burrito espacial, tu guía. ¿Vas en VR, o sigues la misión en Mission Control?';
+const SUBTITLE = 'Bienvenido a TOUCHDOWN. Soy el burrito espacial, tu guía. Vamos a elegir dónde y cuándo alunizar en el polo sur de la Luna.';
+const PRIMARY = 'Explorar la misión';
+const SECONDARY = 'Seguir la misión de alguien (con código)';
 
 interface Line { onStart?: () => void; resolve: (outcome: SayOutcome) => void }
 
@@ -41,7 +43,17 @@ const canvas = () => screen.getByTestId('welcome-donkey');
 const dialog = () => screen.queryByRole('dialog');
 const lastMood = () => stages.at(-1)!.setMood.mock.calls.at(-1)?.[0];
 
+/** navigator.xr as the browser exposes it: absent without WebXR, or with isSessionSupported answering for immersive-vr. */
+function setXr(support: 'none' | 'vr' | 'no-vr' | 'throws') {
+  const isSessionSupported = vi.fn((mode: string) => (
+    support === 'throws' ? Promise.reject(new Error('xr')) : Promise.resolve(support === 'vr' && mode === 'immersive-vr')
+  ));
+  Object.defineProperty(navigator, 'xr', { configurable: true, value: support === 'none' ? undefined : { isSessionSupported } });
+  return isSessionSupported;
+}
+
 beforeEach(() => {
+  setXr('none');
   stages.length = 0;
   webgl.available = true;
   vi.useFakeTimers();
@@ -101,13 +113,13 @@ describe('WelcomeGuide', () => {
     await settle(lines[0], 'ended');
     const card = screen.getByRole('dialog', { name: 'Bienvenido a TOUCHDOWN' });
     expect(card.getAttribute('aria-modal')).toBe('true');
-    expect(screen.getByRole('button', { name: 'Voy en VR' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Sigo la misión (Monitor)' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: PRIMARY })).toBeTruthy();
+    expect(screen.getByRole('button', { name: SECONDARY })).toBeTruthy();
     expect(screen.queryByText(SUBTITLE)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Saltar' })).toBeNull();
     expect(canvas().getAttribute('data-mood')).toBe('listening');
     expect(lastMood()).toBe('listening');
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Voy en VR' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: PRIMARY }));
   });
 
   it('also opens the dialog when the line is cut off from outside', async () => {
@@ -216,6 +228,77 @@ describe('WelcomeGuide', () => {
     });
   });
 
+  describe('the welcome dialog by device', () => {
+    const open = async () => {
+      const { app, lines } = fakeApp();
+      const onChoose = vi.fn();
+      render(<WelcomeGuide app={app} onChoose={onChoose} />);
+      await flush();
+      await settle(lines[0], 'ended');
+      return { onChoose };
+    };
+    const CTA = '[data-variant="cta"]';
+
+    it('without WebXR: says what it is, offers «Explorar la misión» as the one clay button and tells where VR works', async () => {
+      await open();
+      const card = screen.getByRole('dialog');
+      expect(screen.getByText('Compara sitios y fechas de alunizaje en el polo sur con datos reales de NASA')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Entrar en VR' })).toBeNull();
+      expect(screen.getByText('Para VR, ábrelo en el navegador del Meta Quest')).toBeTruthy();
+      const cta = card.querySelectorAll(CTA);
+      expect(cta).toHaveLength(1);
+      expect(cta[0]).toBe(screen.getByRole('button', { name: PRIMARY }));
+      expect(screen.getByRole('button', { name: SECONDARY }).getAttribute('data-variant')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Voy en VR' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Sigo la misión (Monitor)' })).toBeNull();
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: PRIMARY }));
+    });
+
+    it('without WebXR: Explorar la misión makes the same choice «Voy en VR» made on desktop', async () => {
+      const { onChoose } = await open();
+      fireEvent.click(screen.getByRole('button', { name: PRIMARY }));
+      expect(onChoose).toHaveBeenCalledWith('vr');
+    });
+
+    it('with WebXR immersive-vr: the clay button is «Entrar en VR», there is no Explorar and no Quest hint', async () => {
+      const supported = setXr('vr');
+      const { onChoose } = await open();
+      expect(supported).toHaveBeenCalledWith('immersive-vr');
+      const card = screen.getByRole('dialog');
+      expect(screen.getByText('Compara sitios y fechas de alunizaje en el polo sur con datos reales de NASA')).toBeTruthy();
+      expect(card.querySelectorAll(CTA)).toHaveLength(1);
+      expect(card.querySelector(CTA)).toBe(screen.getByRole('button', { name: 'Entrar en VR' }));
+      expect(screen.queryByRole('button', { name: PRIMARY })).toBeNull();
+      expect(screen.queryByText('Para VR, ábrelo en el navegador del Meta Quest')).toBeNull();
+      expect(screen.getByRole('button', { name: SECONDARY })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Entrar en VR' }));
+      expect(onChoose).toHaveBeenCalledWith('vr');
+    });
+
+    it.each(['no-vr', 'throws'] as const)('treats a WebXR that says %s as no VR', async (support) => {
+      setXr(support);
+      await open();
+      expect(screen.getByRole('button', { name: PRIMARY })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Entrar en VR' })).toBeNull();
+    });
+
+    it('both variants offer the code route and a quiet link to the analysis app', async () => {
+      const { onChoose } = await open();
+      const link = screen.getByRole('link', { name: 'Análisis de sitios y fechas' });
+      expect(link.getAttribute('href')).toBe('/mission-control/');
+      expect(link.closest('[role="dialog"]')).not.toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: SECONDARY }));
+      expect(onChoose).toHaveBeenCalledWith('monitor');
+    });
+
+    it('never asks for a code or names Mission Control as a role', async () => {
+      await open();
+      const text = screen.getByRole('dialog').textContent ?? '';
+      expect(text).not.toMatch(/Mission Control/);
+      expect(text).not.toMatch(/Monitor/);
+    });
+  });
+
   describe('choosing', () => {
     it('calls onChoose once, in the same click, and cuts the voice', async () => {
       const { app, narrator, lines } = fakeApp();
@@ -223,12 +306,12 @@ describe('WelcomeGuide', () => {
       render(<WelcomeGuide app={app} onChoose={onChoose} />);
       await flush();
       await settle(lines[0], 'ended');
-      fireEvent.click(screen.getByRole('button', { name: 'Voy en VR' }));
+      fireEvent.click(screen.getByRole('button', { name: PRIMARY }));
       expect(onChoose).toHaveBeenCalledTimes(1);
       expect(onChoose).toHaveBeenCalledWith('vr');
       expect(narrator.stop).toHaveBeenCalled();
-      fireEvent.click(screen.getByRole('button', { name: 'Sigo la misión (Monitor)' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Voy en VR' }));
+      fireEvent.click(screen.getByRole('button', { name: SECONDARY }));
+      fireEvent.click(screen.getByRole('button', { name: PRIMARY }));
       expect(onChoose).toHaveBeenCalledTimes(1);
     });
 
@@ -238,7 +321,7 @@ describe('WelcomeGuide', () => {
       render(<WelcomeGuide app={app} onChoose={onChoose} />);
       await flush();
       await settle(lines[0], 'ended');
-      fireEvent.click(screen.getByRole('button', { name: 'Sigo la misión (Monitor)' }));
+      fireEvent.click(screen.getByRole('button', { name: SECONDARY }));
       expect(onChoose).toHaveBeenCalledWith('monitor');
       expect(narrator.sayAndWait).toHaveBeenCalledTimes(1);
     });
@@ -249,8 +332,8 @@ describe('WelcomeGuide', () => {
       await flush();
       await settle(lines[0], 'ended');
       const card = screen.getByRole('dialog');
-      const first = screen.getByRole('button', { name: 'Voy en VR' });
-      const last = screen.getByRole('button', { name: 'Sigo la misión (Monitor)' });
+      const first = screen.getByRole('button', { name: PRIMARY });
+      const last = screen.getByRole('link', { name: 'Análisis de sitios y fechas' });
       last.focus();
       fireEvent.keyDown(card, { key: 'Tab' });
       expect(document.activeElement).toBe(first);
@@ -267,7 +350,7 @@ describe('WelcomeGuide', () => {
       expect(dialog()).toBeNull();
       await advance(5);
       expect(dialog()).not.toBeNull();
-      fireEvent.click(screen.getByRole('button', { name: 'Voy en VR' }));
+      fireEvent.click(screen.getByRole('button', { name: PRIMARY }));
       expect(onChoose).toHaveBeenCalledWith('vr');
     });
 

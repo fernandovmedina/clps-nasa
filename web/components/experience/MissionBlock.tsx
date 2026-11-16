@@ -4,13 +4,13 @@ import styles from './MissionLayer.module.css';
 interface Props {
   mission: MissionInfo;
   code: string;
-  /** Mission Control: follows someone else's mission instead of flying its own. */
+  /** Follower: follows someone else's mission instead of flying its own. */
   follow: boolean;
   roomOpen: boolean;
   /** The launch has not started: the plan can still change. */
   prelaunch: boolean;
   onChangeLaunch: () => void;
-  /** Mission Control with this mission already loaded. */
+  /** The analysis app (Mission Control) with this mission already loaded. */
   controlHref: string;
 }
 
@@ -45,9 +45,10 @@ export default function MissionBlock({ mission, code, follow, roomOpen, prelaunc
           : <a href={controlHref}>Análisis de sitios y fechas</a>}
       </div>
       <div className={styles.codeBox}>
-        <span>Código Mission Control</span>
+        <span>Código de seguimiento</span>
         <strong data-testid="room-code">{code || '…'}</strong>
       </div>
+      <p className={styles.small}>Quien lo escriba en «Seguir la misión» verá tu misión en vivo.</p>
     </section>
   );
 }

@@ -13,7 +13,7 @@ export const NARRATION_LINES = {
   siteCriteria:
     'Estoy comparando cada sitio por dos cosas: cuántas horas de sol reciben sus paneles '
     + 'y cuántas horas tienen la Tierra a la vista para comunicarse directo. El relieve real del polo decide las dos.',
-  welcome: 'Bienvenido a touchdown. Soy el burrito espacial, tu guía. ¿Vas en VR, o sigues la misión en Mission Control?',
+  welcome: 'Bienvenido a TOUCHDOWN. Soy el burrito espacial, tu guía. Vamos a elegir dónde y cuándo alunizar en el polo sur de la Luna.',
 } as const;
 
 export type NarrationId = keyof typeof NARRATION_LINES;
