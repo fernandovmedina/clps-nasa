@@ -239,7 +239,7 @@ describe('mission tools in English', () => {
 
   it('gives the phase and its notes in English', async () => {
     const out = await call(source({ phase: 'launch', mode: 'stopped' }), 'estado_del_viaje');
-    expect(out).toMatchObject({ fase: 'Liftoff', estado_de_la_mision: 'detenida' });
+    expect(out).toMatchObject({ fase: 'Launch', estado_de_la_mision: 'detenida' });
     expect(out.nota).toMatch(/^The mission is stopped/);
     expect((await call(source({ phase: 'pov' }), 'estado_del_viaje')).fase).toBe('Site view');
   });

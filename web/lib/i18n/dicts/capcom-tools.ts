@@ -44,7 +44,7 @@ export const capcomToolsDict = defineDict({
     demoChosenNote: '{name} es un caso de demostración (falla simulada del motor), no un sitio real: no tiene puntaje.',
   },
   en: {
-    'phase.launch': 'Liftoff',
+    'phase.launch': 'Launch',
     'phase.orbit': 'Orbit and ranking',
     'phase.pov': 'Site view',
     'phase.landing': 'Landing',

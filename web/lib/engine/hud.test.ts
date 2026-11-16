@@ -132,7 +132,7 @@ describe('shared labels in Spanish and English', () => {
     expect(labels.landing).toBe('Alunizaje');
     setLang('en', { persist: false });
     expect(labels.landing).toBe('Landing');
-    expect(PHASE_ORDER.map((id) => PHASE_LABELS[id])).toEqual(['Launch', 'Orbit & ranking', 'Site view', 'Landing', 'Transmission']);
+    expect(PHASE_ORDER.map((id) => PHASE_LABELS[id])).toEqual(['Launch', 'Orbit and ranking', 'Site view', 'Landing', 'Transmission']);
     expect(STATUS_LABELS).toEqual({ viable: 'Viable', marginal: 'Marginal', not_viable: 'Not viable' });
     expect(STATUS_LABELS.not_viable.toLowerCase()).toBe('not viable');
   });

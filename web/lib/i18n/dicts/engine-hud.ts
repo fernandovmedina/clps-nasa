@@ -24,7 +24,7 @@ export const engineHudDict = defineDict({
   },
   en: {
     'phase.launch': 'Launch',
-    'phase.orbit': 'Orbit & ranking',
+    'phase.orbit': 'Orbit and ranking',
     'phase.pov': 'Site view',
     'phase.landing': 'Landing',
     'phase.transmit': 'Transmission',
