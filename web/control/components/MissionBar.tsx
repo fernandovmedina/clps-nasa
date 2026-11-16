@@ -57,13 +57,13 @@ export function MissionBar({ delayDays, scenarioCount, onAddDelay, onSetDelay, o
           value={[delayDays]}
           onValueChange={([v]) => onSetDelay(v ?? 0)}
         >
-          <Slider.Track className="relative h-2 grow rounded-full bg-control">
+          <Slider.Track className="relative h-2 grow rounded-full bg-line-strong">
             <Slider.Range className="absolute h-full rounded-full bg-accent" />
           </Slider.Track>
           <Slider.Thumb
             aria-label={t('delaySlider')}
             aria-valuetext={valueText}
-            className="relative block h-6 w-6 rounded-full border-2 border-[var(--bg-elevated)] bg-accent outline-offset-2 after:absolute after:-inset-3 after:content-[''] active:opacity-80"
+            className="relative block h-6 w-6 rounded-full border-2 border-control bg-accent outline-offset-2 after:absolute after:-inset-3 after:content-[''] active:opacity-80"
           />
         </Slider.Root>
       </div>

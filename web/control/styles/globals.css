@@ -177,17 +177,12 @@ body {
 }
 
 .slate {
-  --bg-base: var(--sky-bg);
-  --bg-elevated: var(--sky-bg);
-  --bg-field: var(--sky-bg);
-  --bg-raised: var(--bg-selected);
-  --label: var(--sky-text);
-  --label-2: var(--sky-text-2);
-  --line: var(--sky-grid);
-  --line-strong: var(--sky-grid-strong);
-  background: var(--sky-bg);
+  --bg-base: var(--bg-raised);
+  --bg-elevated: var(--bg-raised);
+  --bg-field: var(--bg-raised);
+  background: var(--bg-raised);
   color: var(--label);
-  border: 0.5px solid var(--sky-grid-strong);
+  border: 0.5px solid var(--line-strong);
 }
 
 .skeleton {

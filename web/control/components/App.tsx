@@ -184,7 +184,6 @@ function Shell({
                   entries={reportState.entries}
                   pending={reportState.pending}
                   delayDays={state.delayDays}
-                  selectedLetter={letter}
                 />
               </ErrorBoundary>
             </div>

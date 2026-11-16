@@ -41,6 +41,18 @@ export interface BodyAt {
   visible: boolean
 }
 
+export interface Masked {
+  el: number
+  horizonEl: number
+  gap: number
+}
+
+/** Cuerpo con elevación positiva que el relieve LOLA tapa en su azimut: elevación, horizonte y lo que falta. */
+export function maskedBy(body: BodyAt): Masked | null {
+  if (body.visible || body.el <= 0) return null
+  return { el: body.el, horizonEl: body.horizonEl, gap: Math.round((body.horizonEl - body.el) * 1e6) / 1e6 }
+}
+
 export function bodiesAt(data: SiteData, ms: number): { sun: BodyAt; earth: BodyAt } | null {
   const p = positionAt(data.track, ms)
   if (p === null) return null

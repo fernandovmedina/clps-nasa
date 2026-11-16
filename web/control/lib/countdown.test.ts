@@ -65,4 +65,62 @@ describe('countdown', () => {
     expect(countdown({ ...base, neverVisible: true })).toEqual({ kind: 'never' })
     expect(countdown({ ...base, neverVisible: false })).toEqual({ kind: 'no-rise' })
   })
+
+  describe('relative to the mission', () => {
+    const missionEndMs = nowMs + 14 * DAY
+
+    it('keeps a set that falls inside the mission', () => {
+      const result = countdown({
+        visibleNow: true,
+        nextSet: '2027-01-15T06:00:00Z',
+        nextRise: null,
+        nowMs,
+        neverVisible: false,
+        missionEndMs,
+      })
+      expect(result).toEqual({ kind: 'event', event: 'set', remainingMs: 5 * DAY + 6 * HOUR })
+    })
+
+    it('treats a set exactly at the end of the mission as inside it', () => {
+      const result = countdown({
+        visibleNow: true,
+        nextSet: '2027-01-24T00:00:00Z',
+        nextRise: null,
+        nowMs,
+        neverVisible: false,
+        missionEndMs,
+      })
+      expect(result.kind).toBe('event')
+    })
+
+    it('reports that the next set comes after the mission instead of counting down to it', () => {
+      const result = countdown({
+        visibleNow: true,
+        nextSet: '2027-01-27T11:00:00Z',
+        nextRise: null,
+        nowMs,
+        neverVisible: false,
+        missionEndMs,
+      })
+      expect(result).toEqual({ kind: 'set-after-mission', atMs: Date.parse('2027-01-27T11:00:00Z') })
+    })
+
+    it('does not touch a rise that falls after the mission', () => {
+      const result = countdown({
+        visibleNow: false,
+        nextSet: null,
+        nextRise: '2027-01-27T11:00:00Z',
+        nowMs,
+        neverVisible: false,
+        missionEndMs,
+      })
+      expect(result).toEqual({ kind: 'event', event: 'rise', remainingMs: 17 * DAY + 11 * HOUR })
+    })
+
+    it('still says there is no set in the data when none exists', () => {
+      expect(countdown({ visibleNow: true, nextSet: null, nextRise: null, nowMs, neverVisible: false, missionEndMs })).toEqual({
+        kind: 'no-set',
+      })
+    })
+  })
 })
