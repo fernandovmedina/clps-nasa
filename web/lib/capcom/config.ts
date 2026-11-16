@@ -15,7 +15,7 @@ export type CapcomEndpointing = 'HIGH' | 'MEDIUM' | 'LOW';
 export const CAPCOM_ENDPOINTING: CapcomEndpointing = 'MEDIUM';
 
 /** El acceso de invitados deja de existir en AWS a esta hora: pasada, CAPCOM no está disponible sin intentar conectar. */
-export const CAPCOM_ACCESS_EXPIRES_AT = '2026-11-16T15:00:00Z';
+export const CAPCOM_ACCESS_EXPIRES_AT = '2026-12-01T06:00:00Z';
 export const CAPCOM_CREDENTIAL_SECONDS = 900;
 
 export const CAPCOM_IDLE_CLOSE_MS = 90_000;
