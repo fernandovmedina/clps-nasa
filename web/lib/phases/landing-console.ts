@@ -118,8 +118,8 @@ function siteView(m: SiteMetrics | null): SiteView {
       { label: 'Sol · elevación / azimut', value: `${m.sun.elevation.toFixed(1)}° / ${m.sun.azimuth.toFixed(0)}°` },
       { label: 'Puesta de sol en', value: m.sun.aboveHorizon > -0.27 ? fmtHours(m.hoursToSunset) : 'en sombra' },
       { label: 'Ocaso de la Tierra en', value: m.earth.aboveHorizon > 0 ? fmtHours(m.hoursToEarthset) : 'sin enlace' },
-      { label: 'Potencia solar', value: `${m.powerPct} %` },
-      { label: 'Viabilidad', value: `${Math.round(m.score)} · ${STATUS_LABELS[m.status]}`, color: statusColor(m.status) },
+      { label: 'Disco solar visible', value: `${m.powerPct} %` },
+      { label: 'Viabilidad', value: `${Math.round(m.score)}/100 · ${STATUS_LABELS[m.status]}`, color: statusColor(m.status) },
     ],
   };
 }
@@ -158,18 +158,17 @@ function wrap(g: Ctx, s: string, weight: number, px: number, maxW: number, maxLi
 
 function surface(g: Ctx, w: number, h: number) {
   roundRect(g, 2, 2, w - 4, h - 4, 26);
-  g.globalAlpha = 0.94; g.fillStyle = UI.onAccent; g.fill();
-  g.globalAlpha = 0.22; g.strokeStyle = UI.text; g.lineWidth = 2; g.stroke();
-  g.globalAlpha = 1;
+  g.fillStyle = UI.bg; g.fill();
+  g.strokeStyle = UI.line; g.lineWidth = 2; g.stroke();
 }
 
 function hairline(g: Ctx, x: number, y: number, w: number) {
-  g.globalAlpha = 0.14; g.fillStyle = UI.text; g.fillRect(x, y, w, 2); g.globalAlpha = 1;
+  g.fillStyle = UI.line; g.fillRect(x, y, w, 2);
 }
 
 function dot(g: Ctx, x: number, y: number, r: number, color: string, ring = false) {
   g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2);
-  if (ring) { g.globalAlpha = 0.6; g.strokeStyle = color; g.lineWidth = 3; g.stroke(); g.globalAlpha = 1; }
+  if (ring) { g.strokeStyle = color; g.lineWidth = 3; g.stroke(); }
   else { g.fillStyle = color; g.fill(); }
 }
 
@@ -187,17 +186,20 @@ function icon(g: Ctx, kind: Icon, cx: number, cy: number, s: number, color: stri
   }
 }
 
-interface ButtonOpts { primary?: boolean; icon?: Icon }
+/** `cta` pinta la acción principal de la pantalla en arcilla; sin él el botón es secundario (papel y borde fino). */
+interface ButtonOpts { cta?: boolean; icon?: Icon }
 
 function button(p: Panel, g: Ctx, id: string, x: number, y: number, w: number, h: number, label: string, onClick: () => void, o: ButtonOpts = {}) {
   const hot = p.hover === id;
   roundRect(g, x, y, w, h, 20);
-  if (o.primary) { g.fillStyle = hot ? UI.accentHover : UI.accent; g.fill(); }
-  else {
-    if (hot) { g.globalAlpha = 0.16; g.fillStyle = UI.text; g.fill(); }
-    g.globalAlpha = 0.5; g.strokeStyle = UI.text; g.lineWidth = 3; g.stroke(); g.globalAlpha = 1;
+  if (o.cta) {
+    g.fillStyle = UI.accent; g.fill();
+    if (hot) { g.strokeStyle = UI.text; g.lineWidth = 3; g.stroke(); }
+  } else {
+    g.fillStyle = hot ? UI.selected : UI.bg; g.fill();
+    g.strokeStyle = UI.control; g.lineWidth = 3; g.stroke();
   }
-  const color = o.primary ? UI.onAccent : UI.text;
+  const color = o.cta ? UI.onAccent : UI.text;
   const lines = wrap(g, label, 600, 36, w - 28, 2);
   const block = lines.length * 42;
   const top = o.icon ? y + (h - block - 46) / 2 + 46 : y + (h - block) / 2;
@@ -212,14 +214,14 @@ function drawControl(p: Panel, g: Ctx, host: ConsoleHost) {
   const pad = 24, inner = W - pad * 2, mode = host.run.mode;
   if (mode === 'stopped') {
     text(g, 'Misión detenida', pad, 70, 600, 40, UI.text);
-    button(p, g, 'restart', pad, 104, inner, 180, 'Reiniciar desde el despegue', () => host.restart(), { primary: true });
+    button(p, g, 'restart', pad, 104, inner, 180, 'Reiniciar desde el despegue', () => host.restart(), { cta: true });
     button(p, g, 'exit', pad, 308, inner, 140, 'Salir de VR', () => host.exitVR());
     return;
   }
   const paused = mode === 'paused';
   text(g, 'Control de la misión', pad, 62, 500, 36, UI.dim);
   const half = (inner - 14) / 2;
-  button(p, g, 'pause', pad, 90, half, 164, paused ? 'Reanudar' : 'Pausar', () => host.setPaused(!paused), { primary: paused, icon: paused ? 'play' : 'pause' });
+  button(p, g, 'pause', pad, 90, half, 164, paused ? 'Reanudar' : 'Pausar', () => host.setPaused(!paused), { cta: paused, icon: paused ? 'play' : 'pause' });
   button(p, g, 'stop', pad + half + 14, 90, half, 164, 'Detener', () => host.stop(), { icon: 'stop' });
   button(p, g, 'exit', pad, 276, inner, 150, 'Salir de VR', () => host.exitVR());
 }
@@ -235,14 +237,14 @@ function drawMission(g: Ctx, v: MissionView) {
     x -= r;
     if (i < v.index) dot(g, x, 70, r, UI.ok);
     else if (i === v.index) dot(g, x, 70, r, UI.accent);
-    else dot(g, x, 70, r, UI.text, true);
+    else dot(g, x, 70, r, UI.control, true);
     x -= r + 14;
   }
   text(g, v.figure.value, pad - 4, 248, 300, 150, UI.text);
   text(g, v.figure.caption, pad, 304, 400, 40, UI.dim);
   if (v.progress) {
     const barW = inner - 120, y = 338;
-    roundRect(g, pad, y, barW, 16, 8); g.globalAlpha = 0.22; g.fillStyle = UI.text; g.fill(); g.globalAlpha = 1;
+    roundRect(g, pad, y, barW, 16, 8); g.fillStyle = UI.selected; g.fill();
     const fill = Math.max(0, Math.min(1, v.progress.value)) * barW;
     if (fill > 1) { roundRect(g, pad, y, Math.max(fill, 16), 16, 8); g.fillStyle = UI.accent; g.fill(); }
     text(g, v.progress.text, W - pad, y + 22, 500, 40, UI.text, 'right');
@@ -272,7 +274,7 @@ function drawPhases(g: Ctx, v: PhasesView) {
     const cy = 92 + i * 44;
     if (i < v.current) dot(g, pad + 12, cy, 10, UI.ok);
     else if (i === v.current) dot(g, pad + 12, cy, 13, UI.accent);
-    else dot(g, pad + 12, cy, 10, UI.text, true);
+    else dot(g, pad + 12, cy, 10, UI.control, true);
     text(g, label, pad + 42, cy + 9, i === v.current ? 700 : 500, 28, i > v.current ? UI.dim : UI.text);
   });
   hairline(g, pad, 322, W - pad * 2);
@@ -295,7 +297,9 @@ function drawSite(g: Ctx, v: SiteView) {
   for (const row of v.rows) {
     hairline(g, pad, y, W - pad * 2);
     text(g, row.label, pad, y + 28, 500, 24, UI.dim);
-    text(g, row.value, pad, y + 58, 600, 30, row.color ?? UI.text);
+    // El estado se marca con un punto de la paleta y el texto queda en tinta (contraste AA).
+    if (row.color) dot(g, pad + 8, y + 49, 8, row.color);
+    text(g, row.value, row.color ? pad + 28 : pad, y + 58, 600, 30, UI.text);
     y += 62;
   }
 }
