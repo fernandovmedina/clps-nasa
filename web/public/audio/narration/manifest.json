@@ -29,8 +29,8 @@
     },
     "welcome": {
       "file": "welcome.wav",
-      "text": "Bienvenido a touchdown. Soy el burrito espacial, tu guía. ¿Vas en VR, o sigues la misión en Mission Control?",
-      "durationMs": 6758
+      "text": "Bienvenido a TOUCHDOWN. Soy el burrito espacial, tu guía. Vamos a elegir dónde y cuándo alunizar en el polo sur de la Luna.",
+      "durationMs": 7066
     }
   }
 }
