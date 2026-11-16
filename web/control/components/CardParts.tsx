@@ -1,10 +1,11 @@
 'use client'
 
 import { useId, useState, type ReactNode } from 'react'
-import { ArrowRight, CircleCheck, CircleX, Minus, TrendingDown, TrendingUp, TriangleAlert } from 'lucide-react'
+import { ArrowRight, CircleCheck, CircleX, Earth, Minus, Sun, TrendingDown, TrendingUp, TriangleAlert } from 'lucide-react'
 import type { ScenarioStatus } from '@touchdown/core'
 import { useI18n, type Key } from '@/control/i18n'
 import { formatNumber } from '@/control/lib/format'
+import { maskedBy, type BodyAt } from '@/control/lib/scenario'
 
 const STATUS: Record<ScenarioStatus, { key: Key; fill: string; mark: string; Icon: typeof CircleCheck }> = {
   viable: { key: 'statusViable', fill: 'var(--viable-bg)', mark: 'var(--viable)', Icon: CircleCheck },
@@ -34,6 +35,48 @@ export function StatusPill({ status, size = 'lg' }: { status: ScenarioStatus; si
       <Icon size={16} aria-hidden="true" />
       {t(key)}
     </span>
+  )
+}
+
+// Fila compacta de lectura de un cuerpo (Sol o Tierra): misma estructura para los dos.
+// Elevación y estado (visible, bajo el horizonte o tapada por el relieve) y el azimut en tinta 2.
+export function BodyReading({
+  kind,
+  label,
+  body,
+}: {
+  kind: 'sun' | 'earth'
+  label: string
+  body: BodyAt | undefined
+}) {
+  const { t, locale } = useI18n()
+  const fmt = (n: number) => formatNumber(locale, n, 1)
+  const masked = body ? maskedBy(body) : null
+  const state = !body
+    ? ''
+    : masked
+      ? t('maskedShort', { gap: fmt(masked.gap), horizon: fmt(masked.horizonEl) })
+      : t(body.visible ? 'visible' : 'belowHorizon')
+  const Icon = kind === 'sun' ? Sun : Earth
+  return (
+    <li
+      className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5"
+      data-testid={`${kind}-row`}
+      data-masked={masked ? 'true' : 'false'}
+    >
+      <Icon size={18} aria-hidden="true" className="row-span-3 mt-0.5" style={{ color: `var(--${kind})` }} />
+      <p className="text-label text-label-2" data-testid={`${kind}-label`}>
+        {label}
+      </p>
+      <p className="num text-body" data-testid={`${kind}-reading`}>
+        <span data-testid={`${kind}-elevation`}>{body ? `${fmt(body.el)}°` : '–'}</span>
+        {' · '}
+        <span>{state}</span>
+      </p>
+      <p className="num text-caption text-label-2" data-testid={`${kind}-azimuth`}>
+        {t('azimuthShort', { az: body ? fmt(body.az) : '–' })}
+      </p>
+    </li>
   )
 }
 

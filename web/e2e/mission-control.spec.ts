@@ -191,7 +191,7 @@ test('axe finds no serious or critical violations in the main view', async ({ pa
 test('clicking a day in the calendar sets the landing date of the selected scenario', async ({ page }) => {
   await openApp(page)
   await waitForLoaded(page)
-  const landing = page.getByLabel('Aterrizaje (UTC)').first()
+  const landing = page.getByLabel('Cambiar fecha y hora (UTC)').first()
   await expect(landing).toHaveValue('2027-01-10T00:00')
   const strip = page.getByTestId('calendar-slider')
   await strip.scrollIntoViewIfNeeded()
@@ -359,8 +359,53 @@ test('sunset and Earthset are read against the mission, and a masked Earth shows
 
   await page.goto(`${CONTROL}?s=nobile-rim-2~2027-01-10T00:00Z~14`)
   await expect(page.locator('main')).toHaveAttribute('aria-busy', 'false')
-  await expect(page.getByTestId('earth-masked')).toHaveText('1.3° · horizonte LOLA 7.0° · tapada 5.7°')
+  await expect(page.getByTestId('earth-reading').first()).toHaveText('1.3° · tapada 5.7° (horizonte LOLA 7.0°)')
 })
+
+for (const viewport of [
+  { name: '1440', width: 1440, height: 900 },
+  { name: '390', width: 390, height: 844 },
+]) {
+  test(`cards A and B have the same DOM structure and the score leads at ${viewport.name} px`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await openApp(page, '?s=nobile-rim-2~2027-01-10T00:00Z~14&s=shackleton-ridge~2027-01-10T00:00Z~14')
+    await waitForLoaded(page)
+    const cards = page.getByTestId('scenario-card')
+    const skeletons = await cards.evaluateAll((els) => {
+      // Etiqueta, clases y data-testid; los SVG son hoja y los textos no cuentan.
+      // La insignia «Seleccionado» (bg-selected) es estado de la selección, no estructura.
+      const sk = (el: Element): unknown =>
+        el.tagName.toLowerCase() === 'svg'
+          ? 'svg'
+          : [
+              el.tagName.toLowerCase(),
+              [...el.classList].sort().join(' '),
+              el.getAttribute('data-testid') ?? '',
+              [...el.children].filter((c) => !c.classList.contains('bg-selected')).map(sk),
+            ]
+      return els.map((el) => JSON.stringify(sk(el)))
+    })
+    expect(skeletons).toHaveLength(2)
+    expect(skeletons[1]).toBe(skeletons[0])
+
+    for (let i = 0; i < 2; i++) {
+      const card = cards.nth(i)
+      const size = (id: string) => card.getByTestId(id).evaluate((el) => parseFloat(getComputedStyle(el).fontSize))
+      const scoreSize = await card.locator('[data-score-value]').evaluate((el) => parseFloat(getComputedStyle(el).fontSize))
+      expect(scoreSize).toBeGreaterThan(await size('sun-reading'))
+      expect(scoreSize).toBeGreaterThan(await size('earth-reading'))
+      // El estado y el puntaje se leen antes que las filas del Sol y la Tierra.
+      const scoreBox = await card.getByTestId('status-score').boundingBox()
+      const rowsBox = await card.getByTestId('body-readings').boundingBox()
+      expect(scoreBox!.y + scoreBox!.height).toBeLessThanOrEqual(rowsBox!.y)
+      await expect(card.getByTestId('landing-utc')).toHaveText('2027-01-10 00:00 UTC')
+      // La fecha en UTC cabe dentro de la tarjeta, sin desbordarla.
+      const overflow = await card.getByTestId('landing-utc').evaluate((el) => el.scrollWidth - el.clientWidth)
+      expect(overflow).toBeLessThanOrEqual(0)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  })
+}
 
 test('the launch link is omitted for custom coordinates and hidden when the date is out of range', async ({ page }) => {
   await page.goto(`${CONTROL}?s=c:-89.9,0~2027-01-10T00:00Z~14`)
