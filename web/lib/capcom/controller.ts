@@ -14,6 +14,8 @@ import { createMissionTools, type MissionSource } from './mission-tools';
 import type { CapcomEvent, CapcomState, CapcomTool } from './types';
 
 export type CapcomUiState = 'disconnected' | 'connecting' | 'listening' | 'thinking' | 'speaking' | 'error' | 'unavailable';
+export type CapcomErrorCode = 'micMessage' | 'lostMessage' | 'connectMessage';
+type ErrorKey = CapcomErrorCode;
 export type MicPermission = 'unknown' | 'granted' | 'denied';
 
 export interface CapcomSnapshot {
@@ -24,7 +26,10 @@ export interface CapcomSnapshot {
   answer: string;
   /** False while the answer is still the model's preview of what it is about to say. */
   answerFinal: boolean;
+  /** Texto del aviso en el idioma actual; para quien no traduzca por su cuenta. */
   message: string | null;
+  /** Código del error: la interfaz lo traduce con su propio diccionario (no compara textos). */
+  errorCode?: CapcomErrorCode | null;
   mic: MicPermission;
 }
 
@@ -59,7 +64,6 @@ export interface CapcomDeps {
   debug?: (event: CapcomEvent | { type: 'ui'; snapshot: CapcomSnapshot }) => void;
 }
 
-type ErrorKey = 'micMessage' | 'lostMessage' | 'connectMessage';
 const ACCESS_LOST = /AccessDenied|NotAuthorized|ExpiredToken|UnrecognizedClient|InvalidIdentityToken/i;
 const MAX_PENDING_FRAMES = 320;
 const MIN_HOLD_MS = 350;
@@ -99,7 +103,7 @@ function readMicPermission(): Promise<MicPermission> {
  * Plain class (no React) so the DOM layer and the in-headset panel read the same state.
  */
 export class CapcomController {
-  private snap: CapcomSnapshot = { state: 'disconnected', talking: false, question: '', answer: '', answerFinal: false, message: null, mic: 'unknown' };
+  private snap: CapcomSnapshot = { state: 'disconnected', talking: false, question: '', answer: '', answerFinal: false, message: null, errorCode: null, mic: 'unknown' };
   private readonly listeners = new Set<() => void>();
   private readonly deps: CapcomDeps;
   private readonly credentialsRef: { current: unknown } = { current: null };
@@ -150,7 +154,7 @@ export class CapcomController {
     };
     if (this.deps.now() >= Date.parse(CAPCOM_ACCESS_EXPIRES_AT)) {
       this.unavailable = true;
-      this.snap = { ...this.snap, state: 'unavailable', message: this.messageText() };
+      this.snap = { ...this.snap, state: 'unavailable', message: this.messageText(), errorCode: null };
     }
     // The language only changes what the messages say; an open session keeps the language it was opened in.
     this.offLang = onLangChange(() => this.publish());
@@ -237,10 +241,10 @@ export class CapcomController {
     return this.errorKey ? t(capcomUiDict, this.errorKey) : null;
   }
 
-  private publish(changes: Partial<Omit<CapcomSnapshot, 'state' | 'message'>> = {}) {
+  private publish(changes: Partial<Omit<CapcomSnapshot, 'state' | 'message' | 'errorCode'>> = {}) {
     if (this.disposed) return;
     const next = { ...this.snap, ...changes };
-    this.snap = { ...next, state: this.uiState(next.talking), message: this.messageText() };
+    this.snap = { ...next, state: this.uiState(next.talking), message: this.messageText(), errorCode: this.unavailable ? null : this.errorKey };
     this.deps.debug?.({ type: 'ui', snapshot: this.snap });
     for (const listener of [...this.listeners]) listener();
   }

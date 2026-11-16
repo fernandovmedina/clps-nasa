@@ -247,6 +247,7 @@ describe('CapcomController', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(t.snap()).toMatchObject({ state: 'error', talking: false });
     expect(t.snap().message).toMatch(/pulsa para reintentar/);
+    expect(t.snap().errorCode).toBe('connectMessage');
     expect(t.loadSession).toHaveBeenCalledTimes(1);
 
     t.options.startError = null;

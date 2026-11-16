@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react';
 import type { CapcomController, CapcomUiState } from '@/lib/capcom/controller';
-import { capcomDict } from '@/lib/i18n/dicts/ui-capcom';
+import { capcomUiDict } from '@/lib/i18n/dicts/capcom-ui';
 import { useT } from '@/lib/i18n/react';
 import { MicIcon } from './icons';
 import { useCapcom } from './useCapcom';
@@ -11,22 +11,15 @@ import styles from './Capcom.module.css';
 /** Hold-to-talk key for the keyboard. No other shortcut exists in the experience. */
 export const CAPCOM_KEY = 'v';
 
-type StatusKey = 'connecting' | 'ready' | 'thinking' | 'speaking';
+type StatusKey = 'statusConnecting' | 'statusReady' | 'statusThinking' | 'statusSpeaking';
 const STATUS: Record<CapcomUiState, StatusKey | null> = {
   disconnected: null,
-  connecting: 'connecting',
-  listening: 'ready',
-  thinking: 'thinking',
-  speaking: 'speaking',
+  connecting: 'statusConnecting',
+  listening: 'statusReady',
+  thinking: 'statusThinking',
+  speaking: 'statusSpeaking',
   error: null,
   unavailable: null,
-};
-
-/** The controller's error texts are written in Spanish; these are the ones it can raise, by their Spanish text. */
-const ERROR_KEYS: Record<string, 'error.mic' | 'error.lost' | 'error.connect'> = {
-  'Permite el micrófono para hablar con CAPCOM.': 'error.mic',
-  'CAPCOM perdió la conexión · pulsa para reintentar.': 'error.lost',
-  'No se pudo conectar con CAPCOM · pulsa para reintentar.': 'error.connect',
 };
 
 function isTyping(target: EventTarget | null) {
@@ -37,7 +30,7 @@ function isTyping(target: EventTarget | null) {
 /** "Hablar con CAPCOM": hold it (mouse, touch, Space/Enter on the button, or the V key) to talk. */
 export function CapcomButton({ controller }: { controller: CapcomController }) {
   const snap = useCapcom(controller);
-  const t = useT(capcomDict);
+  const t = useT(capcomUiDict);
   const unavailable = snap.state === 'unavailable';
   const holders = useRef(new Set<string>());
 
@@ -84,8 +77,7 @@ export function CapcomButton({ controller }: { controller: CapcomController }) {
   };
 
   const statusKey = STATUS[snap.state];
-  const errorKey = snap.message ? ERROR_KEYS[snap.message] : undefined;
-  const status = snap.state === 'error' ? (errorKey ? t(errorKey) : snap.message) : snap.talking ? t('hearing') : statusKey ? t(statusKey) : '';
+  const status = snap.state === 'error' ? (snap.errorCode ? t(snap.errorCode) : snap.message) : snap.talking ? t('statusListening') : statusKey ? t(statusKey) : '';
 
   return (
     <div className={styles.capcom} data-state={snap.state} data-talking={snap.talking ? 'true' : 'false'}>
@@ -96,8 +88,8 @@ export function CapcomButton({ controller }: { controller: CapcomController }) {
         aria-keyshortcuts={CAPCOM_KEY.toUpperCase()}
         aria-describedby="capcom-hint"
         disabled={unavailable}
-        aria-label={unavailable ? t('unavailable') : t('talk')}
-        title={unavailable ? t('unavailable') : t('talk')}
+        aria-label={unavailable ? t('unavailable') : t('buttonAria')}
+        title={unavailable ? t('unavailable') : t('buttonAria')}
         onPointerDown={onPointerDown}
         onPointerUp={() => letGo('pointer')}
         onPointerCancel={() => letGo('pointer')}
@@ -107,7 +99,7 @@ export function CapcomButton({ controller }: { controller: CapcomController }) {
         onContextMenu={(e) => e.preventDefault()}
       >
         <MicIcon />
-        <span>{unavailable ? <>CAPCOM <span className={styles.long}>{t('unavailableLong')}</span></> : <><span className={styles.long}>{t('talkLong')}</span>CAPCOM</>}</span>
+        <span>{unavailable ? <>CAPCOM <span className={styles.long}>{t('buttonUnavailableTail')}</span></> : <><span className={styles.long}>{t('buttonLead')}</span>CAPCOM</>}</span>
       </button>
       <span id="capcom-hint" className={styles.sr}>
         {t('hint', { key: CAPCOM_KEY.toUpperCase() })}
@@ -120,12 +112,12 @@ export function CapcomButton({ controller }: { controller: CapcomController }) {
 /** What was heard and what CAPCOM answers; the final answer is also announced by a polite live region. */
 export function CapcomCaption({ controller }: { controller: CapcomController }) {
   const snap = useCapcom(controller);
-  const t = useT(capcomDict);
+  const t = useT(capcomUiDict);
   const shown = snap.question || snap.answer;
   return (
     <>
       {shown && (
-        <section className={styles.caption} aria-label={t('captions')} data-testid="capcom-caption">
+        <section className={styles.caption} aria-label={t('captionLabel')} data-testid="capcom-caption">
           {snap.question && <p className={styles.question} data-testid="capcom-question"><span>{t('you')}</span>{snap.question}</p>}
           {snap.answer && <p className={styles.answer} data-testid="capcom-answer"><span>CAPCOM</span>{snap.answer}</p>}
         </section>

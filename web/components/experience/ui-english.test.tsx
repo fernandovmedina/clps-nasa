@@ -195,12 +195,12 @@ describe('CAPCOM in English', () => {
     render(<CapcomButton controller={fake({ state: 'thinking' })} />);
     const button = screen.getByRole('button', { name: 'Talk to CAPCOM' });
     expect(button.getAttribute('title')).toBe('Talk to CAPCOM');
-    expect(document.getElementById(button.getAttribute('aria-describedby') ?? '')?.textContent).toBe('Press and hold to talk. With the keyboard, hold the V key, or Space while the button has focus.');
+    expect(document.getElementById(button.getAttribute('aria-describedby') ?? '')?.textContent).toBe('Hold to talk. With the keyboard, hold the V key, or Space with the button focused.');
     expect(screen.getByTestId('capcom-status').textContent).toBe('Thinking…');
   });
 
   it('translates the controller errors it knows and shows an unknown one as it came', () => {
-    render(<CapcomButton controller={fake({ state: 'error', message: 'Permite el micrófono para hablar con CAPCOM.' })} />);
+    render(<CapcomButton controller={fake({ state: 'error', message: 'Permite el micrófono para hablar con CAPCOM.', errorCode: 'micMessage' })} />);
     expect(screen.getByTestId('capcom-status').textContent).toBe('Allow the microphone to talk to CAPCOM.');
     cleanup();
     render(<CapcomButton controller={fake({ state: 'error', message: 'otro' })} />);

@@ -104,6 +104,8 @@ describe('CapcomButton', () => {
     expect(screen.getByTestId('capcom-status').textContent).toBe('Hablando…');
     set({ state: 'error', message: 'Permite el micrófono para hablar con CAPCOM.' });
     expect(screen.getByTestId('capcom-status').textContent).toMatch(/micrófono/);
+    set({ state: 'error', message: 'x', errorCode: 'lostMessage' });
+    expect(screen.getByTestId('capcom-status').textContent).toBe('CAPCOM perdió la conexión · pulsa para reintentar.');
   });
 });
 
