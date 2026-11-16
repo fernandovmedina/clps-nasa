@@ -322,6 +322,7 @@ export class PovPhase implements Phase {
     for (const [lx, c] of [[x0 + 12, UI.sun], [x0 + 110, UI.earth]] as const) { g.beginPath(); g.moveTo(lx, y0 + 25); g.lineTo(lx + 18, y0 + 25); g.strokeStyle = c; g.stroke(); }
     g.lineCap = 'butt';
     g.fillStyle = UI.sunWash; g.fillRect(x0 + 470, y0 + 16, 16, 16);
+    g.strokeStyle = UI.control; g.lineWidth = 1.5; g.strokeRect(x0 + 470, y0 + 16, 16, 16);
     g.fillStyle = UI.dim;
     g.fillText('Sol', x0 + 38, y0 + 32);
     g.fillText('Tierra', x0 + 136, y0 + 32);

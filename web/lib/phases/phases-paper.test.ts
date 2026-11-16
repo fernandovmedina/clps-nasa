@@ -197,6 +197,45 @@ describe('órbita: ranking y detalle', () => {
     }
   });
 
+  it('con retraso aplicado, con aviso de rango y con el caso NO CAER, el texto de la lista es legible en la fila elegida y en la de hover', () => {
+    const app = fakeApp();
+    const phase = new OrbitPhase(app);
+    for (let i = 0; i < 30; i++) phase.update(0.5);
+    const inner = phase as unknown as OrbitInternals & { applyDelay(days: number): void; delayDays: number; rangeWarning: string | null };
+    inner.maxDelayDays = 3;
+    inner.applyDelay(2);
+    expect(inner.delayDays, 'el retraso se aplicó').toBe(2);
+    for (let i = 0; i < 5; i++) phase.update(0.5);
+    app.selected = app.ranking[1]!;
+    inner.list.hover = `row-${app.ranking[2]!.site.id}`;
+    let log = drawn(inner.list);
+    expectReadable(log, 'orbit lista con retraso');
+    // Los deltas ↑/↓ van en tinta: el color de estado no da 4,5:1 a 22 px (la flecha ya marca el sentido).
+    const deltas = log.filter((p) => p.op === 'fillText' && /^(↑ \+|↓ )\d+$|^± 0$/.test(p.text ?? ''));
+    expect(deltas.length, 'deltas de puntaje dibujados').toBeGreaterThan(0);
+    for (const d of deltas) expect(d.style, `delta «${d.text}»`).toBe(palette.label);
+
+    inner.applyDelay(99);
+    expect(inner.rangeWarning, 'aviso de rango').toMatch(/fuera de rango/);
+    log = drawn(inner.list);
+    expectReadable(log, 'orbit lista con aviso de rango');
+    const warn = log.find((p) => p.op === 'fillText' && /fuera de rango/.test(p.text ?? ''))!;
+    expect(warn.style, 'el aviso va en tinta, con un punto de estado').toBe(palette.label);
+    expect(log.some((p) => p.op === 'fill' && p.style === palette.marginal), 'punto de estado del aviso').toBe(true);
+  });
+
+  it('la nota del caso NO CAER va en tinta con su punto de estado', () => {
+    const app = fakeApp();
+    const phase = new OrbitPhase(app);
+    for (let i = 0; i < 60; i++) phase.update(0.5);
+    app.selected = app.ranking.find((m) => m.site.id === NO_CAER_SITE_ID) ?? app.selected;
+    const log = drawn((phase as unknown as OrbitInternals).list);
+    expectReadable(log, 'orbit lista NO CAER');
+    const note = log.find((p) => p.op === 'fillText' && /Caso de demostración/.test(p.text ?? ''));
+    expect(note, 'la nota del caso se dibuja').toBeTruthy();
+    expect(note!.style).toBe(palette.label);
+  });
+
   it('cabezas y anillos de los pines usan tonos claros de render, no el color de papel', () => {
     const app = fakeApp();
     const phase = new OrbitPhase(app);
@@ -251,6 +290,20 @@ describe('vista del sitio: panel de datos', () => {
     expect(log.some((p) => p.op === 'fillRect' && p.style === palette['marginal-bg']), 'sombreado de «iluminado»').toBe(true);
     const legend = log.find((p) => p.op === 'fillText' && p.text === 'iluminado')!;
     expect(contrast(legend.style, PAPER)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('la nota de relieve ilustrativo (sitio sin terreno real) va en tinta con su punto de estado', () => {
+    const fake = povFake();
+    fake.m.site.hasTerrain = false;
+    const panel = new Panel(1024, 1240, 0.66, () => undefined);
+    panel.ctx.clearRect(0, 0, 1, 1);
+    (PovPhase.prototype as unknown as { drawInfo(p: Panel, g: CanvasRenderingContext2D): void }).drawInfo.call(fake, panel, panel.ctx);
+    const log = spies.get(panel.canvas)!;
+    expectReadable(log, 'pov info sin terreno');
+    const note = log.find((p) => p.op === 'fillText' && /Relieve cercano ilustrativo/.test(p.text ?? ''))!;
+    expect(note, 'la nota se dibuja').toBeTruthy();
+    expect(note.style).toBe(palette.label);
+    expect(log.some((p) => p.op === 'fill' && p.style === palette.marginal), 'punto de estado').toBe(true);
   });
 });
 
