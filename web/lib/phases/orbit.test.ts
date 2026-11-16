@@ -158,6 +158,18 @@ describe('OrbitPhase ranking data', () => {
     expect(hud.facts).toHaveLength(4);
   });
 
+  it('counts only the real sites as evaluated while the lap scans, never the demo case', () => {
+    const app = fakeApp();
+    app.flags.clear();
+    const phase = new OrbitPhase(app);
+    phase.update(19); // every pin revealed, the final ranking not yet announced
+    const hud = phase.controlHud();
+    expect(rows(hud)).toHaveLength(11);
+    expect(hud.figure).toEqual({ value: '10 de 10', caption: 'sitios evaluados' });
+    expect(hud.detail).toBe('Calculando óptimo… 10/10');
+    expect(hud.progress?.value).toBe(1);
+  });
+
   it('writes scores out of 100, never as a percentage', () => {
     const app = fakeApp();
     const phase = openOrbit(app);
@@ -208,6 +220,15 @@ describe('OrbitPhase pin labels', () => {
       const boxes = pinsOf(phase).flatMap((p) => [p.label, p.chip].filter((sp) => sp.visible).map((sp) => priv.spriteRect(sp, 1440, 900)!));
       expect(boxes.length).toBeGreaterThan(1);
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) expect(rectsOverlap(boxes[i]!, boxes[j]!)).toBe(false);
+    }
+  });
+
+  it('takes a hidden label out of the pointer ray so it cannot steal the hover from the pin behind it', () => {
+    const app = fakeApp();
+    lookAtPole(app);
+    const phase = openOrbit(app);
+    for (const p of pinsOf(phase)) {
+      for (const sprite of [p.label, p.chip]) expect(sprite.layers.test(new THREE.Raycaster().layers)).toBe(sprite.visible);
     }
   });
 

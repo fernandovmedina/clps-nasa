@@ -74,6 +74,12 @@ export function planPinLabels(pins: PinLabelCandidate[]): Map<string, PinLabelMo
   return modes;
 }
 
+/** three.js raycasts invisible objects too: a hidden label moves to a layer the pointer ray does not use. */
+function setSpriteShown(sprite: THREE.Sprite, shown: boolean) {
+  sprite.visible = shown;
+  sprite.layers.set(shown ? 0 : 1);
+}
+
 const scoreOf100 = (m: SiteMetrics) => `${Math.round(m.score)}/100`;
 const shortName = (name: string) => (name.length > NAME_MAX_CHARS ? `${name.slice(0, NAME_MAX_CHARS - 1).trimEnd()}…` : name);
 
@@ -205,7 +211,7 @@ export class OrbitPhase implements Phase {
     label.position.y = 82;
     const chip = textLabel([{ text: `#${m.rank}`, size: 64, color, mono: true, weight: 800 }], 18);
     chip.position.y = 76;
-    chip.visible = false;
+    setSpriteShown(chip, false);
     return { label, chip };
   }
 
@@ -396,6 +402,12 @@ export class OrbitPhase implements Phase {
     this.list.update(); this.detail.update();
   }
 
+  /** Sites evaluated so far and in all, not counting the NO CAER demo case (it is no site). */
+  private realCounts() {
+    const evaluated = [...this.ranking].sort((a, b) => b.rank - a.rank).slice(0, this.revealed);
+    return { revealed: evaluated.filter((m) => !m.site.crash).length, total: this.ranking.filter((m) => !m.site.crash).length };
+  }
+
   /** Screen box of a sprite, in CSS px of the canvas; null when it sits behind the camera. */
   private spriteRect(sprite: THREE.Sprite, width: number, height: number): PinRect | null {
     const cam = this.app.camera;
@@ -417,7 +429,7 @@ export class OrbitPhase implements Phase {
     const candidates: PinLabelCandidate[] = [];
     const facing = new Set<Marker>();
     for (const mk of this.markers) {
-      mk.label.visible = false; mk.chip.visible = false;
+      setSpriteShown(mk.label, false); setSpriteShown(mk.chip, false);
       if (!mk.group.visible) continue;
       const toCam = cam.clone().sub(mk.group.position);
       if (toCam.dot(mk.group.position) <= 0) continue; // on the far side of the Moon
@@ -432,8 +444,8 @@ export class OrbitPhase implements Phase {
     const modes = planPinLabels(candidates);
     for (const mk of facing) {
       const mode = modes.get(mk.m.site.id);
-      mk.label.visible = mode === 'full';
-      mk.chip.visible = mode === 'chip';
+      setSpriteShown(mk.label, mode === 'full');
+      setSpriteShown(mk.chip, mode === 'chip');
     }
   }
 
@@ -445,10 +457,10 @@ export class OrbitPhase implements Phase {
     g.font = `500 26px ${UI.mono}`; g.fillStyle = this.delayDays ? UI.warn : UI.dim;
     const delayTag = this.delayDays ? `  ·  retraso +${this.delayDays} d` : '';
     g.fillText(`Alunizaje ${this.date.toISOString().slice(0, 16).replace('T', ' ')} UTC${delayTag}`, 48, 128);
-    const total = this.ranking.length;
+    const { revealed, total } = this.realCounts();
     g.font = `500 26px ${UI.mono}`;
     g.fillStyle = this.analysisDone ? UI.ok : UI.accent;
-    g.fillText(this.analysisDone ? 'Ranking final · toca un sitio' : `Calculando óptimo… ${this.revealed}/${total}`, 48, 166);
+    g.fillText(this.analysisDone ? 'Ranking final · toca un sitio' : `Calculando óptimo… ${revealed}/${total}`, 48, 166);
 
     if (this.analysisDone) this.drawDelayRow(p, g);
 
@@ -480,7 +492,7 @@ export class OrbitPhase implements Phase {
       p.region(`row-${m.site.id}`, 28, y, 968, rowH - 10, () => this.select(m));
     });
     if (!this.analysisDone) {
-      const w = 928 * (this.revealed / total);
+      const w = 928 * (revealed / total);
       roundRect(g, 48, 1240, 928, 10, 5); g.fillStyle = 'rgba(250,249,245,.15)'; g.fill();
       if (w > 1) { roundRect(g, 48, 1240, w, 10, 5); g.fillStyle = UI.accent; g.fill(); }
     }
@@ -541,13 +553,13 @@ export class OrbitPhase implements Phase {
     g.font = `800 96px ${UI.mono}`; g.fillStyle = col; g.fillText(`${Math.round(m.score)}`, 48, 250);
     const bigWidth = g.measureText(`${Math.round(m.score)}`).width;
     g.font = `700 36px ${UI.mono}`; g.fillText('/100', 48 + bigWidth + 8, 250);
-    g.font = `600 28px ${UI.font}`; g.fillStyle = UI.text; g.fillText(`Viabilidad · puesto #${m.rank} de ${this.ranking.length}`, 400, 222);
+    g.font = `600 28px ${UI.font}`; g.fillStyle = UI.text; g.fillText(`Viabilidad · puesto #${m.rank} de ${this.realCounts().total}`, 400, 222);
     if (this.delayDays) {
       const base = this.baseRanking.find((r) => r.site.id === m.site.id);
       if (base) {
         const d = Math.round(m.score - base.score);
         g.font = `700 26px ${UI.mono}`; g.fillStyle = d > 0 ? UI.ok : d < 0 ? UI.bad : UI.dim;
-        g.fillText(`antes ${scoreOf100(base)} → ahora ${scoreOf100(m)} (retraso +${this.delayDays} d)`, 400, 258);
+        g.fillText(`antes ${scoreOf100(base)} → ahora ${scoreOf100(m)} · +${this.delayDays} d`, 400, 258);
       }
     }
 
@@ -609,7 +621,7 @@ export class OrbitPhase implements Phase {
   }
 
   controlHud(): PhaseHud {
-    const total = this.ranking.length;
+    const { revealed, total } = this.realCounts();
     const done = this.analysisDone;
     const chosen = this.app.selected;
     const m = chosen ? this.ranking.find((r) => r.site.id === chosen.site.id) ?? chosen : null;
@@ -626,7 +638,7 @@ export class OrbitPhase implements Phase {
 
     let detail = 'Ranking final · elige un sitio de la lista o un pin de la escena';
     if (this.rangeWarning) detail = this.rangeWarning;
-    else if (!done) detail = `Calculando óptimo… ${this.revealed}/${total}`;
+    else if (!done) detail = `Calculando óptimo… ${revealed}/${total}`;
     else if (this.delayDays && m && base) detail = `Con +${this.delayDays} d de retraso: antes ${scoreOf100(base)} → ahora ${scoreOf100(m)}`;
     const note = done && m && !this.rangeWarning ? rankingNote(m.site) : undefined;
     if (note) detail = m!.site.crash ? `${note} · no es un sitio real, no tiene puntaje` : `${note} · ${detail}`;
@@ -640,9 +652,9 @@ export class OrbitPhase implements Phase {
         ? { value: 'DEMO', caption: `${m.site.name} · falla simulada del motor` }
         : done && m
         ? { value: String(Math.round(m.score)), caption: `de 100 · ${m.site.name}`, badge: { label: STATUS_LABELS[m.status], tone: STATUS_TONES[m.status] } }
-        : { value: `${this.revealed} de ${total}`, caption: 'sitios evaluados' },
+        : { value: `${revealed} de ${total}`, caption: 'sitios evaluados' },
       detail,
-      progress: done ? undefined : { value: total ? this.revealed / total : 0, label: 'Evaluación de sitios' },
+      progress: done ? undefined : { value: total ? revealed / total : 0, label: 'Evaluación de sitios' },
       facts: done && m && !m.site.crash ? [
         { label: 'Elevación solar', value: `${fmtSigned(m.sun.elevation, 2)}°` },
         { label: 'Iluminación en 14 d', value: fmtPercent(m.illumPct) },
