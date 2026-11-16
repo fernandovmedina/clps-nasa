@@ -128,6 +128,19 @@ test('a judge alone on desktop, without XR, reaches the orbit with one obvious c
   await expect(page.getByRole('textbox')).toHaveCount(0)
 })
 
+test('the follow dialog opened from the welcome sends someone without a code to the planner with «Explora la misión tú mismo»', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.goto('/')
+  test.skip(!(await hasWebGL(page)), 'WebGL unavailable in this browser')
+  await chooseRole(page, 'monitor')
+  const dialog = followDialog(page)
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('Lo muestra la pantalla de quien despega, en el panel de su misión, como «Código de seguimiento».')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Explora la misión tú mismo' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(planner(page)).toBeVisible()
+})
+
 test('?vr=preview shows the VR interface without the DOM control layer and without console errors', async ({ page }) => {
   const errors: string[] = []
   page.on('console', (m) => {
